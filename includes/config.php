@@ -379,13 +379,19 @@ function isExpired($user) {
     return strtotime($user['expires_at']) < time();
 }
 
-/* Spintax: {a|b|c} */
+/* Spintax: {a|b|c} and Token protection */
 function spin($text) {
-    $text = str_replace('{{name}}',      "\x02NAME\x03",      $text);
-    $text = str_replace('{{email}}',     "\x02EMAIL\x03",     $text);
-    $text = str_replace('{{image}}',     "\x02IMAGE\x03",     $text);
-    $text = str_replace('{{modelname}}', "\x02MODELNAME\x03", $text);
-    $text = str_replace('{{todaydate}}', "\x02TODAYDATE\x03", $text);
+    if (empty($text) || !is_string($text)) return $text;
+
+    // 1. Protect all {{...}} placeholders (case-insensitive) so spintax {a|b} parser never corrupts double-braces
+    $placeholders = [];
+    $text = preg_replace_callback('/\{\{[^}]+\}\}/i', function($m) use (&$placeholders) {
+        $key = "\x02TAG_" . count($placeholders) . "\x03";
+        $placeholders[$key] = $m[0];
+        return $key;
+    }, $text);
+
+    // 2. Process spintax {option1|option2|option3} (supports nested spintax)
     $prev = null;
     while ($prev !== $text) {
         $prev = $text;
@@ -394,19 +400,24 @@ function spin($text) {
             return trim($opts[array_rand($opts)]);
         }, $text);
     }
-    $text = str_replace("\x02NAME\x03",      '{{name}}',      $text);
-    $text = str_replace("\x02EMAIL\x03",     '{{email}}',     $text);
-    $text = str_replace("\x02IMAGE\x03",     '{{image}}',     $text);
-    $text = str_replace("\x02MODELNAME\x03", '{{modelname}}', $text);
-    $text = str_replace("\x02TODAYDATE\x03", '{{todaydate}}', $text);
+
+    // 3. Restore all original {{...}} placeholders exactly as written
+    if (!empty($placeholders)) {
+        $text = strtr($text, $placeholders);
+    }
+
     return $text;
 }
 
 function personalize($text, $name, $email, $senderName = '', $todayDate = '') {
-    $text = str_ireplace('{{name}}',      $name  ?: 'Valued Customer', $text);
+    if (empty($text) || !is_string($text)) return $text;
+    $today = $todayDate ?: date('F j, Y g:i A');
+
+    $text = str_ireplace('{{name}}',      $name ?: 'Valued Customer', $text);
     $text = str_ireplace('{{email}}',     $email, $text);
     $text = str_ireplace('{{modelname}}', $senderName, $text);
-    $text = str_ireplace('{{todaydate}}', $todayDate ?: date('F j, Y g:i A'), $text);
+    $text = str_ireplace('{{todaydate}}', $today, $text);
+
     return $text;
 }
 

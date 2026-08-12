@@ -3238,9 +3238,13 @@ function safeImageIds($val): string {
 }
 
 function resolveImages(string $html, array $imageIds, array &$inlineImages, string $width='600', string $align='center', string $position='top'): string {
-    if (empty($imageIds)) return $html;
+    if (empty($imageIds)) {
+        return preg_replace('/\{\{image\}\}/i', '', $html);
+    }
     $imageIds = array_values(array_filter(array_map('intval', $imageIds), fn($v) => $v > 0));
-    if (empty($imageIds)) return $html;
+    if (empty($imageIds)) {
+        return preg_replace('/\{\{image\}\}/i', '', $html);
+    }
 
     $tags = [];
     foreach ($imageIds as $id) {
@@ -3284,10 +3288,14 @@ function resolveImages(string $html, array $imageIds, array &$inlineImages, stri
         $tags[] = '<img src="cid:' . $cid . '" style="' . $wStyle . 'height:auto;display:block;margin-left:' . $mL . ';margin-right:' . $mR . ';margin-bottom:16px;" alt="" />';
     }
 
-    if (empty($tags)) return $html;
+    if (empty($tags)) {
+        return preg_replace('/\{\{image\}\}/i', '', $html);
+    }
     $allTags = implode("\n", $tags);
 
-    if (strpos($html, '{{image}}') !== false) return str_replace('{{image}}', $allTags, $html);
+    if (preg_match('/\{\{image\}\}/i', $html)) {
+        return preg_replace('/\{\{image\}\}/i', $allTags, $html);
+    }
     if ($position === 'bottom') return $html . '<div style="margin-top:16px">' . $allTags . '</div>';
     return '<div style="margin-bottom:16px">' . $allTags . '</div>' . $html;
 }

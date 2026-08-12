@@ -126,11 +126,13 @@ function embedImage(string $html,array $ids,array &$inline,
         $tags[] = "<img src=\"cid:$cid\" style=\"{$ws}height:auto;display:block;margin-left:{$mL};margin-right:{$mR};margin-bottom:16px;\" alt=\"\" />";
     }
 
-    if (empty($tags)) return $html;
+    if (empty($tags)) return preg_replace('/\{\{image\}\}/i', '', $html);
     $allTags = implode("\n", $tags);
-    if(strpos($html,'{{image}}')!==false)return str_replace('{{image}}',$allTags,$html);
-    return $pos==='bottom'?$html.'<div style="margin-top:16px">'.$allTags.'</div>'
-                          :'<div style="margin-bottom:16px">'.$allTags.'</div>'.$html;
+    if (preg_match('/\{\{image\}\}/i', $html)) {
+        return preg_replace('/\{\{image\}\}/i', $allTags, $html);
+    }
+    return $pos === 'bottom' ? $html . '<div style="margin-top:16px">' . $allTags . '</div>'
+                            : '<div style="margin-bottom:16px">' . $allTags . '</div>' . $html;
 }
 
 function buildMessage(array $step,string $name,string $email,string $defSubj='',string $senderName='',string $todayDate=''): array {

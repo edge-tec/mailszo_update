@@ -2096,7 +2096,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
         <div class="fhint">Add multiple → random one used per email. Format: <code>John &lt;john@co.com&gt;</code> or <code>john@co.com</code></div>
       </div>
       <div class="stitle">Message Variants — random one per recipient</div>
-      <div class="al a-inf on" style="margin-bottom:10px;font-size:11px">✨ Add multiple variants. Each recipient gets a <strong>random</strong> one — different subject, body &amp; image. Use <code>{{name}}</code> <code>{{email}}</code> <code>{{image}}</code> <code>{{modelname}}</code> <code>{{todaydate}}</code> and spintax <code>{opt1|opt2}</code></div>
+      <div class="al a-inf on" style="margin-bottom:10px;font-size:11px">✨ Add multiple variants. Each recipient gets a <strong>random</strong> one — different subject, body &amp; image. Use <code>{{NAME}}</code> <code>{{EMAIL}}</code> <code>{{IMAGE}}</code> <code>{{MODELNAME}}</code> <code>{{TODAYDATE}}</code> and spintax <code>{SPIN|TAX}</code></div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <button class="btn btn-blue btn-sm" onclick="addVariant()">+ Add Variant</button>
         <span style="font-size:11px;color:var(--text3)" id="vc-label">1 variant</span>
@@ -3723,9 +3723,9 @@ function vpane(vt,i){
     <div class="fg"><label class="fl">Subject *</label>
       <input class="fi" id="vt-sub-${i}" value="${esc(vt.subject||'')}" placeholder="Subject line — {opt1|opt2} for spintax">
     </div>
-    <div class="fg"><label class="fl">HTML Body — <code>{{name}}</code> <code>{{email}}</code> <code>{{image}}</code> <code>{{modelname}}</code> <code>{{todaydate}}</code> <code>{spin|tax}</code></label>
-      <textarea class="fta" id="vt-bod-${i}" style="min-height:180px" placeholder="<p>Hi {{name}},</p>&#10;{{image}}&#10;<p>Your message...</p>">${esc(vt.html_body||'')}</textarea>
-      <div class="fhint">Place <code>{{image}}</code> exactly where you want the image to appear in the text. Leave it out to auto-place.</div>
+    <div class="fg"><label class="fl">HTML Body — <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{{NAME}}')"><code>{{NAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{{EMAIL}}')"><code>{{EMAIL}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{{IMAGE}}')"><code>{{IMAGE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{{MODELNAME}}')"><code>{{MODELNAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{{TODAYDATE}}')"><code>{{TODAYDATE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('vt-bod-${i}','{SPIN|TAX}')"><code>{SPIN|TAX}</code></span></label>
+      <textarea class="fta" id="vt-bod-${i}" style="min-height:180px" placeholder="<p>Hi {{NAME}},</p>&#10;{{IMAGE}}&#10;<p>Your message...</p>">${esc(vt.html_body||'')}</textarea>
+      <div class="fhint">Place <code>{{IMAGE}}</code> exactly where you want the image to appear in the text. Leave it out to auto-place.</div>
     </div>
     <div class="fg"><label class="fl">Plain Text <span class="flh">(auto-generated from HTML if blank)</span></label>
       <textarea class="fta" id="vt-txt-${i}" style="min-height:60px">${esc(vt.text_body||'')}</textarea>
@@ -4509,6 +4509,19 @@ function v(id){return($(''+id)?.value||'').trim();}
 function sv(id,val){const e=$(id);if(e)e.value=val;}
 function set(id,val){const e=$(id);if(e)e.textContent=val;}
 function esc(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function insertToken(elId, token){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.focus();
+  if(typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number'){
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = el.value.substring(0, start) + token + el.value.substring(end);
+    el.selectionStart = el.selectionEnd = start + token.length;
+  } else {
+    el.value += token;
+  }
+}
 function fmt(n){if(n==null||n==='')return'—';return Number(n).toLocaleString();}
 function vc(c){try{const v=JSON.parse(c.variants||'[]');return Array.isArray(v)&&v.length?v.length:1;}catch(e){return 1;}}
 function sids(c){try{if(c.smtp_ids){const v=JSON.parse(c.smtp_ids);if(Array.isArray(v))return v;}}catch(e){}return c.smtp_id?[c.smtp_id]:[];}
@@ -5429,8 +5442,8 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
       </div>
     </div>`:''}
     </div>
-    <div class="fg"><label class="fl" style="font-size:10px">HTML Body — <code>{{name}}</code> <code>{{email}}</code> <code>{{image}}</code> <code>{{modelname}}</code> <code>{{todaydate}}</code> <code>{spin|tax}</code></label>
-      <textarea class="fta" id="${pid}-body-${i}" style="min-height:130px" placeholder="<p>Hi {{name}},</p>&#10;<p>Message body here...</p>">${esc(st.html_body||'')}</textarea>
+    <div class="fg"><label class="fl" style="font-size:10px">HTML Body — <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{NAME}}')"><code>{{NAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{EMAIL}}')"><code>{{EMAIL}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{IMAGE}}')"><code>{{IMAGE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{MODELNAME}}')"><code>{{MODELNAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{TODAYDATE}}')"><code>{{TODAYDATE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{SPIN|TAX}')"><code>{SPIN|TAX}</code></span></label>
+      <textarea class="fta" id="${pid}-body-${i}" style="min-height:130px" placeholder="<p>Hi {{NAME}},</p>&#10;<p>Message body here...</p>">${esc(st.html_body||'')}</textarea>
     </div>
     <div class="fg"><label class="fl" style="font-size:10px">Plain Text <span class="flh">(auto from HTML if blank)</span></label>
       <textarea class="fta" id="${pid}-txt-${i}" style="min-height:44px">${esc(st.text_body||'')}</textarea>
