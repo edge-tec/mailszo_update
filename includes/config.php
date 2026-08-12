@@ -1,0 +1,517 @@
+<?php
+date_default_timezone_set('Asia/Dhaka');
+define('CONFIG_FILE', __DIR__ . '/../config.json');
+
+function getConfig() {
+    if (!file_exists(CONFIG_FILE)) return ['installed' => false];
+    $cfg = json_decode(file_get_contents(CONFIG_FILE), true) ?: ['installed' => false];
+    // Self-heal: save app_path if missing (existing installs before this version)
+    if (!empty($cfg['installed']) && empty($cfg['app_path'])) {
+        $cfg['app_path'] = __DIR__ . '/..'; // config.php is in includes/, app is one level up
+        $cfg['app_path'] = realpath($cfg['app_path']) ?: $cfg['app_path'];
+        @file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT));
+    }
+    return $cfg;
+}
+function isInstalled() { return !empty(getConfig()['installed']); }
+
+function db() {
+    static $pdo = null;
+    if ($pdo) return $pdo;
+    $cfg = getConfig();
+    $pdo = new PDO(
+        "mysql:host={$cfg['db_host']};port={$cfg['db_port']};dbname={$cfg['db_name']};charset=utf8mb4",
+        $cfg['db_user'], $cfg['db_pass'],
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+    );
+    // ── Sync MySQL session timezone with PHP timezone ───────────────
+    try {
+        $phpOffset = (new DateTimeZone(date_default_timezone_get()))->getOffset(new DateTime('now'));
+        $sign      = $phpOffset >= 0 ? '+' : '-';
+        $absOffset = abs($phpOffset);
+        $tzStr     = sprintf('%s%02d:%02d', $sign, intdiv($absOffset, 3600), ($absOffset % 3600) / 60);
+        $pdo->exec("SET time_zone = '{$tzStr}'");
+    } catch (Exception $e) { /* ignore if timezone already matches */ }
+
+    // ── Self-healing Schema Migrations ─────────────────────────────
+    // Runs once per request process to ensure all required tables and columns exist
+    static $migrated = false;
+    $markerFile = __DIR__ . '/../.migration_done';
+    $migrationVersion = '9'; // bump this when adding new migrations
+    $currentVersion = @file_get_contents($markerFile);
+    if (!$migrated && trim($currentVersion) !== $migrationVersion) {
+        $migrated = true;
+        $migrations = [
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `remember_token` VARCHAR(64) DEFAULT NULL",
+            "CREATE TABLE IF NOT EXISTS `images` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`filename` VARCHAR(255) NOT NULL,`original_name` VARCHAR(255),`mime` VARCHAR(100) DEFAULT 'image/jpeg',`url` VARCHAR(500),`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `imap_accounts` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`host` VARCHAR(255) NOT NULL,`port` INT DEFAULT 993,`username` VARCHAR(255) NOT NULL,`password` VARCHAR(255) NOT NULL,`ssl` TINYINT(1) DEFAULT 1,`last_check` DATETIME DEFAULT NULL,`status` ENUM('active','disabled') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `autoreply_rules` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`imap_id` INT DEFAULT NULL,`smtp_ids` TEXT DEFAULT NULL,`from_emails` TEXT DEFAULT NULL,`status` ENUM('active','paused') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `autoreply_steps` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`step_number` INT NOT NULL DEFAULT 1,`delay_minutes` INT NOT NULL DEFAULT 1,`subject` TEXT DEFAULT NULL,`html_body` LONGTEXT DEFAULT NULL,`text_body` LONGTEXT DEFAULT NULL,`image_ids` TEXT DEFAULT NULL,`img_width` VARCHAR(20) DEFAULT '600',`img_align` VARCHAR(10) DEFAULT 'center',`img_position` VARCHAR(10) DEFAULT 'top') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `autoreply_threads` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`from_email` VARCHAR(255) NOT NULL,`from_name` VARCHAR(150) DEFAULT NULL,`subject_in` VARCHAR(255) DEFAULT NULL,`current_step` INT NOT NULL DEFAULT 1,`next_send_at` DATETIME DEFAULT NULL,`last_sent_at` DATETIME DEFAULT NULL,`reply_count` INT NOT NULL DEFAULT 0,`status` ENUM('active','completed') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `uq_rule_email` (`rule_id`,`from_email`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `autoreply_logs` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`thread_id` INT NOT NULL,`step_number` INT NOT NULL,`to_email` VARCHAR(255) NOT NULL,`status` ENUM('sent','failed') NOT NULL,`error` TEXT DEFAULT NULL,`smtp_used` VARCHAR(150) DEFAULT NULL,`sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `followup_rules` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`imap_id` INT DEFAULT NULL,`smtp_ids` TEXT DEFAULT NULL,`from_emails` TEXT DEFAULT NULL,`status` ENUM('active','paused') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `followup_steps` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`step_number` INT NOT NULL DEFAULT 1,`delay_minutes` INT NOT NULL DEFAULT 60,`subject` TEXT DEFAULT NULL,`html_body` LONGTEXT DEFAULT NULL,`text_body` LONGTEXT DEFAULT NULL,`image_ids` TEXT DEFAULT NULL,`img_width` VARCHAR(20) DEFAULT '600',`img_align` VARCHAR(10) DEFAULT 'center',`img_position` VARCHAR(10) DEFAULT 'top') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `followup_contacts` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`email` VARCHAR(255) NOT NULL,`name` VARCHAR(150) DEFAULT NULL,`current_step` INT NOT NULL DEFAULT 1,`next_send_at` DATETIME DEFAULT NULL,`last_sent_at` DATETIME DEFAULT NULL,`status` ENUM('active','completed','stopped') DEFAULT 'active',`enrolled_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `uq_fu_email` (`rule_id`,`email`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `followup_logs` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`contact_id` INT NOT NULL,`step_number` INT NOT NULL,`email` VARCHAR(255) NOT NULL,`status` ENUM('sent','failed') NOT NULL,`error` TEXT DEFAULT NULL,`smtp_used` VARCHAR(150) DEFAULT NULL,`sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `is_admin` TINYINT(1) DEFAULT 0",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `smtp_limit` INT DEFAULT 5",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `campaign_limit` INT DEFAULT 10",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `daily_send_limit` INT DEFAULT 1000",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `autoreply_limit` INT DEFAULT 5",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `followup_limit` INT DEFAULT 5",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `expires_at` DATETIME DEFAULT NULL",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `status` ENUM('active','suspended') DEFAULT 'active'",
+            "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `user_id` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `user_id` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `smtp_ids` TEXT DEFAULT NULL",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `from_emails` TEXT DEFAULT NULL",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `variants` LONGTEXT DEFAULT NULL",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `sent_count` INT DEFAULT 0",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `failed_count` INT DEFAULT 0",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `smtp_name_used` VARCHAR(150) DEFAULT NULL",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `from_email_used` VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `error_code` VARCHAR(50) DEFAULT NULL",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `variant_index` INT DEFAULT NULL",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `user_id` INT DEFAULT NULL",
+            "ALTER TABLE `send_logs` MODIFY COLUMN `campaign_id` INT DEFAULT NULL",
+            "CREATE TABLE IF NOT EXISTS `user_meta` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL,`meta_key` VARCHAR(100) NOT NULL,`meta_value` TEXT DEFAULT NULL,UNIQUE KEY `uq_user_meta` (`user_id`,`meta_key`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `blacklist` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`type` ENUM('email','domain') NOT NULL DEFAULT 'email',`email` VARCHAR(255) DEFAULT NULL,`domain` VARCHAR(255) DEFAULT NULL,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX `idx_bl_user` (`user_id`),INDEX `idx_bl_email` (`email`),INDEX `idx_bl_domain` (`domain`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `backup_emails` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`email` VARCHAR(255) NOT NULL,`name` VARCHAR(150) DEFAULT NULL,`source` ENUM('followup','autoreply') NOT NULL DEFAULT 'followup',`rule_id` INT NOT NULL DEFAULT 0,`completed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,`first_seen` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX `idx_bk_user` (`user_id`),INDEX `idx_bk_email` (`email`),UNIQUE KEY `uq_bk_user_rule_email` (`user_id`,`rule_id`,`email`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `inbound_emails` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY,`imap_account_id` INT NOT NULL,`uid` BIGINT UNSIGNED NOT NULL DEFAULT 0,`uid_validity` BIGINT UNSIGNED NOT NULL DEFAULT 0,`from_email` VARCHAR(255) NOT NULL,`from_name` VARCHAR(255) DEFAULT NULL,`subject` VARCHAR(500) DEFAULT NULL,`received_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX `idx_inb_acct` (`imap_account_id`),INDEX `idx_inb_email` (`from_email`),INDEX `idx_inb_received` (`received_at`),UNIQUE KEY `uq_inb_acct_uid` (`imap_account_id`,`uid_validity`,`uid`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `send_logs` ADD COLUMN IF NOT EXISTS `log_source` VARCHAR(20) NOT NULL DEFAULT 'campaign'",
+            "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `sender_name` VARCHAR(150) DEFAULT NULL",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `imap_read_limit` INT DEFAULT 0",
+            "ALTER TABLE `blacklist` MODIFY COLUMN `type` ENUM('email','domain','subject','keyword') NOT NULL DEFAULT 'email'",
+        ];
+        foreach ($migrations as $sql) {
+            try { $pdo->exec($sql); } catch (Exception $e) { /* ignore */ }
+        }
+
+        $arCols = [
+            ['autoreply_threads','messages_received',    "INT NOT NULL DEFAULT 1"],
+            ['autoreply_threads','awaiting_reply',       "TINYINT(1) NOT NULL DEFAULT 0"],
+            ['autoreply_threads','current_imap_id',      "INT DEFAULT NULL"],
+            ['autoreply_threads','last_trigger_uid',     "BIGINT UNSIGNED DEFAULT NULL"],
+            ['autoreply_threads','last_trigger_imap_id', "INT DEFAULT NULL"],
+            ['autoreply_rules',  'sequential_mode',      "TINYINT(1) NOT NULL DEFAULT 0"],
+            ['autoreply_rules',  'imap2_id',             "INT DEFAULT NULL"],
+            ['autoreply_rules',  'step1_smtp_ids',       "TEXT DEFAULT NULL"],
+            ['imap_accounts',    'last_uid',             "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
+            ['imap_accounts',    'last_uid_validity',    "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
+            ['imap_accounts',    'process_lock_at',      "DATETIME DEFAULT NULL"],
+            ['imap_accounts',    'process_lock_pid',     "VARCHAR(64) DEFAULT NULL"],
+            ['autoreply_steps',  'delay_minutes',        "INT NOT NULL DEFAULT 1"],
+            ['followup_steps',   'delay_minutes',        "INT NOT NULL DEFAULT 60"],
+            ['blacklist',        'phrase',               "VARCHAR(255) DEFAULT NULL"],
+            ['users',            'autoreply_limit',      "INT DEFAULT 5"],
+            ['users',            'followup_limit',       "INT DEFAULT 5"],
+            ['users',            'assigned_smtp_ids',    "TEXT DEFAULT NULL"],
+            ['users',            'assigned_imap_ids',    "TEXT DEFAULT NULL"],
+            ['campaigns',        'sender_name',          "VARCHAR(150) DEFAULT NULL"],
+            ['users',            'remember_token',       "VARCHAR(64) DEFAULT NULL"],
+            ['users',            'imap_read_limit',      "INT DEFAULT 0"],
+            ['imap_accounts',    'emails_read',          "INT NOT NULL DEFAULT 0"],
+            ['emails',           'created_at',           "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
+        ];
+        foreach ($arCols as [$tbl, $col, $def]) {
+            try {
+                $chk = $pdo->prepare(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME   = ?
+                        AND COLUMN_NAME  = ?"
+                );
+                $chk->execute([$tbl, $col]);
+                if ((int)$chk->fetchColumn() === 0) {
+                    $pdo->exec("ALTER TABLE `{$tbl}` ADD COLUMN `{$col}` {$def}");
+                }
+            } catch (Exception $e) {}
+        }
+
+        $idxSqls = [
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_status_next` (`status`, `next_send_at`)",
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_status_step` (`status`, `current_step`)",
+            "ALTER TABLE `autoreply_threads` ADD INDEX `idx_art_status_next` (`status`, `next_send_at`)",
+            "ALTER TABLE `autoreply_threads` ADD INDEX `idx_art_status_step` (`status`, `current_step`)",
+            "ALTER TABLE `autoreply_logs` ADD INDEX `idx_arl_status_sent` (`status`, `sent_at`)",
+            "ALTER TABLE `followup_logs` ADD INDEX `idx_ful_status_sent` (`status`, `sent_at`)",
+            "ALTER TABLE `send_logs` ADD INDEX `idx_sl_email` (`email`)",
+            "ALTER TABLE `send_logs` ADD INDEX `idx_sl_user_status_sent` (`user_id`, `status`, `sent_at`)",
+            "ALTER TABLE `inbound_emails` ADD INDEX `idx_inb_acct_rec` (`imap_account_id`, `received_at`)",
+            "ALTER TABLE `emails` ADD INDEX `idx_em_list_created` (`list_id`, `created_at`)",
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_rule_created` (`rule_id`, `created_at`)",
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_created` (`created_at`)"
+        ];
+        foreach ($idxSqls as $sql) {
+            try { $pdo->exec($sql); } catch (Exception $e) {}
+        }
+        // Backfill NULL created_at in emails table with parent list's created_at or NOW()
+        try {
+            $pdo->exec("UPDATE emails e JOIN email_lists l ON l.id = e.list_id SET e.created_at = COALESCE(l.created_at, NOW()) WHERE e.created_at IS NULL");
+            $pdo->exec("UPDATE emails SET created_at = NOW() WHERE created_at IS NULL");
+            $pdo->exec("UPDATE email_lists l SET total_count = (SELECT COUNT(*) FROM emails e WHERE e.list_id = l.id)");
+        } catch (Exception $e) {}
+        // Add index on emails.created_at for faster today/month leads queries
+        try { $pdo->exec("ALTER TABLE `emails` ADD INDEX `idx_em_created` (`created_at`)"); } catch (Exception $e) {}
+        @file_put_contents($markerFile, $migrationVersion);
+    }
+    return $pdo;
+}
+
+function startSecureSession() {
+    if (session_status() === PHP_SESSION_NONE) {
+        if (!headers_sent()) {
+            ini_set('session.gc_maxlifetime', 2592000); // 30 days
+            try {
+                $sessDir = __DIR__ . '/../sessions';
+                if (!is_dir($sessDir)) { @mkdir($sessDir, 0775, true); }
+                if (is_dir($sessDir) && is_writable($sessDir)) {
+                    @session_save_path($sessDir);
+                } else {
+                    $sysTmp = sys_get_temp_dir();
+                    $altDir = rtrim($sysTmp ?: '/tmp', '/\\') . '/mailszo_sessions';
+                    if (!is_dir($altDir)) { @mkdir($altDir, 0777, true); }
+                    if (is_dir($altDir) && is_writable($altDir)) {
+                        @session_save_path($altDir);
+                    }
+                }
+            } catch (Throwable $e) {}
+
+            try {
+                session_set_cookie_params([
+                    'lifetime' => 2592000,
+                    'path'     => '/',
+                    'httponly' => true,
+                    'samesite' => 'Lax'
+                ]);
+            } catch (Throwable $e) {}
+        }
+        try { @session_start(); } catch (Throwable $e) {}
+    }
+}
+
+function setRememberCookie($userId) {
+    $token = bin2hex(random_bytes(32));
+    $hash  = hash('sha256', $token);
+    try {
+        db()->prepare('UPDATE users SET remember_token=? WHERE id=?')->execute([$hash, $userId]);
+    } catch (Throwable $e) {}
+    if (!headers_sent()) {
+        try {
+            if (PHP_VERSION_ID >= 70300) {
+                @setcookie('mailpro_remember', $userId . ':' . $token, [
+                    'expires'  => time() + 2592000,
+                    'path'     => '/',
+                    'httponly' => true,
+                    'samesite' => 'Lax'
+                ]);
+            } else {
+                @setcookie('mailpro_remember', $userId . ':' . $token, time() + 2592000, '/', '', false, true);
+            }
+        } catch (Throwable $e) {}
+    }
+}
+
+function clearRememberCookie() {
+    $_COOKIE['mailpro_remember'] = '';
+    unset($_COOKIE['mailpro_remember']);
+    if (!headers_sent()) {
+        try {
+            if (PHP_VERSION_ID >= 70300) {
+                @setcookie('mailpro_remember', '', [
+                    'expires'  => 1,
+                    'path'     => '/',
+                    'httponly' => true,
+                    'samesite' => 'Lax'
+                ]);
+            }
+            @setcookie('mailpro_remember', '', time() - 3600, '/');
+        } catch (Throwable $e) {}
+
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        if ($host) {
+            if (strpos($host, ':') !== false) {
+                $host = explode(':', $host)[0];
+            }
+            try {
+                if (PHP_VERSION_ID >= 70300) {
+                    @setcookie('mailpro_remember', '', [
+                        'expires'  => 1,
+                        'path'     => '/',
+                        'domain'   => $host,
+                        'httponly' => true,
+                        'samesite' => 'Lax'
+                    ]);
+                }
+                @setcookie('mailpro_remember', '', time() - 3600, '/', $host);
+            } catch (Throwable $e) {}
+        }
+    }
+}
+
+function checkRememberToken() {
+    if (empty($_COOKIE['mailpro_remember'])) return false;
+    $parts = explode(':', $_COOKIE['mailpro_remember'], 2);
+    if (count($parts) !== 2) return false;
+    list($uid, $token) = $parts;
+    $hash = hash('sha256', $token);
+    try {
+        $s = db()->prepare('SELECT * FROM users WHERE id=? AND status="active"');
+        $s->execute([(int)$uid]);
+        $u = $s->fetch();
+        if ($u && !empty($u['remember_token']) && hash_equals($u['remember_token'], $hash)) {
+            startSecureSession();
+            $_SESSION['uid']      = $u['id'];
+            $_SESSION['uname']    = $u['username'];
+            $_SESSION['is_admin'] = (bool)$u['is_admin'];
+            session_write_close();
+            return $u;
+        }
+    } catch (Exception $e) {}
+    return false;
+}
+
+function jsonOut($data, $code = 200) {
+    // Discard any buffered warnings/notices so they don't corrupt the JSON response
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    // Always return HTTP 200 to prevent Nginx (fastcgi_intercept_errors) from replacing the JSON with its own HTML 404/500 error pages
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo json_encode($data);
+    exit;
+}
+
+function body() {
+    return json_decode(file_get_contents('php://input'), true) ?: [];
+}
+
+function requireAuth() {
+    startSecureSession();
+    if (empty($_SESSION['uid'])) {
+        $user = checkRememberToken();
+        if (!$user) jsonOut(['error' => 'Unauthorized'], 401);
+    }
+    session_write_close();
+}
+
+function requireAdmin() {
+    requireAuth();
+    startSecureSession();
+    $isAdmin = !empty($_SESSION['is_admin']);
+    session_write_close();
+    if (!$isAdmin) jsonOut(['error' => 'Admin only'], 403);
+}
+
+function currentUser() {
+    if (empty($_SESSION['uid'])) return null;
+    $s = db()->prepare('SELECT * FROM users WHERE id=?');
+    $s->execute([$_SESSION['uid']]);
+    return $s->fetch();
+}
+
+/* Check user limits.
+ *
+ * $extra is an optional context array used by the message-count checks:
+ *   ['adding' => N]            — proposed number of new messages to insert
+ *   ['exclude_rule' => $rid]   — exclude this rule's existing steps from the
+ *                                 count (used when REPLACING a rule's steps
+ *                                 in PUT, so the rule's own old steps don't
+ *                                 double-count against the cap).
+ */
+function checkUserLimit($user, $type, array $extra = []) {
+    // Supported types: smtp_count, campaign_count, autoreply_count, followup_count.
+    // Admin bypasses every cap (same convention as the existing checks).
+    if ($user['is_admin']) return ['ok' => true];
+    if ($type === 'smtp_count') {
+        $limit = (int)($user['smtp_limit'] ?? 0);
+        if ($limit <= 0) return ['ok' => false, 'msg' => 'SMTP creation disabled'];
+        $s = db()->prepare('SELECT COUNT(*) FROM smtp_providers WHERE user_id=?');
+        $s->execute([$user['id']]);
+        if ((int)$s->fetchColumn() >= $limit) return ['ok' => false, 'msg' => "SMTP limit reached ({$limit})"];
+    }
+    if ($type === 'autoreply_count' || $type === 'followup_count') {
+        // Caps the number of auto-reply / follow-up MESSAGES (rows in
+        // autoreply_steps / followup_steps) this user can have configured
+        // across ALL their rules. The check fires at rule save time so the
+        // user can never bypass the cap by spreading messages across many
+        // rules.
+        $isAR = ($type === 'autoreply_count');
+        $limit = (int)($user[$isAR ? 'autoreply_limit' : 'followup_limit'] ?? 0);
+        $label = $isAR ? 'Auto-Reply' : 'Follow-Up';
+        if ($limit <= 0) return ['ok' => false, 'msg' => "{$label} message creation disabled — contact admin"];
+
+        $stepsTbl = $isAR ? 'autoreply_steps' : 'followup_steps';
+        $rulesTbl = $isAR ? 'autoreply_rules' : 'followup_rules';
+
+        $sql    = "SELECT COUNT(*) FROM {$stepsTbl} s JOIN {$rulesTbl} r ON r.id = s.rule_id WHERE r.user_id = ?";
+        $params = [$user['id']];
+        if (!empty($extra['exclude_rule'])) {
+            $sql .= " AND s.rule_id != ?";
+            $params[] = (int)$extra['exclude_rule'];
+        }
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $current  = (int)$stmt->fetchColumn();
+        $adding   = max(0, (int)($extra['adding'] ?? 0));
+        $totalAfter = $current + $adding;
+
+        if ($totalAfter > $limit) {
+            $rem = max(0, $limit - $current);
+            return ['ok' => false,
+                'msg' => "{$label} message limit reached — you have {$current} of {$limit} configured" .
+                         ($adding > 0 ? ", cannot add {$adding} more ({$rem} remaining)." : '.') .
+                         ' Delete an existing message or ask admin to raise the limit.'];
+        }
+    }
+    if ($type === 'campaign_count') {
+        $limit = (int)($user['campaign_limit'] ?? 0);
+        if ($limit <= 0) return ['ok' => false, 'msg' => 'Campaign creation disabled'];
+        $s = db()->prepare('SELECT COUNT(*) FROM campaigns WHERE user_id=?');
+        $s->execute([$user['id']]);
+        if ((int)$s->fetchColumn() >= $limit) return ['ok' => false, 'msg' => "Campaign limit reached ({$limit})"];
+    }
+    return ['ok' => true];
+}
+
+function isExpired($user) {
+    if ($user['is_admin']) return false;
+    if (empty($user['expires_at'])) return false;
+    return strtotime($user['expires_at']) < time();
+}
+
+/* Spintax: {a|b|c} */
+function spin($text) {
+    $text = str_replace('{{name}}',      "\x02NAME\x03",      $text);
+    $text = str_replace('{{email}}',     "\x02EMAIL\x03",     $text);
+    $text = str_replace('{{image}}',     "\x02IMAGE\x03",     $text);
+    $text = str_replace('{{modelname}}', "\x02MODELNAME\x03", $text);
+    $text = str_replace('{{todaydate}}', "\x02TODAYDATE\x03", $text);
+    $prev = null;
+    while ($prev !== $text) {
+        $prev = $text;
+        $text = preg_replace_callback('/\{([^{}]+)\}/', function($m) {
+            $opts = explode('|', $m[1]);
+            return trim($opts[array_rand($opts)]);
+        }, $text);
+    }
+    $text = str_replace("\x02NAME\x03",      '{{name}}',      $text);
+    $text = str_replace("\x02EMAIL\x03",     '{{email}}',     $text);
+    $text = str_replace("\x02IMAGE\x03",     '{{image}}',     $text);
+    $text = str_replace("\x02MODELNAME\x03", '{{modelname}}', $text);
+    $text = str_replace("\x02TODAYDATE\x03", '{{todaydate}}', $text);
+    return $text;
+}
+
+function personalize($text, $name, $email, $senderName = '', $todayDate = '') {
+    $text = str_ireplace('{{name}}',      $name  ?: 'Valued Customer', $text);
+    $text = str_ireplace('{{email}}',     $email, $text);
+    $text = str_ireplace('{{modelname}}', $senderName, $text);
+    $text = str_ireplace('{{todaydate}}', $todayDate ?: date('F j, Y g:i A'), $text);
+    return $text;
+}
+
+/**
+ * Check if an email address is blacklisted for a given user.
+ *
+ * Domain entries are treated as suffix patterns so the operator can blacklist
+ * a TLD (".org"), a registrable domain ("example.com"), or any subdomain
+ * level ("groups.google.com") and have it apply to every address whose
+ * domain ends with that suffix.
+ *
+ * Matching variants computed for foo@mail.x.example.com:
+ *   mail.x.example.com  .mail.x.example.com
+ *   x.example.com       .x.example.com
+ *   example.com         .example.com
+ *   com                 .com
+ * Any entry that exactly equals one of these variants triggers a hit, so:
+ *   - "example.com"  blocks foo@example.com AND foo@anything.example.com
+ *   - ".org"         blocks every *.org address
+ *   - "groups.google.com" blocks the exact subdomain and anything under it
+ *
+ * Without this, blacklisting ".org" or a parent domain silently does
+ * nothing (the original code did `LOWER(domain) = ?` exact match only).
+ */
+function isBlacklisted(string $email, int $userId): bool {
+    try {
+        $emailLower = strtolower(trim($email));
+        if ($emailLower === '') return false;
+        $atPos = strrpos($emailLower, '@');
+        if ($atPos === false) return false;
+        $domain = substr($emailLower, $atPos + 1);
+        if ($domain === '') return false;
+
+        // Build every suffix variant of the domain, with and without leading dot,
+        // so an exact equality SQL match catches all the supported entry styles.
+        $variants = [$domain, '.' . $domain];
+        $parts = explode('.', $domain);
+        for ($i = 1; $i < count($parts); $i++) {
+            $sub = implode('.', array_slice($parts, $i));
+            if ($sub === '') continue;
+            $variants[] = $sub;
+            $variants[] = '.' . $sub;
+        }
+        $variants = array_values(array_unique($variants));
+
+        $ph = implode(',', array_fill(0, count($variants), '?'));
+        // Match entries for this user OR any entry created by an admin user.
+        // This ensures admin-added blacklist rules apply globally across all users.
+        $sql = "SELECT id FROM blacklist
+                 WHERE (user_id = ? OR user_id IN (SELECT id FROM users WHERE is_admin = 1))
+                   AND (
+                     (type='email'  AND LOWER(email)  = ?) OR
+                     (type='domain' AND LOWER(domain) IN ({$ph}))
+                   )
+                 LIMIT 1";
+        $params = array_merge([$userId, $emailLower], $variants);
+        $s = db()->prepare($sql);
+        $s->execute($params);
+        return (bool) $s->fetch();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/**
+ * Subject Blacklist + "Has the Words" filter.
+ *
+ * Returns true when the inbound message's subject (or any combined text we
+ * have on hand: subject, from email, from name) contains any phrase that
+ * the user has stored on the Blacklist page under type='subject' or
+ * type='keyword'.
+ *
+ * - type='subject' — case-insensitive substring match against the subject only.
+ * - type='keyword' — case-insensitive substring match against
+ *                    subject + from_email + from_name (everything the IMAP
+ *                    fetch path gives us; no body fetch is performed).
+ *
+ * Kept entirely separate from isBlacklisted() so existing email/domain
+ * blocking logic, callers, and behaviour remain untouched.
+ */
+function isMessageBlocked(int $userId, string $subject = '', string $fromEmail = '', string $fromName = ''): bool {
+    try {
+        $subjectLow = strtolower(trim($subject));
+        $haystack   = strtolower(trim($subject . ' ' . $fromEmail . ' ' . $fromName));
+        if ($subjectLow === '' && $haystack === '') return false;
+
+        $stmt = db()->prepare(
+            "SELECT type, phrase FROM blacklist
+              WHERE (user_id = ? OR user_id IN (SELECT id FROM users WHERE is_admin = 1))
+                AND type IN ('subject','keyword')
+                AND phrase IS NOT NULL
+                AND phrase <> ''"
+        );
+        $stmt->execute([$userId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $needle = strtolower(trim((string)$row['phrase']));
+            if ($needle === '') continue;
+            if ($row['type'] === 'subject') {
+                if ($subjectLow !== '' && strpos($subjectLow, $needle) !== false) return true;
+            } else { // keyword — match across all available text
+                if ($haystack !== '' && strpos($haystack, $needle) !== false) return true;
+            }
+        }
+        return false;
+    } catch (Exception $e) {
+        return false;
+    }
+}

@@ -1,0 +1,341 @@
+<?php
+class Mailer {
+    private $cfg;
+    public function __construct($cfg) { $this->cfg = $cfg; }
+
+    private function connect() {
+        $host = $this->cfg['host'];
+        $port = (int)$this->cfg['port'];
+
+        // FIX: Manually resolve to IPv4. Many servers have broken IPv6 routes. 
+        // stream_socket_client will try IPv6 and timeout. gethostbyname forces IPv4.
+        $ip = gethostbyname($host);
+
+        // FIX: Use stream_socket_client with a proper SSL context so STARTTLS
+        // upgrades work reliably and SSL port 465 connects without errors.
+        $ctx = stream_context_create([
+            'ssl' => [
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true,
+                'peer_name'         => $host, // Send SNI using the original hostname
+            ]
+        ]);
+
+        $pre  = $this->cfg['secure'] ? 'ssl://' : 'tcp://';
+        $sock = @stream_socket_client($pre.$ip.':'.$port, $errno, $errstr, 15,
+                    STREAM_CLIENT_CONNECT, $ctx);
+        if (!$sock) {
+            $detail = $errstr ? trim($errstr) : 'Connection refused or timed out';
+            throw new Exception("Cannot connect to {$host}:{$port} — {$detail}");
+        }
+
+        // FIX: Set a per-read timeout so fgets() never blocks forever.
+        stream_set_timeout($sock, 30);
+
+        // FIX: Use the domain part of from_email as the EHLO hostname.
+        // Many receiving servers (especially Exim on cPanel/Namecheap shared hosting)
+        // perform a "sender callout verification" — they connect back to the EHLO
+        // domain to verify the MAIL FROM address exists.  If EHLO sends a bare
+        // server hostname that doesn't match the sender domain, Exim rejects with:
+        //   "Sender verify failed — No Such User Here"
+        // Using the from_email domain makes the EHLO consistent with MAIL FROM,
+        // which satisfies Exim's callout check and SPF alignment simultaneously.
+        $fromEmail  = $this->cfg['from_email'] ?? '';
+        $fromDomain = '';
+        if ($fromEmail && strpos($fromEmail, '@') !== false) {
+            $fromDomain = strtolower(trim(explode('@', $fromEmail)[1]));
+        }
+        // Prefer from_email domain → server hostname → SMTP host as last resort
+        $ehloHost = $fromDomain ?: (gethostname() ?: $host);
+        if (!$ehloHost || $ehloHost === 'localhost') $ehloHost = $fromDomain ?: $host;
+
+        $this->read($sock);                           // server greeting
+        $this->cmd($sock, "EHLO {$ehloHost}");
+        $resp = $this->read($sock);
+
+        // STARTTLS upgrade (plain TCP connections only)
+        if (!$this->cfg['secure'] && stripos($resp, 'STARTTLS') !== false) {
+            $this->cmd($sock, 'STARTTLS');
+            $this->read($sock);
+            // FIX: Try multiple TLS versions for broader server compatibility.
+            $crypto = STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+                    | STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT
+                    | STREAM_CRYPTO_METHOD_TLS_CLIENT;
+            if (!@stream_socket_enable_crypto($sock, true, $crypto)) {
+                throw new Exception("STARTTLS handshake failed — try SSL port 465 instead");
+            }
+            $this->cmd($sock, "EHLO {$ehloHost}");
+            $this->read($sock);
+        }
+
+        // AUTH LOGIN (only when credentials are configured)
+        if (!empty($this->cfg['username'])) {
+            $this->cmd($sock, 'AUTH LOGIN');
+            $r1 = $this->read($sock);
+            // FIX: Validate server sent 334 (challenge) before sending credentials.
+            // Previously credentials were sent even if the server returned an error.
+            if (strpos($r1, '334') === false) {
+                $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $r1));
+                throw new Exception("AUTH LOGIN rejected by server: {$clean}");
+            }
+            $this->cmd($sock, base64_encode($this->cfg['username']));
+            $r2 = $this->read($sock);
+            // FIX: Validate server accepted the username before sending password.
+            if (strpos($r2, '334') === false) {
+                throw new Exception("AUTH: server did not accept username (got: " . trim($r2) . ")");
+            }
+            $this->cmd($sock, base64_encode($this->cfg['password']));
+            $r3 = $this->read($sock);
+            if (strpos($r3, '235') === false) {
+                $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $r3));
+                throw new Exception("Authentication failed — {$clean}");
+            }
+        }
+        return $sock;
+    }
+
+    private function cmd($sock, $c) {
+        if (@fwrite($sock, $c . "\r\n") === false) {
+            throw new Exception("Failed to write to SMTP socket — connection dropped");
+        }
+    }
+
+    /**
+     * Read one complete SMTP response (handles multi-line responses).
+     *
+     * FIXES applied:
+     * - Buffer raised from 512 → 4096 bytes. Exchange and some other servers
+     *   send banners >512 bytes. The old buffer split lines mid-stream, causing
+     *   the break condition to never match → indefinite hang → timeout.
+     * - Added timeout detection: fgets() returning false due to a socket timeout
+     *   now throws a clear exception instead of silently returning '' which made
+     *   all subsequent strpos() checks fail with misleading error messages.
+     * - Break condition changed from isset($l[3])&&$l[3]===' ' to a length-safe
+     *   check: SMTP final-line marker is code + ' ' (space, not dash).
+     */
+    private function read($sock): string {
+        $response = '';
+        while (true) {
+            $line = @fgets($sock, 4096);
+            if ($line === false) {
+                $info = @stream_get_meta_data($sock);
+                if (!empty($info['timed_out'])) {
+                    throw new Exception("SMTP read timeout — server did not respond within 30s");
+                }
+                break; // EOF / connection closed
+            }
+            $response .= $line;
+            // Final line of an SMTP response: "NNN " (space after code, not dash)
+            if (strlen($line) >= 4 && $line[3] === ' ') break;
+            // Handle bare 3-char responses (no trailing space/CRLF) — extremely rare
+            $bare = rtrim($line, "\r\n");
+            if (strlen($bare) === 3 && ctype_digit($bare)) break;
+        }
+        return $response;
+    }
+
+    public function verify() {
+        $s = $this->connect();
+        $this->cmd($s, 'QUIT');
+        @fclose($s);
+        return true;
+    }
+
+    /**
+     * Send an email. Supports embedded inline images via CID references.
+     * $inlineImages = [['cid'=>'img1','path'=>'/full/path.jpg','mime'=>'image/jpeg'], ...]
+     */
+    public function send($to, $toName, $subject, $html, $text = '', $inlineImages = []) {
+        $sock = $this->connect();
+        $from = $this->cfg['from_email'];
+
+        // Normalise from address — strip any display-name wrapping if present
+        if (preg_match('/<([^>]+)>/', $from, $m)) $from = trim($m[1]);
+        $from = trim($from);
+
+        // MAIL FROM — envelope sender must exactly match the authenticated from_email.
+        // Using a mismatched or non-existent address causes Exim/cPanel shared hosting
+        // to do a "sender callout verification" and reject with:
+        //   "Sender verify failed — No Such User Here"
+        // The envelope MAIL FROM must be the real, deliverable mailbox on this SMTP.
+        $this->cmd($sock, "MAIL FROM:<{$from}>");
+        $mfr = $this->read($sock);
+        if (strpos($mfr, '250') === false) {
+            $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $mfr));
+            @fclose($sock);
+            throw new Exception("Sender rejected: {$clean} — Ensure '{$from}' is authorised to send via this SMTP and SPF/DKIM are configured.");
+        }
+
+        // RCPT TO
+        $this->cmd($sock, "RCPT TO:<{$to}>");
+        $rcpt = $this->read($sock);
+        // FIX: Original check was strpos($r,'25') !== 0.
+        // strpos returns false (not 0) when '25' is absent, and false!==0 is TRUE,
+        // so an empty response (e.g. on timeout) threw a false "Recipient rejected".
+        // Use regex for a reliable 2xx match at the start of any response line.
+        if (!preg_match('/^2[0-9]{2}[\s\-]/m', $rcpt)) {
+            $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $rcpt));
+            @fclose($sock);
+            throw new Exception("Recipient <{$to}> rejected: {$clean}");
+        }
+
+        // DATA
+        $this->cmd($sock, 'DATA');
+        $dr = $this->read($sock);
+        // FIX: Original code ignored the DATA response and wrote the message body
+        // even if the server returned an error. Now we validate 354 before writing.
+        if (strpos($dr, '354') === false) {
+            $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $dr));
+            @fclose($sock);
+            throw new Exception("DATA rejected: {$clean}");
+        }
+
+        $fn   = $this->cfg['from_name'] ?? '';
+        $fd   = $fn ? "=?UTF-8?B?" . base64_encode($fn) . "?= <{$from}>" : "<{$from}>";
+        $td   = $toName ? "=?UTF-8?B?" . base64_encode($toName) . "?= <{$to}>" : "<{$to}>";
+        $sb   = "=?UTF-8?B?" . base64_encode($subject) . "?=";
+        $mid  = '<' . md5(uniqid('', true)) . '@' . (explode('@', $from)[1] ?? 'mailszo') . '>';
+        $date = date('r');
+
+        // FIX: Add explicit Sender header matching the authenticated SMTP mailbox.
+        // Exim's sender callout verification checks the Sender/From domain against
+        // the actual mailbox.  When Sender is absent and From contains an alias that
+        // doesn't exist as a real mailbox, the verify fails with "No Such User Here".
+        // Setting Sender = the real SMTP login address (from_email) satisfies the check.
+        $senderHdr = "Sender: <{$from}>\r\n";
+
+        // Filter out missing/unreadable image files before building MIME
+        $inlineImages = array_values(array_filter($inlineImages,
+            fn($i) => !empty($i['path']) && file_exists($i['path']) && is_readable($i['path'])
+        ));
+
+        if (!empty($inlineImages)) {
+            /*
+             * Correct MIME structure for inline images (renders in Gmail + Outlook):
+             *
+             * multipart/mixed
+             *   └── multipart/related; type="text/html"
+             *         ├── multipart/alternative
+             *         │     ├── text/plain
+             *         │     └── text/html  ← references cid: images
+             *         └── image parts (Content-ID: <cid>)
+             */
+            $bMixed   = '----=_MX' . bin2hex(random_bytes(8));
+            $bRelated = '----=_RL' . bin2hex(random_bytes(8));
+            $bAlt     = '----=_AL' . bin2hex(random_bytes(8));
+
+            $msg  = "From: {$fd}\r\n";
+            $msg .= "To: {$td}\r\n";
+            $msg .= "Reply-To: {$fd}\r\n";
+            $msg .= $senderHdr;
+            $msg .= "Return-Path: <{$from}>\r\n";
+            $msg .= "Subject: {$sb}\r\n";
+            $msg .= "Date: {$date}\r\n";
+            $msg .= "Message-ID: {$mid}\r\n";
+            $msg .= "MIME-Version: 1.0\r\n";
+            $msg .= "Content-Type: multipart/mixed; boundary=\"{$bMixed}\"\r\n";
+            $msg .= "X-Mailer: MailsZo v4\r\n";
+            $msg .= "\r\n";
+
+            $msg .= "--{$bMixed}\r\n";
+            $msg .= "Content-Type: multipart/related; boundary=\"{$bRelated}\"; type=\"multipart/alternative\"\r\n";
+            $msg .= "\r\n";
+
+            $msg .= "--{$bRelated}\r\n";
+            $msg .= "Content-Type: multipart/alternative; boundary=\"{$bAlt}\"\r\n";
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}\r\n";
+            $msg .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $msg .= "Content-Transfer-Encoding: quoted-printable\r\n";
+            $msg .= "\r\n";
+            $msg .= quoted_printable_encode($text ?: strip_tags($html));
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}\r\n";
+            $msg .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $msg .= "Content-Transfer-Encoding: quoted-printable\r\n";
+            $msg .= "\r\n";
+            $msg .= quoted_printable_encode($html);
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}--\r\n";
+
+            foreach ($inlineImages as $img) {
+                $data = chunk_split(base64_encode(file_get_contents($img['path'])));
+                $mime = $img['mime'] ?? 'image/jpeg';
+                $name = basename($img['path']);
+                $cid  = $img['cid'];
+
+                $msg .= "--{$bRelated}\r\n";
+                $msg .= "Content-Type: {$mime}; name=\"{$name}\"\r\n";
+                $msg .= "Content-Transfer-Encoding: base64\r\n";
+                $msg .= "Content-Disposition: inline; filename=\"{$name}\"\r\n";
+                $msg .= "Content-ID: <{$cid}>\r\n";
+                $msg .= "X-Attachment-Id: {$cid}\r\n";
+                $msg .= "\r\n";
+                $msg .= $data;
+                $msg .= "\r\n";
+            }
+
+            $msg .= "--{$bRelated}--\r\n";
+            $msg .= "\r\n";
+            $msg .= "--{$bMixed}--\r\n";
+
+        } else {
+            // No images — simple multipart/alternative
+            $bAlt = '----=_AL' . bin2hex(random_bytes(8));
+
+            $msg  = "From: {$fd}\r\n";
+            $msg .= "To: {$td}\r\n";
+            $msg .= "Reply-To: {$fd}\r\n";
+            $msg .= $senderHdr;
+            $msg .= "Return-Path: <{$from}>\r\n";
+            $msg .= "Subject: {$sb}\r\n";
+            $msg .= "Date: {$date}\r\n";
+            $msg .= "Message-ID: {$mid}\r\n";
+            $msg .= "MIME-Version: 1.0\r\n";
+            $msg .= "Content-Type: multipart/alternative; boundary=\"{$bAlt}\"\r\n";
+            $msg .= "X-Mailer: MailsZo v4\r\n";
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}\r\n";
+            $msg .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $msg .= "Content-Transfer-Encoding: quoted-printable\r\n";
+            $msg .= "\r\n";
+            $msg .= quoted_printable_encode($text ?: strip_tags($html));
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}\r\n";
+            $msg .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $msg .= "Content-Transfer-Encoding: quoted-printable\r\n";
+            $msg .= "\r\n";
+            $msg .= quoted_printable_encode($html);
+            $msg .= "\r\n";
+
+            $msg .= "--{$bAlt}--\r\n";
+        }
+
+        // SMTP dot-stuffing: lines starting with "." must be doubled.
+        // Split on \r\n (not just \n) so base64 image lines are handled correctly.
+        $lines = explode("\r\n", $msg);
+        foreach ($lines as &$line) {
+            if (isset($line[0]) && $line[0] === '.') {
+                $line = '.' . $line;
+            }
+        }
+        unset($line);
+        $msg = implode("\r\n", $lines);
+
+        @fwrite($sock, $msg . "\r\n.\r\n");
+        $r = $this->read($sock);
+        $this->cmd($sock, 'QUIT');
+        @fclose($sock);
+
+        if (strpos($r, '250') === false) {
+            $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $r));
+            throw new Exception("Send failed: {$clean}");
+        }
+    }
+}
