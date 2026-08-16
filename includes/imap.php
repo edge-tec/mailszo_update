@@ -339,7 +339,7 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
         $tFetch = sprintf('A%03d', $tagNum++);
 
         // UID FETCH — use BODY.PEEK so we don't alter \Seen flag
-        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])\r\n");
+        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT MESSAGE-ID)])\r\n");
 
         // Read response, handling IMAP literal blocks inline
         $fetchLines  = '';
@@ -380,18 +380,20 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
         // Unfold RFC 5322 multi-line headers
         $headerBlock = preg_replace("/\r?\n([ \t])/", ' $1', $headerBlock);
 
-        $fromLine = ''; $subjectLine = '';
+        $fromLine = ''; $subjectLine = ''; $msgIdLine = '';
         foreach (explode("\n", $headerBlock) as $hLine) {
             $hLine = rtrim($hLine, "\r");
-            if ($fromLine    === '' && preg_match('/^From\s*:/i',    $hLine)) $fromLine    = $hLine;
-            if ($subjectLine === '' && preg_match('/^Subject\s*:/i', $hLine)) $subjectLine = $hLine;
-            if ($fromLine !== '' && $subjectLine !== '') break;
+            if ($fromLine    === '' && preg_match('/^From\s*:/i',       $hLine)) $fromLine    = $hLine;
+            if ($subjectLine === '' && preg_match('/^Subject\s*:/i',    $hLine)) $subjectLine = $hLine;
+            if ($msgIdLine   === '' && preg_match('/^Message-ID\s*:/i', $hLine)) $msgIdLine   = $hLine;
+            if ($fromLine !== '' && $subjectLine !== '' && $msgIdLine !== '') break;
         }
 
         if ($fromLine === '') continue; // No FROM header found
 
         $parsed  = imapParseFromHeader($fromLine);
         $subject = imapParseSubject($subjectLine);
+        $msgId   = trim(preg_replace('/^Message-ID\s*:\s*/i', '', $msgIdLine));
 
         if (!$parsed['email'] || !filter_var($parsed['email'], FILTER_VALIDATE_EMAIL)) continue;
 
@@ -399,6 +401,7 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
             'from_email' => $parsed['email'],
             'from_name'  => $parsed['name'],
             'subject'    => $subject,
+            'message_id' => $msgId,
             'uid'        => $uid,
         ];
     }

@@ -1789,7 +1789,7 @@ if ($res==='autoreply') {
         $debug=['image_ids_raw'=>$imgRaw,'image_ids_parsed'=>$imageIds,'inline_images'=>count($inlineImages),'img_path'=>__DIR__.'/uploads/images/'];
         foreach($inlineImages as $im) $debug['files'][]=basename($im['path']).' readable='.((int)is_readable($im['path']));
         try {
-            (new Mailer($smtpCfg))->send($toEmail,'Test User',$subject,$html,$text,$inlineImages);
+            (new Mailer($smtpCfg))->send($toEmail,'Test User',$subject,$html,$text,$inlineImages,['is_auto_reply'=>true]);
             jsonOut(['ok'=>true,'message'=>'✅ Test sent to '.$toEmail,'debug'=>$debug]);
         } catch(Exception $e) {
             jsonOut(['ok'=>false,'message'=>'Send failed: '.$e->getMessage(),'debug'=>$debug]);

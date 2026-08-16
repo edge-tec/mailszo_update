@@ -1032,6 +1032,7 @@ try {
             $fs=trim($msg['subject']??'');
             $uid=(int)($msg['uid']??0);
             $srcId=(int)($msg['source_imap_id']??0);
+            $inMsgId=trim($msg['message_id']??'');
             if(!$fe||!filter_var($fe,FILTER_VALIDATE_EMAIL))continue;
             if(isBlacklisted($fe,$userId))continue;
             // Subject Blacklist + "Has the Words" filter — additive to the
@@ -1082,16 +1083,17 @@ try {
                         "INSERT INTO autoreply_threads
                          (rule_id,from_email,from_name,subject_in,current_step,next_send_at,
                           reply_count,messages_received,awaiting_reply,status,
-                          current_imap_id,last_trigger_uid,last_trigger_imap_id)
-                         VALUES(?,?,?,?,1,?,1,1,0,'active',?,?,?)
+                          current_imap_id,last_trigger_uid,last_trigger_imap_id,last_msg_id)
+                         VALUES(?,?,?,?,1,?,1,1,0,'active',?,?,?,?)
                          ON DUPLICATE KEY UPDATE
                            from_name=IF(from_name=''OR from_name IS NULL,VALUES(from_name),from_name),
                            next_send_at=IF(status='active'AND next_send_at IS NULL,VALUES(next_send_at),next_send_at),
                            reply_count=reply_count+1,
                            last_trigger_uid=VALUES(last_trigger_uid),
-                           last_trigger_imap_id=VALUES(last_trigger_imap_id)"
+                           last_trigger_imap_id=VALUES(last_trigger_imap_id),
+                           last_msg_id=COALESCE(VALUES(last_msg_id),last_msg_id)"
                     )->execute([$ruleId,$fe,$fn,substr($fs,0,200),$step1at,
-                                $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null]);
+                                $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null]);
                     $arInserted = true;
                 } catch (Exception $arInsEx) {
                     // Legacy schema — retry with only base columns guaranteed
@@ -1339,7 +1341,12 @@ try {
             $smtpNameUsed=$mc['name']??'';
             $fromEmailUsed=$mc['from_email']??'';
             try{
-                (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages']);
+                $arOpts = [
+                    'is_auto_reply' => true,
+                    'in_reply_to'   => $thread['last_msg_id'] ?? '',
+                    'references'    => $thread['last_msg_id'] ?? '',
+                ];
+                (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages'], $arOpts);
                 // Log to autoreply_logs (rule-level detail)
                 db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
                     ->execute([$ruleId,$thread['id'],$thread['current_step'],$thread['from_email'],$smtpNameUsed]);

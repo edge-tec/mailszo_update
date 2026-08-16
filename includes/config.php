@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '9'; // bump this when adding new migrations
+    $migrationVersion = '10'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -93,6 +93,7 @@ function db() {
             ['autoreply_threads','current_imap_id',      "INT DEFAULT NULL"],
             ['autoreply_threads','last_trigger_uid',     "BIGINT UNSIGNED DEFAULT NULL"],
             ['autoreply_threads','last_trigger_imap_id', "INT DEFAULT NULL"],
+            ['autoreply_threads','last_msg_id',          "VARCHAR(255) DEFAULT NULL"],
             ['autoreply_rules',  'sequential_mode',      "TINYINT(1) NOT NULL DEFAULT 0"],
             ['autoreply_rules',  'imap2_id',             "INT DEFAULT NULL"],
             ['autoreply_rules',  'step1_smtp_ids',       "TEXT DEFAULT NULL"],

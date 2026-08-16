@@ -146,7 +146,7 @@ class Mailer {
      * Send an email. Supports embedded inline images via CID references.
      * $inlineImages = [['cid'=>'img1','path'=>'/full/path.jpg','mime'=>'image/jpeg'], ...]
      */
-    public function send($to, $toName, $subject, $html, $text = '', $inlineImages = []) {
+    public function send($to, $toName, $subject, $html, $text = '', $inlineImages = [], array $options = []) {
         $sock = $this->connect();
         $from = $this->cfg['from_email'];
 
@@ -198,12 +198,41 @@ class Mailer {
         $mid  = '<' . md5(uniqid('', true)) . '@' . (explode('@', $from)[1] ?? 'mailszo') . '>';
         $date = date('r');
 
-        // FIX: Add explicit Sender header matching the authenticated SMTP mailbox.
-        // Exim's sender callout verification checks the Sender/From domain against
-        // the actual mailbox.  When Sender is absent and From contains an alias that
-        // doesn't exist as a real mailbox, the verify fails with "No Such User Here".
-        // Setting Sender = the real SMTP login address (from_email) satisfies the check.
-        $senderHdr = "Sender: <{$from}>\r\n";
+        // Optional headers & Auto-Reply RFC 3834 compliance
+        $isAutoReply = !empty($options['is_auto_reply']);
+        $inReplyTo   = trim($options['in_reply_to'] ?? '');
+        $references  = trim($options['references'] ?? '');
+        $replyToVal  = trim($options['reply_to'] ?? '');
+
+        $replyToHdr = $replyToVal ? "Reply-To: <{$replyToVal}>\r\n" : "Reply-To: {$fd}\r\n";
+
+        // Sender header: RFC 5322 §3.6.2 specifies Sender SHOULD NOT be present when From == Sender
+        $senderHdr = '';
+        if (!empty($options['sender']) && strtolower(trim($options['sender'])) !== strtolower($from)) {
+            $senderHdr = "Sender: <" . trim($options['sender']) . ">\r\n";
+        }
+
+        // Auto-reply headers (RFC 3834 compliance)
+        $arHdrs = '';
+        if ($isAutoReply) {
+            $arHdrs .= "Auto-Submitted: auto-replied\r\n";
+            $arHdrs .= "X-Auto-Response-Suppress: All\r\n";
+            $arHdrs .= "Precedence: auto_reply\r\n";
+        }
+
+        // Threading headers
+        $threadHdrs = '';
+        if ($inReplyTo) {
+            $formattedInReplyTo = (strpos($inReplyTo, '<') === false) ? "<{$inReplyTo}>" : $inReplyTo;
+            $threadHdrs .= "In-Reply-To: {$formattedInReplyTo}\r\n";
+        }
+        if ($references) {
+            $formattedRef = (strpos($references, '<') === false) ? "<{$references}>" : $references;
+            $threadHdrs .= "References: {$formattedRef}\r\n";
+        } elseif ($inReplyTo) {
+            $formattedInReplyTo = (strpos($inReplyTo, '<') === false) ? "<{$inReplyTo}>" : $inReplyTo;
+            $threadHdrs .= "References: {$formattedInReplyTo}\r\n";
+        }
 
         // Filter out missing/unreadable image files before building MIME
         $inlineImages = array_values(array_filter($inlineImages,
@@ -227,9 +256,10 @@ class Mailer {
 
             $msg  = "From: {$fd}\r\n";
             $msg .= "To: {$td}\r\n";
-            $msg .= "Reply-To: {$fd}\r\n";
-            $msg .= $senderHdr;
-            $msg .= "Return-Path: <{$from}>\r\n";
+            $msg .= $replyToHdr;
+            if ($senderHdr) $msg .= $senderHdr;
+            if ($arHdrs) $msg .= $arHdrs;
+            if ($threadHdrs) $msg .= $threadHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";
@@ -289,9 +319,10 @@ class Mailer {
 
             $msg  = "From: {$fd}\r\n";
             $msg .= "To: {$td}\r\n";
-            $msg .= "Reply-To: {$fd}\r\n";
-            $msg .= $senderHdr;
-            $msg .= "Return-Path: <{$from}>\r\n";
+            $msg .= $replyToHdr;
+            if ($senderHdr) $msg .= $senderHdr;
+            if ($arHdrs) $msg .= $arHdrs;
+            if ($threadHdrs) $msg .= $threadHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";

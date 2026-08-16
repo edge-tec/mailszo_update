@@ -5,3 +5,4 @@ cookies.txt
 *.log
 uploads/images/*
 !uploads/images/.gitkeep
+scratch/
