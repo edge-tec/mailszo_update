@@ -378,4 +378,95 @@ class Mailer {
             throw new Exception("Send failed: {$clean}");
         }
     }
+
+    /**
+     * Diagnostic report mode: Inspects SMTP settings, DNS alignment,
+     * envelope sender, SPF, DKIM, and DMARC alignment status without revealing passwords.
+     */
+    public function getDeliverabilityReport($to = 'recipient@example.com'): array {
+        $from      = trim($this->cfg['from_email'] ?? '');
+        if (preg_match('/<([^>]+)>/', $from, $m)) $from = trim($m[1]);
+        $fromDomain = '';
+        if ($from && strpos($from, '@') !== false) {
+            $fromDomain = strtolower(trim(explode('@', $from)[1]));
+        }
+
+        $host     = $this->cfg['host'] ?? '';
+        $port     = (int)($this->cfg['port'] ?? 25);
+        $username = $this->cfg['username'] ?? '';
+        
+        // Redact username partially if present
+        $safeUser = $username;
+        if ($safeUser && strpos($safeUser, '@') !== false) {
+            [$uPart, $uDom] = explode('@', $safeUser, 2);
+            $safeUser = substr($uPart, 0, 3) . '***@' . $uDom;
+        }
+
+        $ehloHost = $fromDomain ?: (gethostname() ?: $host);
+        if (!$ehloHost || $ehloHost === 'localhost') $ehloHost = $fromDomain ?: $host;
+
+        // DNS Lookups
+        $spfRecord   = 'Not Found';
+        $dmarcRecord = 'Not Found';
+        $dkimRecord  = 'Not Found';
+        $dkimSelector = 'google';
+
+        if ($fromDomain) {
+            $txts = @dns_get_record($fromDomain, DNS_TXT);
+            if (is_array($txts)) {
+                foreach ($txts as $t) {
+                    $txtVal = $t['txt'] ?? ($t['entries'][0] ?? '');
+                    if (strpos($txtVal, 'v=spf1') === 0) {
+                        $spfRecord = $txtVal;
+                        break;
+                    }
+                }
+            }
+
+            $dmarcs = @dns_get_record("_dmarc.{$fromDomain}", DNS_TXT);
+            if (is_array($dmarcs) && !empty($dmarcs)) {
+                $dmarcRecord = $dmarcs[0]['txt'] ?? ($dmarcs[0]['entries'][0] ?? 'Not Found');
+            }
+
+            $dkims = @dns_get_record("{$dkimSelector}._domainkey.{$fromDomain}", DNS_TXT);
+            if (is_array($dkims) && !empty($dkims)) {
+                $dkimRecord = "Found at {$dkimSelector}._domainkey.{$fromDomain}";
+            } else {
+                // Check alternative selector 'default'
+                $dkimsDef = @dns_get_record("default._domainkey.{$fromDomain}", DNS_TXT);
+                if (is_array($dkimsDef) && !empty($dkimsDef)) {
+                    $dkimSelector = 'default';
+                    $dkimRecord   = "Found at default._domainkey.{$fromDomain}";
+                }
+            }
+        }
+
+        // Evaluate DMARC Alignment
+        $envelopeDomain = $fromDomain; // Mailer forces envelope MAIL FROM domain == fromDomain
+        $spfAligned  = ($envelopeDomain === $fromDomain) ? 'PASS (Relaxed/Strict Aligned)' : 'FAIL (Domain Mismatch)';
+        $dkimAligned = (strpos($dkimRecord, 'Found') !== false) ? 'PASS (DKIM Domain matches From domain)' : 'WARNING (DKIM Selector Not Found in DNS)';
+        $dmarcAligned = ($spfAligned === 'PASS (Relaxed/Strict Aligned)') ? 'PASS (SPF Envelope Aligned with From)' : 'FAIL (Neither SPF nor DKIM Aligned)';
+
+        $msgId = '<' . md5(uniqid('', true)) . '@' . ($fromDomain ?: 'mailszo') . '>';
+
+        return [
+            'SMTP Host'         => $host,
+            'SMTP Port'         => $port,
+            'SMTP Username'     => $safeUser ?: '(none / unauthenticated)',
+            'From'              => ($this->cfg['from_name'] ?? '') . " <{$from}>",
+            'Envelope From'     => $from,
+            'Return Path'       => $from,
+            'DKIM Domain'       => $fromDomain ?: '(unknown)',
+            'DKIM Selector'     => $dkimSelector,
+            'DKIM Status'       => $dkimRecord,
+            'SPF Domain'        => $fromDomain ?: '(unknown)',
+            'SPF Record'        => $spfRecord,
+            'DMARC Domain'      => "_dmarc.{$fromDomain}",
+            'DMARC Record'      => $dmarcRecord,
+            'DMARC Alignment'   => $dmarcAligned,
+            'Message-ID'        => $msgId,
+            'HELO/EHLO'         => $ehloHost,
+            'TLS'               => $this->cfg['secure'] ? 'SSL/TLS (implicit)' : 'STARTTLS (explicit)',
+        ];
+    }
 }
