@@ -234,6 +234,15 @@ class Mailer {
             $threadHdrs .= "References: {$formattedInReplyTo}\r\n";
         }
 
+        // Optional List-Unsubscribe headers (RFC 8058 One-Click compliance)
+        $unsubUrl  = trim($options['list_unsubscribe'] ?? '');
+        $unsubHdrs = '';
+        if ($unsubUrl) {
+            $formattedUnsub = (strpos($unsubUrl, '<') === false) ? "<{$unsubUrl}>" : $unsubUrl;
+            $unsubHdrs .= "List-Unsubscribe: {$formattedUnsub}\r\n";
+            $unsubHdrs .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
+        }
+
         // Filter out missing/unreadable image files before building MIME
         $inlineImages = array_values(array_filter($inlineImages,
             fn($i) => !empty($i['path']) && file_exists($i['path']) && is_readable($i['path'])
@@ -260,12 +269,12 @@ class Mailer {
             if ($senderHdr) $msg .= $senderHdr;
             if ($arHdrs) $msg .= $arHdrs;
             if ($threadHdrs) $msg .= $threadHdrs;
+            if ($unsubHdrs) $msg .= $unsubHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";
             $msg .= "MIME-Version: 1.0\r\n";
             $msg .= "Content-Type: multipart/mixed; boundary=\"{$bMixed}\"\r\n";
-            $msg .= "X-Mailer: MailsZo v4\r\n";
             $msg .= "\r\n";
 
             $msg .= "--{$bMixed}\r\n";
@@ -323,12 +332,12 @@ class Mailer {
             if ($senderHdr) $msg .= $senderHdr;
             if ($arHdrs) $msg .= $arHdrs;
             if ($threadHdrs) $msg .= $threadHdrs;
+            if ($unsubHdrs) $msg .= $unsubHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";
             $msg .= "MIME-Version: 1.0\r\n";
             $msg .= "Content-Type: multipart/alternative; boundary=\"{$bAlt}\"\r\n";
-            $msg .= "X-Mailer: MailsZo v4\r\n";
             $msg .= "\r\n";
 
             $msg .= "--{$bAlt}\r\n";
