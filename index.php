@@ -563,8 +563,124 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 }
 .fu-flow-table tbody td.s{color:var(--text);font-weight:600;}
 .fu-flow-table tbody td.adv strong{color:var(--accent);}
-.fu-flow-table tbody td.drop strong{color:var(--red);}
 .fu-flow-empty{text-align:center;padding:32px;color:var(--text3);}
+
+/* ══════════════════════════════════════════════════════════════════
+   VISUAL SEQUENCE TIMELINE (Interactive Live Follow-up Preview)
+   ══════════════════════════════════════════════════════════════════ */
+.seq-timeline{
+  display:flex;align-items:center;gap:0;overflow-x:auto;padding:16px 8px;margin-bottom:18px;
+  background:linear-gradient(135deg,rgba(14,20,32,0.95) 0%,rgba(19,28,46,0.9) 100%);
+  border:1px solid rgba(74,222,128,0.2);border-radius:12px;box-shadow:inset 0 1px 2px rgba(255,255,255,0.08),0 8px 24px rgba(0,0,0,0.4);
+}
+.seq-node{
+  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;
+  background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;
+  padding:10px 14px;min-width:120px;max-width:160px;position:relative;transition:all .2s cubic-bezier(.16,1,.3,1);
+}
+.seq-node:hover{
+  transform:translateY(-3px);border-color:var(--accent);box-shadow:0 6px 16px rgba(74,222,128,0.25);
+}
+.seq-node.seq-start{
+  border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.06);
+}
+.seq-node.seq-step{
+  border-color:rgba(74,222,128,0.3);background:rgba(74,222,128,0.04);
+}
+.seq-node-ic{font-size:22px;margin-bottom:4px;}
+.seq-node-title{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;}
+.seq-node-sub{font-size:9px;color:var(--text3);margin-top:2px;}
+.seq-arrow-wrap{
+  flex:0 0 70px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;
+}
+.seq-arrow-line{
+  height:2px;width:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));position:relative;
+}
+.seq-arrow-line::after{
+  content:'▶';position:absolute;right:-4px;top:-6px;font-size:9px;color:var(--accent);
+}
+.seq-delay-badge{
+  font-family:var(--mono);font-size:9px;font-weight:700;color:var(--accent);
+  background:rgba(14,20,32,0.95);border:1px solid rgba(74,222,128,0.35);
+  border-radius:10px;padding:2px 7px;white-space:nowrap;margin-bottom:4px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.5);
+}
+.seq-pulse{
+  width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;
+  box-shadow:0 0 8px var(--accent);animation:seqp 1.5s infinite;margin-right:4px;
+}
+@keyframes seqp{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.6}}
+
+/* Drag and Drop Step Card styling */
+.step-card-drag-handle{
+  cursor:grab;font-size:14px;color:var(--text3);padding:2px 6px;border-radius:4px;user-select:none;
+}
+.step-card-drag-handle:active{cursor:grabbing;}
+.step-card-dragging{opacity:0.4;border:2px dashed var(--accent)!important;}
+.step-card-dragover{border:2px dashed var(--accent2)!important;background:rgba(34,211,238,0.06)!important;}
+
+/* ══════════════════════════════════════════════════════════════════
+   PROFESSIONAL RICH TEXT COMPOSER & TOOLBAR
+   ══════════════════════════════════════════════════════════════════ */
+.rte-wrap{
+  background:var(--bg3);border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  display:flex;flex-direction:column;box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);transition:border-color .2s;
+}
+.rte-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 16px rgba(74,222,128,0.25);}
+.rte-toolbar{
+  background:linear-gradient(180deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0.02) 100%);
+  border-bottom:1px solid rgba(255,255,255,0.08);padding:6px 8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+}
+.rte-btn{
+  background:transparent;border:1px solid transparent;border-radius:5px;color:var(--text2);
+  min-width:26px;height:26px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.rte-btn:hover{
+  background:rgba(255,255,255,0.08);color:var(--text);border-color:rgba(255,255,255,0.12);
+}
+.rte-btn.active{
+  background:rgba(74,222,128,0.2);color:var(--accent);border-color:rgba(74,222,128,0.4);font-weight:700;
+}
+.rte-sep{width:1px;height:18px;background:rgba(255,255,255,0.1);margin:0 3px;}
+.rte-select{
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:5px;
+  color:var(--text2);font-size:11px;padding:3px 6px;height:26px;outline:none;
+}
+.rte-select option{background:#0e1420;color:var(--text);}
+.rte-editor{
+  min-height:160px;max-height:450px;overflow-y:auto;padding:14px 16px;color:var(--text);
+  font-family:var(--font);font-size:13px;line-height:1.6;outline:none;background:transparent;
+}
+.rte-editor p{margin:0 0 10px;}
+.rte-editor h1{font-size:20px;font-weight:700;margin:12px 0 8px;color:var(--text);}
+.rte-editor h2{font-size:16px;font-weight:700;margin:10px 0 6px;color:var(--text);}
+.rte-editor h3{font-size:14px;font-weight:700;margin:8px 0 4px;color:var(--text);}
+.rte-editor blockquote{border-left:3px solid var(--accent);padding-left:10px;margin:8px 0;color:var(--text2);font-style:italic;}
+.rte-editor table{border-collapse:collapse;width:100%;margin:10px 0;}
+.rte-editor th,.rte-editor td{border:1px solid rgba(255,255,255,0.15);padding:6px 10px;}
+.rte-editor a{color:var(--accent2);text-decoration:underline;}
+.rte-editor img{max-width:100%;height:auto;border-radius:6px;}
+
+/* Device Frame Preview */
+.device-preview-box{
+  background:#090c12;border:1px solid var(--border);border-radius:12px;padding:16px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;
+}
+.device-frame-desktop{width:100%;height:400px;border:none;background:#fff;border-radius:8px;}
+.device-frame-mobile{width:375px;height:520px;border:12px solid #1e293b;border-radius:36px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,0.8);}
+
+/* System Logs Event Badges */
+.sys-badge{
+  font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:3px;
+}
+.sys-badge-sent{background:rgba(74,222,128,0.15);color:var(--accent);border:1px solid rgba(74,222,128,0.3);}
+.sys-badge-opened{background:rgba(34,211,238,0.15);color:var(--accent2);border:1px solid rgba(34,211,238,0.3);box-shadow:0 0 8px rgba(34,211,238,0.2);}
+.sys-badge-clicked{background:rgba(167,139,250,0.15);color:var(--purple);border:1px solid rgba(167,139,250,0.3);box-shadow:0 0 8px rgba(167,139,250,0.2);}
+.sys-badge-queued{background:rgba(245,158,11,0.15);color:var(--accent3);border:1px solid rgba(245,158,11,0.3);}
+.sys-badge-retry{background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3);}
+.sys-badge-failed{background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3);}
+.sys-badge-unsubscribed{background:rgba(148,163,184,0.15);color:#94a3b8;border:1px solid rgba(148,163,184,0.3);}
 </style>
 <!-- Chart.js — required by all canvases on the unified Live Reporting
      Dashboard (hourly chart, 14-day bars, step-wise stacked bar). Was
@@ -598,15 +714,17 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     <div class="ni" onclick="nav('stepreporting')" id="nav-stepreporting"><span class="ni-ic">📑</span>Step-by-Step Reporting</div>
     <span class="nsec">Email</span>
     <div class="ni" onclick="nav('campaigns')" id="nav-campaigns"><span class="ni-ic">📤</span>Campaigns</div>
+    <div class="ni" onclick="nav('templates')" id="nav-templates"><span class="ni-ic">📝</span>Templates</div>
     <div class="ni" onclick="nav('images')" id="nav-images"><span class="ni-ic">🖼️</span>Images</div>
     <div class="ni" onclick="nav('lists')" id="nav-lists"><span class="ni-ic">👥</span>Email Lists</div>
     <span class="nsec">Automation</span>
     <div class="ni" onclick="nav('imap')" id="nav-imap" style="display:none"><span class="ni-ic">📥</span>IMAP Accounts</div>
     <div class="ni" onclick="nav('autoreply')" id="nav-autoreply"><span class="ni-ic">🔁</span>Auto-Reply</div>
+    <div class="ni" onclick="nav('mailrouting')" id="nav-mailrouting"><span class="ni-ic">🔀</span>Smart Mail Routing</div>
     <div class="ni" onclick="nav('followup')" id="nav-followup"><span class="ni-ic">📬</span>Follow-Up</div>
     <div class="ni" onclick="nav('blacklist')" id="nav-blacklist"><span class="ni-ic">🚫</span>Blacklist</div>
-    <span class="nsec">Logs</span>
-
+    <span class="nsec">Logs & Activity</span>
+    <div class="ni" onclick="nav('systemlogs')" id="nav-systemlogs"><span class="ni-ic">🛰️</span>System Activity Logs</div>
     <span class="nsec">Leads</span>
     <div class="ni" onclick="nav('leads')" id="nav-leads"><span class="ni-ic">🗄️</span>Leads Manager</div>
     <span class="nsec">Settings</span>
@@ -619,6 +737,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
         <span class="nsec">⚡ Admin Panel</span>
         <div class="ni" onclick="nav('users')" id="nav-users"><span class="ni-ic">👤</span>User Management</div>
         <div class="ni" onclick="nav('cron')" id="nav-cron"><span class="ni-ic">⚙️</span>Cron Manager</div>
+        <div class="ni" onclick="nav('mailrouting')" id="nav-admin-mailrouting"><span class="ni-ic">🔀</span>Smart Mail Routing</div>
         <div class="ni" onclick="nav('alllogs')" id="nav-alllogs"><span class="ni-ic">📋</span>All Send Logs</div>
       </div>
     </div>
@@ -1423,6 +1542,188 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     </div>
   </div>
 
+  <!-- SMART MAIL ROUTING STUDIO -->
+  <div class="page" id="page-mailrouting">
+    <!-- Header & KPIs -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;display:flex;align-items:center;gap:8px;margin:0">
+          🔀 Smart Mail Routing Studio
+          <span class="badge b-purple" style="font-size:11px">Multi-IMAP & Multi-SMTP Failover</span>
+        </h2>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">
+          Automatic Reply Routing (Gmail Priority → SMTP #1 Reply → Secondary Mailbox #2 Migration) with full thread persistence.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()">↺ Refresh</button>
+        <button class="btn btn-emerald btn-sm" onclick="triggerRoutingCron()">⚡ Run Routing Cron</button>
+      </div>
+    </div>
+
+    <!-- KPI Stats Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px">
+      <div class="sc" style="--sc-c:var(--blue)">
+        <div class="sc-lbl">Total Leads (Gmail)</div>
+        <div class="sc-val" id="mr-stat-leads">0</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">📥 Inbound from IMAP #1</div>
+      </div>
+      <div class="sc" style="--sc-c:var(--purple)">
+        <div class="sc-lbl">First Replies Dispatched</div>
+        <div class="sc-val" id="mr-stat-first-replies">0</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">📤 Sent via SMTP #1 (Reply-To: #2)</div>
+      </div>
+      <div class="sc" style="--sc-c:var(--emerald)">
+        <div class="sc-lbl">Migrated to Mailbox #2</div>
+        <div class="sc-val" id="mr-stat-migrated">0</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">🔄 Attached to Secondary IMAP/SMTP</div>
+      </div>
+      <div class="sc" style="--sc-c:var(--amber)">
+        <div class="sc-lbl">Follow-Ups Active</div>
+        <div class="sc-val" id="mr-stat-followups">0</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">⏳ Simultaneous timer sequence</div>
+      </div>
+      <div class="sc" style="--sc-c:var(--teal)">
+        <div class="sc-lbl">Active Conversations</div>
+        <div class="sc-val" id="mr-stat-active">0</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">💬 Ongoing chat threads</div>
+      </div>
+    </div>
+
+    <!-- Live Smart Routing Flow Architecture Visualizer -->
+    <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(30,41,59,0.7),rgba(15,23,42,0.9));border:1px solid rgba(167,139,250,0.25)">
+      <div class="card-hd" style="border-bottom:1px solid rgba(255,255,255,0.08)">
+        <h3 style="display:flex;align-items:center;gap:8px;color:#f8fafc">
+          <span>⚡</span> Smart Email Routing Engine Architecture
+        </h3>
+        <span class="badge b-purple" style="font-size:10px">Up to 10 IMAP + 10 SMTP Accounts Supported</span>
+      </div>
+      <div class="card-body" style="padding:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+          <!-- Step 1 Box -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:12px">
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--blue);margin-bottom:6px">
+              <span>1️⃣</span> Lead Reception
+            </div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.4">
+              <strong>IMAP #1 (Gmail Priority)</strong> captures new inbound email.<br>
+              Extracts <code class="mono">Message-ID</code>, <code class="mono">Subject</code>, assigns <span class="badge b-blue" style="font-size:9px">NEW_LEAD</span>.
+            </div>
+          </div>
+          <!-- Step 2 Box -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:12px">
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--purple);margin-bottom:6px">
+              <span>2️⃣</span> Simultaneous First Reply + Follow-Up
+            </div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.4">
+              <strong>SMTP #1 (Primary Sender)</strong> sends first response with <code class="mono">Reply-To: SMTP #2</code>.<br>
+              Follow-Up queue starts simultaneously (delay timer).
+            </div>
+          </div>
+          <!-- Step 3 Box -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:12px">
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--emerald);margin-bottom:6px">
+              <span>3️⃣</span> Mailbox Migration
+            </div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.4">
+              Lead replies → lands in <strong>IMAP #2 (Secondary Inbox)</strong>.<br>
+              Conversation stage updates to <span class="badge b-green" style="font-size:9px">MOVED_TO_SECONDARY</span>.
+            </div>
+          </div>
+          <!-- Step 4 Box -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px">
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--amber);margin-bottom:6px">
+              <span>4️⃣</span> Continuous Chat Mode
+            </div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.4">
+              All subsequent replies send from <strong>SMTP #2</strong> with <code class="mono">In-Reply-To</code> headers.<br>
+              Never switches back to SMTP #1.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Conversation Threads Table -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
+        <h3>💬 Active Smart Conversation Threads</h3>
+        <select class="fsel" id="mr-stage-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRouting()">
+          <option value="">All Stages</option>
+          <option value="NEW_LEAD">🔵 NEW_LEAD</option>
+          <option value="FIRST_REPLY_SENT">🟣 FIRST_REPLY_SENT</option>
+          <option value="MOVED_TO_SECONDARY">🟢 MOVED_TO_SECONDARY</option>
+          <option value="FOLLOWUP_RUNNING">🟠 FOLLOWUP_RUNNING</option>
+          <option value="FOLLOWUP_COMPLETED">⚪ FOLLOWUP_COMPLETED</option>
+        </select>
+        <select class="fsel" id="mr-mailbox-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRouting()">
+          <option value="">All Mailboxes</option>
+          <option value="primary">Primary (Gmail)</option>
+          <option value="secondary">Secondary (Mailbox #2)</option>
+        </select>
+        <input class="fi" id="mr-thread-search" placeholder="Search email / subject / thread ID…" style="width:200px;padding:4px 8px;font-size:12px" oninput="mrSearchDebounce()">
+        <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()">↺ Refresh</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tw"><table>
+          <thead>
+            <tr>
+              <th>Lead Email & Name</th>
+              <th>Rule & Subject</th>
+              <th>Active Mailbox</th>
+              <th>Stage</th>
+              <th>Replies In / Step</th>
+              <th>Follow-Up Status</th>
+              <th>Last Activity</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="mr-threads-body">
+            <tr class="empty-row"><td colspan="8">Loading conversation threads…</td></tr>
+          </tbody>
+        </table></div>
+        <div id="mr-threads-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-top:1px solid var(--border)"></div>
+      </div>
+    </div>
+
+    <!-- Live Mail Routing Audit Log Stream -->
+    <div class="card">
+      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
+        <h3>🛰️ Mail Routing Audit Trail & Live Log Stream</h3>
+        <select class="fsel" id="mr-log-event-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRoutingLogs()">
+          <option value="">All Events</option>
+          <option value="lead_received">📥 Lead Received</option>
+          <option value="first_reply_sent">📤 First Reply Sent</option>
+          <option value="mailbox_migrated">🔄 Mailbox Migrated</option>
+          <option value="chat_reply_sent">💬 Chat Reply Sent</option>
+          <option value="followup_scheduled">⏱ Follow-Up Scheduled</option>
+          <option value="followup_sent">📬 Follow-Up Sent</option>
+          <option value="duplicate_ignored">🛡️ Duplicate Ignored</option>
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="clearMailRoutingLogs()">🗑 Clear Routing Logs</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tw"><table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Event</th>
+              <th>Lead Email</th>
+              <th>Routing Mailbox / SMTP</th>
+              <th>Stage Transition</th>
+              <th>Status</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="mr-logs-body">
+            <tr class="empty-row"><td colspan="7">Loading routing audit logs…</td></tr>
+          </tbody>
+        </table></div>
+        <div id="mr-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-top:1px solid var(--border)"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- FOLLOW-UP -->
   <div class="page" id="page-followup">
     <div class="card" style="margin-bottom:18px">
@@ -1749,6 +2050,66 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     </div>
   </div><!-- /#page-blacklist -->
 
+  <!-- ══ EMAIL TEMPLATES PAGE ══ -->
+  <div class="page" id="page-templates">
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-hd">
+        <h3>📝 Email Templates</h3>
+        <button class="btn btn-secondary btn-sm" onclick="loadTemplates()">↺ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">＋ Create Template</button>
+      </div>
+      <div class="info-box" style="margin:0;border-radius:0;border-left:0;border-right:0;border-top:0">
+        Reusable HTML email templates with rich formatting, buttons, responsive design, spintax, and variable tags (<code>{{NAME}}</code>, <code>{{EMAIL}}</code>, <code>{{UNSUBSCRIBE_URL}}</code>).
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tw"><table>
+          <thead><tr><th>Name</th><th>Subject</th><th>Owner</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="templates-body"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SYSTEM & ACTIVITY LOGS PAGE ══ -->
+  <div class="page" id="page-systemlogs">
+    <!-- Stat row -->
+    <div id="sys-stats-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <div class="sc" style="--sc-c:var(--accent);flex:1;min-width:130px"><div class="sc-lbl">📤 Sent Today</div><div class="sc-val" id="sys-stat-sent-today" style="color:var(--accent)">—</div></div>
+      <div class="sc" style="--sc-c:var(--accent2);flex:1;min-width:130px"><div class="sc-lbl">👁️ Opened</div><div class="sc-val" id="sys-stat-opened" style="color:var(--accent2)">—</div><div class="sc-sub" id="sys-stat-open-rate">—% open rate</div></div>
+      <div class="sc" style="--sc-c:var(--purple);flex:1;min-width:130px"><div class="sc-lbl">🖱️ Clicked</div><div class="sc-val" id="sys-stat-clicked" style="color:var(--purple)">—</div><div class="sc-sub" id="sys-stat-click-rate">—% CTR</div></div>
+      <div class="sc" style="--sc-c:var(--accent3);flex:1;min-width:130px"><div class="sc-lbl">🕒 Scheduled FU</div><div class="sc-val" id="sys-stat-sched-fu" style="color:var(--accent3)">—</div></div>
+      <div class="sc" style="--sc-c:#fb923c;flex:1;min-width:130px"><div class="sc-lbl">🔄 Retry Queue</div><div class="sc-val" id="sys-stat-retry-queue" style="color:#fb923c">—</div></div>
+      <div class="sc" style="--sc-c:var(--red);flex:1;min-width:130px"><div class="sc-lbl">❌ Failed Today</div><div class="sc-val" id="sys-stat-failed-today" style="color:var(--red)">—</div></div>
+      <div class="sc" style="--sc-c:#94a3b8;flex:1;min-width:130px"><div class="sc-lbl">🛑 Unsubscribed</div><div class="sc-val" id="sys-stat-unsub" style="color:#94a3b8">—</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
+        <h3>🛰️ System Activity Logs</h3>
+        <select class="fsel" id="sys-event-filter" style="width:auto;padding:5px 10px;font-size:12px" onchange="loadSystemLogs(1)">
+          <option value="">All Events</option>
+          <option value="sent">📤 Sent</option>
+          <option value="opened">👁️ Opened</option>
+          <option value="clicked">🖱️ Clicked</option>
+          <option value="queued">🕒 Queued</option>
+          <option value="retry">🔄 Retry</option>
+          <option value="failed">❌ Failed</option>
+          <option value="unsubscribed">🛑 Unsubscribed</option>
+        </select>
+        <input class="fi" id="sys-email-filter" placeholder="Search email…" style="width:180px;padding:5px 10px;font-size:12px" oninput="sysLogDebounce()">
+        <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(1)">↺ Refresh</button>
+        <button class="btn btn-danger btn-sm" onclick="clearSystemLogs()">🗑 Clear Logs</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tw"><table>
+          <thead><tr><th>Event</th><th>Recipient Email</th><th>Details / Link / Reason</th><th>SMTP</th><th>IP Address</th><th>User Agent</th><th>Time</th></tr></thead>
+          <tbody id="sys-logs-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+        </table></div>
+        <div id="sys-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /#main -->
 
 <!-- ══ MODALS ══ -->
@@ -1800,6 +2161,66 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
         <select class="fsel" id="ar-owner-sel"></select>
         <div class="fhint">Choose which account owns this rule. After save, only the selected user (and admin) will see it.</div>
       </div>
+      <!-- ══ SMART MAIL ROUTING (Multi-Account Setup) ══ -->
+      <div style="margin-bottom:16px;padding:14px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.25);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--purple)">
+            <input type="checkbox" id="ar-enable-smart" onchange="toggleArSmartRoutingUI()" style="transform:scale(1.2)">
+            <span>🔀 Enable Smart Mail Routing (Multi-IMAP / Multi-SMTP Failover)</span>
+          </label>
+          <span class="badge b-purple" style="font-size:10px">10 IMAP + 10 SMTP</span>
+        </div>
+        <div id="ar-smart-routing-fields" style="display:none">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.4">
+            Automatically routes incoming leads from <strong>Primary Gmail</strong>, sends first response from <strong>SMTP #1</strong> with <code class="mono">Reply-To: SMTP #2</code>, and permanently migrates the conversation to <strong>IMAP/SMTP #2</strong> upon reply.
+          </div>
+          <div class="frow fc2" style="margin-bottom:10px">
+            <div class="fg" style="margin:0">
+              <label class="fl">IMAP #1 — Primary Lead Receiver (Gmail) *</label>
+              <select class="fsel" id="ar-smart-primary-imap"><option value="">— Select Primary Gmail Inbox —</option></select>
+            </div>
+            <div class="fg" style="margin:0">
+              <label class="fl">IMAP #2 — Secondary Inbox (Ongoing Replies) *</label>
+              <select class="fsel" id="ar-smart-secondary-imap"><option value="">— Select Secondary Mailbox —</option></select>
+            </div>
+          </div>
+          <div class="frow fc2" style="margin-bottom:10px">
+            <div class="fg" style="margin:0">
+              <label class="fl">SMTP #1 — Primary Sender (First Reply Only) *</label>
+              <select class="fsel" id="ar-smart-primary-smtp"><option value="">— Select Primary SMTP #1 —</option></select>
+            </div>
+            <div class="fg" style="margin:0">
+              <label class="fl">SMTP #2 — Secondary Sender & Reply-To Target *</label>
+              <select class="fsel" id="ar-smart-secondary-smtp"><option value="">— Select Secondary SMTP #2 —</option></select>
+            </div>
+          </div>
+          <div class="frow fc2" style="margin-bottom:10px">
+            <div class="fg" style="margin:0">
+              <label class="fl">IMAP #3 — Backup Inbox <span class="flh">(optional failover)</span></label>
+              <select class="fsel" id="ar-smart-backup-imap"><option value="">— None (Optional Backup) —</option></select>
+            </div>
+            <div class="fg" style="margin:0">
+              <label class="fl">Linked Follow-Up Rule <span class="flh">(Starts simultaneously on delay)</span></label>
+              <select class="fsel" id="ar-smart-fu-rule"><option value="">— None (No Auto Follow-Up) —</option></select>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid rgba(167,139,250,0.15)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="ar-smart-replyto-switch" checked>
+              <span>Enable Automatic Reply-To Switching</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="ar-smart-always-fu" checked>
+              <span>Always Send Follow-Up (Unconditional delay)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="ar-smart-gmail-priority" checked>
+              <span>Gmail Priority Polling</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div class="fg" style="margin-bottom:14px" id="ar-imap-admin-row">
         <label class="fl">IMAP 1 — First Contact * <span class="flh">(inbox where new leads arrive; AR1 trigger; lead is auto-deleted from this inbox after reply 1 is sent)</span></label>
         <div style="display:flex;gap:8px;align-items:center">
@@ -1937,19 +2358,111 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
           <input class="tag-inp" id="fu-from-inp" placeholder="Name <email> or email → Enter" onkeydown="fuFromKey(event)">
         </div>
       </div>
+
+      <!-- AUTOMATIC TIME DELAY FOLLOW-UP BANNER -->
+      <div style="background:linear-gradient(135deg,rgba(74,222,128,0.08) 0%,rgba(34,211,238,0.06) 100%);border:1px solid rgba(74,222,128,0.25);border-radius:10px;padding:12px 16px;margin:16px 0 12px;display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">⏱️</div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);display:block">Automatic Sequential Time Delay Follow-Up</div>
+          <div style="font-size:11px;color:var(--text2)">রিসিভার ইমেইল ওপেন/রিড না করলেও প্রতিটি Follow-up নির্ধারিত সময় (Delay) অনুযায়ী পর্যায়ক্রমে স্বয়ংক্রিয়ভাবে Send হবে।</div>
+        </div>
+      </div>
+
+      <!-- LIVE SEQUENCE TIMELINE PREVIEW -->
+      <div class="stitle">Live Sequence Timeline <span style="font-size:10px;font-weight:400;text-transform:none;color:var(--text3)">(Sequential delay preview)</span></div>
+      <div id="fu-timeline-preview" class="seq-timeline"></div>
+
       <div class="stitle">Follow-Up Messages <span id="fu-step-label" style="font-size:10px;font-weight:400;text-transform:none;color:var(--text3)">0 messages</span></div>
-      <!-- Quota banner — same role as the AR banner above; shows the
-           admin-set follow-up message cap and how many remain. -->
+      <!-- Quota banner -->
       <div id="fu-quota-banner" class="al" style="display:none;margin-bottom:10px;padding:8px 10px;font-size:12px"></div>
       <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-blue btn-sm" id="fu-add-step-btn" onclick="fuAddStep()">＋ Add Message</button>
-        <span style="font-size:11px;color:var(--text3)">Max 15 messages. Each sends after its set delay from the previous one.</span>
+        <span style="font-size:11px;color:var(--text3)">Drag & drop cards or adjust delays. Each sends sequentially after previous step.</span>
       </div>
       <div id="fu-steps-wrap"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('fu-modal')">Cancel</button>
       <button class="btn btn-primary" id="fu-save-btn" onclick="saveFu()">💾 Save Rule</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EMAIL TEMPLATE EDITOR MODAL ══ -->
+<div class="modal-bg" id="template-modal">
+  <div class="modal modal-lg">
+    <div class="modal-hd"><h3 id="template-modal-title">📝 Email Template</h3><span class="modal-x" onclick="closeModal('template-modal')">✕</span></div>
+    <div class="modal-body">
+      <div id="template-al" class="al"></div>
+      <input type="hidden" id="tmpl-id">
+      <div class="fg"><label class="fl">Template Name *</label><input class="fi" id="tmpl-name" placeholder="e.g. Follow-Up #1 — Value Proposition"></div>
+      <div class="fg"><label class="fl">Subject Line</label><input class="fi" id="tmpl-subject" placeholder="Subject line with {{NAME}} or spintax..."></div>
+      <div class="fg">
+        <label class="fl">HTML Body — Rich Text Composer</label>
+        <div class="rte-wrap">
+          <div class="rte-toolbar" id="tmpl-rte-bar"></div>
+          <div class="rte-editor" id="tmpl-html-editor" contenteditable="true"></div>
+          <textarea class="fta" id="tmpl-html-raw" style="display:none;min-height:180px;border:none;border-radius:0;background:var(--bg4);font-family:var(--mono);font-size:12px"></textarea>
+        </div>
+      </div>
+      <div class="fg"><label class="fl">Plain Text (Optional fallback)</label><textarea class="fta" id="tmpl-text" style="min-height:50px"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('template-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTemplateFromModal()">💾 Save Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TEMPLATE PICKER MODAL ══ -->
+<div class="modal-bg" id="template-picker-modal">
+  <div class="modal modal-lg">
+    <div class="modal-hd"><h3>📋 Choose an Email Template</h3><span class="modal-x" onclick="closeModal('template-picker-modal')">✕</span></div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px"><input class="fi" id="tmpl-picker-search" placeholder="🔍 Search templates..." oninput="filterTemplatePicker()"></div>
+      <div id="tmpl-picker-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;max-height:420px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('template-picker-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TEMPLATE PREVIEW MODAL (Desktop & Mobile 375px) ══ -->
+<div class="modal-bg" id="template-preview-modal">
+  <div class="modal modal-lg" style="max-width:900px">
+    <div class="modal-hd">
+      <h3 id="tmpl-prev-title">📱 Live Email Preview</h3>
+      <div style="display:flex;gap:6px;margin-left:auto;margin-right:12px">
+        <button class="btn btn-sm dash-rng-btn active" id="btn-prev-desk" onclick="switchPreviewDevice('desktop')">🖥️ Desktop</button>
+        <button class="btn btn-sm dash-rng-btn" id="btn-prev-mob" onclick="switchPreviewDevice('mobile')">📱 Mobile (375px)</button>
+      </div>
+      <span class="modal-x" onclick="closeModal('template-preview-modal')">✕</span>
+    </div>
+    <div class="modal-body" style="background:#04070d;padding:24px;display:flex;justify-content:center">
+      <div class="device-preview-box" id="device-preview-wrapper" style="width:100%">
+        <iframe id="template-preview-iframe" class="device-frame-desktop"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ INSERT / EDIT LINK MODAL ══ -->
+<div class="modal-bg" id="rte-link-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-hd"><h3>🔗 Insert / Edit Link</h3><span class="modal-x" onclick="closeModal('rte-link-modal')">✕</span></div>
+    <div class="modal-body">
+      <div id="rte-link-al" class="al"></div>
+      <div class="fg"><label class="fl">Destination URL *</label><input class="fi" id="rte-link-url" placeholder="https://yourwebsite.com or mailto:you@domain.com"></div>
+      <div class="fg"><label class="fl">Display Text</label><input class="fi" id="rte-link-text" placeholder="Click here"></div>
+      <div class="fg" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="rte-link-blank" checked style="accent-color:var(--accent);width:16px;height:16px">
+        <label for="rte-link-blank" style="font-size:12px;color:var(--text2);cursor:pointer">Open link in new tab</label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('rte-link-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="rteApplyLink()">Insert Link</button>
     </div>
   </div>
 </div>
@@ -3156,7 +3669,7 @@ async function doLogout(){
 }
 
 /* ─── Nav ───────────────────────────────── */
-const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',campaigns:'Campaigns',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist'};
+const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs'};
 function nav(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(x=>x.classList.remove('active'));
@@ -3186,6 +3699,7 @@ function nav(p){
     },15000);
   }
   if(p==='campaigns')loadCampaigns();
+  if(p==='templates')loadTemplates();
   if(p==='lists')loadLists();
   if(p==='smtp')loadSmtps();
   if(p==='images')loadImages();
@@ -3202,9 +3716,25 @@ function nav(p){
   if(p==='displayname')loadDn();
   if(p==='imap')loadImap();
   if(p==='autoreply')loadAutoreply();
+  if(p==='mailrouting'){
+    loadMailRouting();
+    _liveRefreshTimer=setInterval(()=>{
+      if(document.getElementById('page-mailrouting')?.classList.contains('active')) loadMailRouting(true);
+    },8000);
+  }
   if(p==='followup')loadFollowup();
   if(p==='leads')loadLeadsPage();
   if(p==='blacklist')loadBlacklistPage();
+  if(p==='systemlogs'){
+    loadSystemLogs(1);
+    loadSystemLogStats();
+    _liveRefreshTimer=setInterval(()=>{
+      if(document.getElementById('page-systemlogs')?.classList.contains('active')){
+        loadSystemLogs(_sysLogsCurrentPage||1);
+        loadSystemLogStats();
+      }
+    },10000);
+  }
 }
 function showLiveIndicator(id){
   const el=$(id);
@@ -5043,27 +5573,79 @@ async function applyArSmtpImapMode(){
   }
 }
 
+function toggleArSmartRoutingUI(){
+  const isSmart = $('ar-enable-smart')?.checked;
+  const f = $('ar-smart-routing-fields');
+  if(f) f.style.display = isSmart ? 'block' : 'none';
+}
+
+async function populateSmartRoutingSelects(r){
+  const pImap = $('ar-smart-primary-imap');
+  if(pImap){
+    pImap.innerHTML = '<option value="">— Select Primary Gmail Inbox —</option>' +
+      (allImaps||[]).map(a=>`<option value="${a.id}" ${r && (r.primary_imap_id == a.id || r.imap_id == a.id) ? 'selected' : ''}>${esc(a.name)} (${esc(a.username||a.host)})</option>`).join('');
+  }
+  const sImap = $('ar-smart-secondary-imap');
+  if(sImap){
+    sImap.innerHTML = '<option value="">— Select Secondary Mailbox —</option>' +
+      (allImaps||[]).map(a=>`<option value="${a.id}" ${r && (r.secondary_imap_id == a.id || r.imap2_id == a.id) ? 'selected' : ''}>${esc(a.name)} (${esc(a.username||a.host)})</option>`).join('');
+  }
+  const bImap = $('ar-smart-backup-imap');
+  if(bImap){
+    bImap.innerHTML = '<option value="">— None (Optional Backup) —</option>' +
+      (allImaps||[]).map(a=>`<option value="${a.id}" ${r && r.backup_imap_id == a.id ? 'selected' : ''}>${esc(a.name)} (${esc(a.username||a.host)})</option>`).join('');
+  }
+  const pSmtp = $('ar-smart-primary-smtp');
+  if(pSmtp){
+    pSmtp.innerHTML = '<option value="">— Select Primary SMTP #1 —</option>' +
+      (allSmtps||[]).map(s=>`<option value="${s.id}" ${r && (r.primary_smtp_id == s.id || (r.step1_smtp_ids && r.step1_smtp_ids.includes(s.id))) ? 'selected' : ''}>${esc(s.name)} (${esc(s.from_email||s.host)})</option>`).join('');
+  }
+  const sSmtp = $('ar-smart-secondary-smtp');
+  if(sSmtp){
+    sSmtp.innerHTML = '<option value="">— Select Secondary SMTP #2 —</option>' +
+      (allSmtps||[]).map(s=>`<option value="${s.id}" ${r && r.secondary_smtp_id == s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.from_email||s.host)})</option>`).join('');
+  }
+  const fuSel = $('ar-smart-fu-rule');
+  if(fuSel){
+    try {
+      const fuRules = await get('followup');
+      fuSel.innerHTML = '<option value="">— None (No Auto Follow-Up) —</option>' +
+        (fuRules||[]).map(fu=>`<option value="${fu.id}" ${r && r.followup_rule_id == fu.id ? 'selected' : ''}>${esc(fu.name)} (${(fu.steps||[]).length} steps)</option>`).join('');
+    } catch(e){ fuSel.innerHTML = '<option value="">— None (No Auto Follow-Up) —</option>'; }
+  }
+}
+
 async function openArModal(){
   if(!allImages.length) await loadImages();
+  if(!allImaps.length) await loadImap();
+  if(!allSmtps.length) await loadSmtps();
   arEid=null; arSteps=[];
   $('ar-modal-title').textContent='🔁 New Auto-Reply Rule';
   al2('ar-al'); sv('ar-name',''); $('ar-status').value='active';
   document.querySelector('input[name="ar-mode"][value="0"]').checked=true;
   updateArModeHint();
   renderArSmtpPool([]); clearArFromTags();
+
+  // Smart Routing Defaults
+  if($('ar-enable-smart')) $('ar-enable-smart').checked = false;
+  toggleArSmartRoutingUI();
+  await populateSmartRoutingSelects(null);
+  if($('ar-smart-replyto-switch')) $('ar-smart-replyto-switch').checked = true;
+  if($('ar-smart-always-fu')) $('ar-smart-always-fu').checked = true;
+  if($('ar-smart-gmail-priority')) $('ar-smart-gmail-priority').checked = true;
+
   // Admin owner picker. Hidden for non-admin so users never see the field.
   const ownerRow = document.getElementById('ar-owner-row');
   if (ownerRow) ownerRow.style.display = S.isAdmin ? 'block' : 'none';
   if (S.isAdmin) {
     await loadRuleOwnerUsers();
-    populateOwnerSelect('ar-owner-sel', S.uid); // default to admin's own id
+    populateOwnerSelect('ar-owner-sel', S.uid);
   }
   populateArImap(null);
   populateArImap2(null);
   arStep1SmtpIds=[];
   arSteps=[];
   await applyArSmtpImapMode();
-  // Fetch quota BEFORE seeding the first step so the banner renders correctly.
   await refreshArQuota();
   arAddStep();
   showModal('ar-modal');
@@ -5071,12 +5653,21 @@ async function openArModal(){
 
 async function editAr(id){
   if(!allImages.length) await loadImages();
+  if(!allImaps.length) await loadImap();
+  if(!allSmtps.length) await loadSmtps();
   const r=await get('autoreply/'+id); if(!r?.id){alert('Load error');return;}
   arEid=id; arSteps=[];
   $('ar-modal-title').textContent='✏️ Edit Auto-Reply Rule';
   al2('ar-al'); sv('ar-name',r.name||''); $('ar-status').value=r.status||'active';
-  // Owner picker (admin only). Defaults to the rule's current owner so a
-  // simple Save without changing the dropdown leaves ownership intact.
+
+  // Smart Routing Data
+  if($('ar-enable-smart')) $('ar-enable-smart').checked = (r.enable_smart_routing == 1);
+  toggleArSmartRoutingUI();
+  await populateSmartRoutingSelects(r);
+  if($('ar-smart-replyto-switch')) $('ar-smart-replyto-switch').checked = (r.enable_reply_to_switch != 0);
+  if($('ar-smart-always-fu')) $('ar-smart-always-fu').checked = (r.enable_always_send_followup != 0);
+  if($('ar-smart-gmail-priority')) $('ar-smart-gmail-priority').checked = (r.enable_gmail_priority != 0);
+
   const ownerRow = document.getElementById('ar-owner-row');
   if (ownerRow) ownerRow.style.display = S.isAdmin ? 'block' : 'none';
   if (S.isAdmin) {
@@ -5085,12 +5676,10 @@ async function editAr(id){
   }
   let smtpSel=[];try{if(r.smtp_ids){const d=JSON.parse(r.smtp_ids);if(Array.isArray(d))smtpSel=d;}}catch(e){}
   renderArSmtpPool(smtpSel);
-  // Load dedicated step1 SMTP pool
   arStep1SmtpIds=[];try{if(r.step1_smtp_ids){const d=JSON.parse(r.step1_smtp_ids);if(Array.isArray(d))arStep1SmtpIds=d.map(Number);}}catch(e){}
   setArFromTags(r.from_emails||null);
-  populateArImap(r.imap_id);
-  populateArImap2(r.imap2_id);
-  // Set sequential mode radio
+  populateArImap(r.imap_id || r.primary_imap_id);
+  populateArImap2(r.imap2_id || r.secondary_imap_id);
   const seqMode = r.sequential_mode==1?'1':'0';
   document.querySelector(`input[name="ar-mode"][value="${seqMode}"]`).checked=true;
   updateArModeHint();
@@ -5106,8 +5695,6 @@ async function editAr(id){
   }
   if(!arSteps.length)arAddStep();
   renderArSteps();
-  // Quota banner refreshes after steps are loaded so the projected total
-  // accurately reflects the rule we're now editing.
   await refreshArQuota();
   showModal('ar-modal');
 }
@@ -5389,29 +5976,186 @@ function fuAddStep(){
     }
   }
   fuSaveCurrentSteps();
-  fuSteps.push({delay_minutes:60,subject:'',html_body:'',text_body:'',image_ids:[],img_width:'600',img_align:'center',img_position:'top'});
+  // Default sequential delays: Step 1 = 30m, Step 2 = 30m, Step 3 = 2h, Step 4 = 1d
+  const idx = fuSteps.length;
+  let dVal = 30, dUnit = 'minutes';
+  if(idx === 1) { dVal = 30; dUnit = 'minutes'; }
+  else if(idx === 2) { dVal = 2; dUnit = 'hours'; }
+  else if(idx >= 3) { dVal = 1; dUnit = 'days'; }
+
+  fuSteps.push({
+    delay_value: dVal,
+    delay_unit: dUnit,
+    delay_minutes: dUnit === 'days' ? dVal * 1440 : (dUnit === 'hours' ? dVal * 60 : dVal),
+    subject: '',
+    html_body: '',
+    text_body: '',
+    image_ids: [],
+    img_width: '600',
+    img_align: 'center',
+    img_position: 'top'
+  });
   renderFuSteps();
   renderFuQuotaBanner();
 }
+
 function fuRemoveStep(i){
   if(fuSteps.length<=1){alert('At least 1 message required');return;}
-  fuSaveCurrentSteps();fuSteps.splice(i,1);renderFuSteps();
+  fuSaveCurrentSteps();
+  fuSteps.splice(i,1);
+  renderFuSteps();
   renderFuQuotaBanner();
 }
+
 function fuSaveCurrentSteps(){
   fuSteps.forEach((st,i)=>{
-    st.delay_minutes=parseInt(document.getElementById('fus-delay-'+i)?.value||'60')||60;
-    st.subject=document.getElementById('fus-sub-'+i)?.value||'';
-    st.html_body=document.getElementById('fus-body-'+i)?.value||'';
-    st.text_body=document.getElementById('fus-txt-'+i)?.value||'';
-    st.img_width=document.getElementById('fus-imgw-'+i)?.value||'600';
-    st.img_align=document.getElementById('fus-imga-'+i)?.value||'center';
-    st.img_position=document.getElementById('fus-imgp-'+i)?.value||'top';
+    const valEl = document.getElementById('fus-delay-val-'+i);
+    const unitEl = document.getElementById('fus-delay-unit-'+i);
+    const legacyEl = document.getElementById('fus-delay-'+i);
+
+    if(valEl && unitEl){
+      st.delay_value = parseInt(valEl.value) || 1;
+      st.delay_unit = unitEl.value || 'minutes';
+      st.delay_minutes = st.delay_unit === 'days' ? st.delay_value * 1440 : (st.delay_unit === 'hours' ? st.delay_value * 60 : st.delay_value);
+    } else if(legacyEl){
+      st.delay_minutes = parseInt(legacyEl.value) || 60;
+      st.delay_value = st.delay_minutes;
+      st.delay_unit = 'minutes';
+    }
+    st.subject = document.getElementById('fus-sub-'+i)?.value || '';
+    st.html_body = document.getElementById('fus-body-'+i)?.value || '';
+    st.text_body = document.getElementById('fus-txt-'+i)?.value || '';
+    st.img_width = document.getElementById('fus-imgw-'+i)?.value || '600';
+    st.img_align = document.getElementById('fus-imga-'+i)?.value || 'center';
+    st.img_position = document.getElementById('fus-imgp-'+i)?.value || 'top';
   });
 }
+
 function renderFuSteps(){
-  $('fu-step-label').textContent=fuSteps.length+' message'+(fuSteps.length!==1?'s':'');
-  $('fu-steps-wrap').innerHTML=fuSteps.map((st,i)=>buildStepCard(st,i,'fu','fus','fuAddStep','fuRemoveStep','fuRmImg','openFuPick',i===0?'Message #1 — Sent after delay from enrollment':'Message #'+(i+1)+' — Sent after delay from previous message')).join('');
+  $('fu-step-label').textContent = fuSteps.length + ' message' + (fuSteps.length !== 1 ? 's' : '');
+  $('fu-steps-wrap').innerHTML = fuSteps.map((st,i) => buildStepCard(
+    st, i, 'fu', 'fus', 'fuAddStep', 'fuRemoveStep', 'fuRmImg', 'openFuPick',
+    i === 0 ? 'Follow-up #1 — Triggered after read delay' : 'Follow-up #' + (i+1) + ' — Sent after delay from previous follow-up'
+  )).join('');
+  renderFuTimeline();
+}
+
+/* ── Live Visual Sequence Timeline Renderer ── */
+function renderFuTimeline(){
+  const wrap = document.getElementById('fu-timeline-preview');
+  if(!wrap) return;
+  fuSaveCurrentSteps();
+  if(!fuSteps.length){
+    wrap.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">No sequence steps configured.</div>';
+    return;
+  }
+  let h = `
+    <div class="seq-node seq-start">
+      <div class="seq-node-ic">🚀</div>
+      <div class="seq-node-title">Initial Email Sent</div>
+      <div class="seq-node-sub"><span class="seq-pulse"></span>Delay Countdown</div>
+    </div>
+  `;
+
+  fuSteps.forEach((st, i) => {
+    const val = st.delay_value || (st.delay_minutes || 30);
+    const unit = st.delay_unit || 'minutes';
+    const sub = st.subject ? esc(st.subject) : '(Empty Subject)';
+    h += `
+      <div class="seq-arrow-wrap">
+        <span class="seq-delay-badge">+${val} ${unit}</span>
+        <div class="seq-arrow-line"></div>
+      </div>
+      <div class="seq-node seq-step">
+        <div class="seq-node-ic">📩</div>
+        <div class="seq-node-title">Follow-up #${i+1}</div>
+        <div class="seq-node-sub" title="${sub}">${sub.length>18 ? sub.substring(0,16)+'…' : sub}</div>
+      </div>
+    `;
+  });
+
+  wrap.innerHTML = h;
+}
+
+/* ── Step Reordering / Drag & Drop ── */
+let _draggedStepIndex = null;
+let _draggedPrefix = null;
+
+function stepDragStart(e, i, prefix){
+  _draggedStepIndex = i;
+  _draggedPrefix = prefix;
+  e.dataTransfer.effectAllowed = 'move';
+  e.target.closest('.step-card-box')?.classList.add('step-card-dragging');
+}
+
+function stepDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const card = e.target.closest('.step-card-box');
+  if(card) card.classList.add('step-card-dragover');
+}
+
+function stepDragLeave(e){
+  const card = e.target.closest('.step-card-box');
+  if(card) card.classList.remove('step-card-dragover');
+}
+
+function stepDrop(e, targetIndex, prefix){
+  e.preventDefault();
+  document.querySelectorAll('.step-card-box').forEach(c => {
+    c.classList.remove('step-card-dragging');
+    c.classList.remove('step-card-dragover');
+  });
+  if(_draggedStepIndex === null || _draggedStepIndex === targetIndex || _draggedPrefix !== prefix) return;
+  
+  if(prefix === 'fu'){
+    fuSaveCurrentSteps();
+    const item = fuSteps.splice(_draggedStepIndex, 1)[0];
+    fuSteps.splice(targetIndex, 0, item);
+    renderFuSteps();
+  } else if(prefix === 'ar'){
+    arSaveCurrentSteps();
+    const item = arSteps.splice(_draggedStepIndex, 1)[0];
+    arSteps.splice(targetIndex, 0, item);
+    renderArSteps();
+  }
+  _draggedStepIndex = null;
+  _draggedPrefix = null;
+}
+
+function moveStepUp(i, prefix){
+  if(i <= 0) return;
+  if(prefix === 'fu'){
+    fuSaveCurrentSteps();
+    const tmp = fuSteps[i];
+    fuSteps[i] = fuSteps[i-1];
+    fuSteps[i-1] = tmp;
+    renderFuSteps();
+  } else {
+    arSaveCurrentSteps();
+    const tmp = arSteps[i];
+    arSteps[i] = arSteps[i-1];
+    arSteps[i-1] = tmp;
+    renderArSteps();
+  }
+}
+
+function moveStepDown(i, prefix){
+  const arr = prefix === 'fu' ? fuSteps : arSteps;
+  if(i >= arr.length - 1) return;
+  if(prefix === 'fu'){
+    fuSaveCurrentSteps();
+    const tmp = fuSteps[i];
+    fuSteps[i] = fuSteps[i+1];
+    fuSteps[i+1] = tmp;
+    renderFuSteps();
+  } else {
+    arSaveCurrentSteps();
+    const tmp = arSteps[i];
+    arSteps[i] = arSteps[i+1];
+    arSteps[i+1] = tmp;
+    renderArSteps();
+  }
 }
 
 /* Shared step card builder */
@@ -5419,16 +6163,43 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
   const iw=st.img_width||'600',ia=st.img_align||'center',ip=st.img_position||'top';
   const thumbs=(st.image_ids||[]).map(id=>{const img=allImages.find(x=>x.id==id);if(!img)return'';return`<div class="sel-th"><img src="${esc(img.url)}" alt=""><div class="sel-th-rm" onclick="${rmImgFn}(${i},${id})">✕</div></div>`;}).join('');
   const stepsArr=prefix==='ar'?arSteps:fuSteps;
-  return `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:14px">
+  const dVal = st.delay_value != null ? st.delay_value : (st.delay_minutes || (prefix==='ar'?1:30));
+  const dUnit = st.delay_unit || (st.delay_minutes >= 1440 && st.delay_minutes % 1440 === 0 ? 'days' : (st.delay_minutes >= 60 && st.delay_minutes % 60 === 0 ? 'hours' : 'minutes'));
+
+  return `<div class="step-card-box" draggable="true" ondragstart="stepDragStart(event, ${i}, '${prefix}')" ondragover="stepDragOver(event)" ondragleave="stepDragLeave(event)" ondrop="stepDrop(event, ${i}, '${prefix}')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:14px;transition:all .15s">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <span class="step-card-drag-handle" title="Drag to reorder sequence">⋮⋮ Drag</span>
       <span style="background:var(--accent);color:#000;font-weight:700;font-size:11px;padding:3px 12px;border-radius:20px">#${i+1}</span>
       <span style="font-size:11px;color:var(--text2);flex:1">${note}</span>
-      ${stepsArr.length>1?`<button class="btn btn-danger btn-sm" onclick="${rmFn}(${i})">✕ Remove</button>`:''}
+      <div class="btn-group" style="margin-left:auto">
+        ${i>0?`<button class="btn btn-secondary btn-sm" onclick="moveStepUp(${i},'${prefix}')" title="Move Up">▲</button>`:''}
+        ${i<stepsArr.length-1?`<button class="btn btn-secondary btn-sm" onclick="moveStepDown(${i},'${prefix}')" title="Move Down">▼</button>`:''}
+        <button class="btn btn-purple btn-sm" onclick="openTemplatePickerForStep(${i},'${prefix}')" title="Apply a saved template">📋 Template</button>
+        ${stepsArr.length>1?`<button class="btn btn-danger btn-sm" onclick="${rmFn}(${i})">✕ Remove</button>`:''}
+      </div>
     </div>
     <div class="fg" style="margin:0 0 10px">
       <label class="fl" style="font-size:10px">Subject * <span class="flh">— spintax {a|b} supported</span></label>
-      <input class="fi" id="${pid}-sub-${i}" value="${esc(st.subject||'')}" placeholder="Subject line…">
+      <input class="fi" id="${pid}-sub-${i}" value="${esc(st.subject||'')}" placeholder="Subject line…" oninput="if('${prefix}'==='fu')renderFuTimeline()">
     </div>
+    
+    <!-- Sequential Delay Row -->
+    ${prefix==='fu'?`
+    <div style="background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.15);border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="font-size:11px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px">
+        <span>⏱️</span>
+        <span>${i===0 ? 'Step 1 Read Delay:' : 'Step '+(i+1)+' Delay after Step '+i+' sent:'}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input class="fi" id="${pid}-delay-val-${i}" type="number" min="1" value="${dVal}" style="width:80px;padding:5px 8px;font-size:12px" onchange="renderFuTimeline()">
+        <select class="fsel" id="${pid}-delay-unit-${i}" style="width:110px;padding:5px 8px;font-size:12px" onchange="renderFuTimeline()">
+          <option value="minutes" ${dUnit==='minutes'?'selected':''}>Minutes</option>
+          <option value="hours" ${dUnit==='hours'?'selected':''}>Hours</option>
+          <option value="days" ${dUnit==='days'?'selected':''}>Days</option>
+        </select>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-left:auto">${i===0 ? 'Calculated from recipient open time' : 'Calculated sequentially from previous step sent time'}</div>
+    </div>`:`
     <div class="${prefix==='ar'?'ar-delay-row':''}" style="margin-bottom:10px;${prefix==='ar'?'display:flex;':'display:flex;'}gap:10px">
       <div class="fg" style="margin:0">
         <label class="fl" style="font-size:10px">Delay (minutes) ${i===0&&prefix==='ar'?'<span class="flh">— wait before sending after email arrives</span>':'<span class="flh">— minutes after previous step</span>'}</label>
@@ -5440,9 +6211,18 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
         <label class="fl" style="font-size:10px">Send after (minutes) <span class="flh">— delay after user's message triggers this reply (0 = send immediately)</span></label>
         <input class="fi" id="${pid}-sdelay-${i}" type="number" min="0" value="${st.delay_minutes||0}" style="padding:6px 10px">
       </div>
-    </div>`:''}
-    </div>
-    <div class="fg"><label class="fl" style="font-size:10px">HTML Body — <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{NAME}}')"><code>{{NAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{EMAIL}}')"><code>{{EMAIL}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{IMAGE}}')"><code>{{IMAGE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{MODELNAME}}')"><code>{{MODELNAME}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{{TODAYDATE}}')"><code>{{TODAYDATE}}</code></span> <span class="tok-btn" style="cursor:pointer" onclick="insertToken('${pid}-body-${i}','{SPIN|TAX}')"><code>{SPIN|TAX}</code></span></label>
+    </div>`:''}`}
+
+    <div class="fg">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <label class="fl" style="font-size:10px;margin:0">HTML Body</label>
+        <div style="display:flex;gap:4px">
+          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{NAME}}')"><code>{{NAME}}</code></span>
+          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{EMAIL}}')"><code>{{EMAIL}}</code></span>
+          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{IMAGE}}')"><code>{{IMAGE}}</code></span>
+          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{SPIN|TAX}')"><code>{SPIN|TAX}</code></span>
+        </div>
+      </div>
       <textarea class="fta" id="${pid}-body-${i}" style="min-height:130px" placeholder="<p>Hi {{NAME}},</p>&#10;<p>Message body here...</p>">${esc(st.html_body||'')}</textarea>
     </div>
     <div class="fg"><label class="fl" style="font-size:10px">Plain Text <span class="flh">(auto from HTML if blank)</span></label>
@@ -5509,16 +6289,12 @@ async function saveAr(){
   let imapId, imap2Id, smtpIds, step1SmtpIds;
 
   if(S.isAdmin){
-    // Admin picks manually
     imapId=parseInt($('ar-imap').value)||null;
-    if(!imapId){al('ar-al','Select an IMAP account','err');return;}
     imap2Id=parseInt($('ar-imap2').value)||null;
     if(imap2Id && imap2Id===imapId){al('ar-al','IMAP 2 must be different from IMAP 1','err');return;}
     smtpIds=Array.from(document.querySelectorAll('#ar-smtp-pool input[type=checkbox]:checked')).map(c=>parseInt(c.value));
-    if(!smtpIds.length){al('ar-al','Select at least one SMTP server','err');return;}
     step1SmtpIds=Array.from(document.querySelectorAll('#ar-step1-smtp-inner input[type=checkbox]:checked')).map(c=>parseInt(c.value));
   } else {
-    // Non-admin: auto-use admin-assigned SMTP and IMAP
     if(!allSmtps.length){al('ar-al','No SMTP servers assigned to your account. Contact the administrator.','err');return;}
     if(!allImaps.length){al('ar-al','No IMAP accounts assigned to your account. Contact the administrator.','err');return;}
     smtpIds = allSmtps.map(s=>parseInt(s.id));
@@ -5527,10 +6303,47 @@ async function saveAr(){
     step1SmtpIds = [];
   }
 
+  const isSmart = $('ar-enable-smart')?.checked ? 1 : 0;
+  const pImapId = parseInt($('ar-smart-primary-imap')?.value) || imapId;
+  const sImapId = parseInt($('ar-smart-secondary-imap')?.value) || imap2Id;
+  const bImapId = parseInt($('ar-smart-backup-imap')?.value) || null;
+  const pSmtpId = parseInt($('ar-smart-primary-smtp')?.value) || null;
+  const sSmtpId = parseInt($('ar-smart-secondary-smtp')?.value) || null;
+  const fuRuleId = parseInt($('ar-smart-fu-rule')?.value) || null;
+  const replyToSwitch = $('ar-smart-replyto-switch')?.checked ? 1 : 0;
+  const alwaysFu = $('ar-smart-always-fu')?.checked ? 1 : 0;
+  const gmailPriority = $('ar-smart-gmail-priority')?.checked ? 1 : 0;
+
+  if(isSmart && !pImapId){
+    al('ar-al','Select Primary Lead Receiver IMAP (Gmail)','err');return;
+  }
+  if(!isSmart && !imapId){
+    al('ar-al','Select an IMAP account','err');return;
+  }
+
   const sequentialMode=document.querySelector('input[name="ar-mode"]:checked')?.value==='1'?1:0;
-  const payload={name,imap_id:imapId,imap2_id:imap2Id,smtp_ids:smtpIds,from_emails:getArFromEmails(),status:$('ar-status').value,sequential_mode:sequentialMode,step1_smtp_ids:step1SmtpIds,steps:arSteps.map(st=>({...st,image_ids:st.image_ids||[]}))};
-  // Admin only: include the chosen owner so the API assigns / transfers
-  // the rule to that user. Server ignores user_id from non-admin callers.
+  const payload={
+    name,
+    imap_id: pImapId || imapId,
+    imap2_id: sImapId || imap2Id,
+    smtp_ids: smtpIds,
+    from_emails: getArFromEmails(),
+    status: $('ar-status').value,
+    sequential_mode: sequentialMode,
+    step1_smtp_ids: step1SmtpIds,
+    enable_smart_routing: isSmart,
+    primary_imap_id: pImapId,
+    secondary_imap_id: sImapId,
+    backup_imap_id: bImapId,
+    primary_smtp_id: pSmtpId,
+    secondary_smtp_id: sSmtpId,
+    followup_rule_id: fuRuleId,
+    enable_reply_to_switch: replyToSwitch,
+    enable_always_send_followup: alwaysFu,
+    enable_gmail_priority: gmailPriority,
+    steps: arSteps.map(st=>({...st,image_ids:st.image_ids||[]}))
+  };
+
   if (S.isAdmin) {
     const ownerVal = parseInt(document.getElementById('ar-owner-sel')?.value);
     if (ownerVal > 0) payload.user_id = ownerVal;
@@ -5540,6 +6353,190 @@ async function saveAr(){
   btn.disabled=false;btn.textContent='💾 Save Rule';
   if(r?.ok){al('ar-al','✅ Saved!','ok');loadAutoreply();setTimeout(()=>closeModal('ar-modal'),1000);}
   else al('ar-al',r?.message||r?.error||'Error','err');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SMART MAIL ROUTING STUDIO (Gmail → SMTP #1 → Mailbox #2 Engine)
+   ══════════════════════════════════════════════════════════════════ */
+let mrDebounceTimer = null;
+let mrCurrentPage = 1;
+let mrLogsCurrentPage = 1;
+
+function mrSearchDebounce() {
+  clearTimeout(mrDebounceTimer);
+  mrDebounceTimer = setTimeout(() => loadMailRouting(), 300);
+}
+
+async function loadMailRouting(silent) {
+  if (!silent) {
+    if (!allImaps.length) await loadImap();
+    if (!allSmtps.length) await loadSmtps();
+  }
+
+  // Load Stats
+  try {
+    const stats = await get('mail-routing/stats');
+    if (stats && stats.ok) {
+      if ($('mr-stat-leads')) $('mr-stat-leads').textContent = fmt(stats.total_leads || 0);
+      if ($('mr-stat-first-replies')) $('mr-stat-first-replies').textContent = fmt(stats.first_replies_sent || 0);
+      if ($('mr-stat-migrated')) $('mr-stat-migrated').textContent = fmt(stats.migrated_secondary || 0);
+      if ($('mr-stat-followups')) $('mr-stat-followups').textContent = fmt(stats.followups_active || 0);
+      if ($('mr-stat-active')) $('mr-stat-active').textContent = fmt(stats.active_conversations || 0);
+    }
+  } catch (_e) {}
+
+  // Load Active Conversation Threads
+  const stageFilter = $('mr-stage-filter')?.value || '';
+  const mbFilter = $('mr-mailbox-filter')?.value || '';
+  const searchQ = $('mr-thread-search')?.value?.trim() || '';
+
+  const qs = new URLSearchParams({ page: mrCurrentPage, limit: 25 });
+  if (stageFilter) qs.set('stage', stageFilter);
+  if (mbFilter) qs.set('mailbox', mbFilter);
+  if (searchQ) qs.set('q', searchQ);
+
+  try {
+    const r = await get('mail-routing/threads?' + qs.toString());
+    const tb = $('mr-threads-body');
+    if (!tb) return;
+
+    if (!r?.rows?.length) {
+      tb.innerHTML = '<tr class="empty-row"><td colspan="8">No active smart conversation threads found.</td></tr>';
+    } else {
+      const stageBadges = {
+        'NEW_LEAD': '<span class="badge b-blue">🔵 NEW_LEAD</span>',
+        'FIRST_REPLY_SENT': '<span class="badge b-purple">🟣 FIRST_REPLY_SENT</span>',
+        'MOVED_TO_SECONDARY': '<span class="badge b-green">🟢 MOVED_TO_SECONDARY</span>',
+        'FOLLOWUP_RUNNING': '<span class="badge b-amber">🟠 FOLLOWUP_RUNNING</span>',
+        'FOLLOWUP_COMPLETED': '<span class="badge b-gray">⚪ FOLLOWUP_COMPLETED</span>',
+      };
+
+      tb.innerHTML = r.rows.map(t => {
+        const isSec = t.active_mailbox === 'secondary';
+        const mbBadge = isSec
+          ? '<span class="badge b-green" style="font-weight:700">📬 Secondary (#2)</span>'
+          : '<span class="badge b-blue" style="font-weight:700">📥 Primary (Gmail)</span>';
+
+        const fuBadge = t.followup_status === 'running'
+          ? `<span class="badge b-amber">⏳ Running</span><br><small style="font-size:10px;color:var(--text3)">Next: ${t.followup_next_run || 'soon'}</small>`
+          : (t.followup_status === 'completed' ? '<span class="badge b-gray">Completed</span>' : '<span class="badge b-gray">Idle</span>');
+
+        return `<tr>
+          <td>
+            <strong>${esc(t.from_email)}</strong>
+            ${t.from_name ? `<br><small style="color:var(--text2)">${esc(t.from_name)}</small>` : ''}
+          </td>
+          <td>
+            <strong>${esc(t.rule_name || 'Smart Routing')}</strong>
+            <br><small style="color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;display:inline-block">${esc(t.subject_in || '—')}</small>
+          </td>
+          <td>${mbBadge}</td>
+          <td>${stageBadges[t.conversation_stage] || `<span class="badge b-gray">${esc(t.conversation_stage)}</span>`}</td>
+          <td>
+            <span class="badge b-purple">Step ${t.current_step || 1}</span>
+            <span class="badge b-blue" style="margin-left:4px">${t.reply_count || 1} msgs</span>
+          </td>
+          <td>${fuBadge}</td>
+          <td style="font-size:11px;color:var(--text2)">${t.last_sent_at || t.created_at || '—'}</td>
+          <td>
+            <div class="btn-group">
+              <button class="btn btn-secondary btn-sm" onclick="manualMigrateMailbox(${t.id}, '${isSec ? 'primary' : 'secondary'}')" title="Switch active mailbox">
+                ${isSec ? '⬅ Switch to Primary' : '➡ Migrate to #2'}
+              </button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    renderMrPager('mr-threads-pager', r?.total || 0, r?.pages || 1, mrCurrentPage, (p) => {
+      mrCurrentPage = p;
+      loadMailRouting();
+    });
+  } catch (_e) {}
+
+  loadMailRoutingLogs();
+}
+
+function renderMrPager(wrapId, total, pages, curPage, onPage) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  if (pages <= 1) { wrap.innerHTML = `<span style="font-size:11px;color:var(--text3)">${total} total records</span>`; return; }
+  let h = `<span style="font-size:11px;color:var(--text3);margin-right:8px">${total} records (Page ${curPage} of ${pages})</span>`;
+  if (curPage > 1) h += `<button class="btn btn-secondary btn-sm" onclick="(${onPage})(${curPage - 1})">◀ Prev</button>`;
+  if (curPage < pages) h += `<button class="btn btn-secondary btn-sm" onclick="(${onPage})(${curPage + 1})">Next ▶</button>`;
+  wrap.innerHTML = h;
+}
+
+async function loadMailRoutingLogs() {
+  const evtFilter = $('mr-log-event-filter')?.value || '';
+  const qs = new URLSearchParams({ page: mrLogsCurrentPage, limit: 50 });
+  if (evtFilter) qs.set('event_type', evtFilter);
+
+  try {
+    const r = await get('mail-routing/logs?' + qs.toString());
+    const tb = $('mr-logs-body');
+    if (!tb) return;
+
+    if (!r?.rows?.length) {
+      tb.innerHTML = '<tr class="empty-row"><td colspan="7">No mail routing audit logs recorded yet.</td></tr>';
+      return;
+    }
+
+    const evtBadges = {
+      'lead_received': '<span class="badge b-blue">📥 Lead Received</span>',
+      'first_reply_sent': '<span class="badge b-purple">📤 First Reply</span>',
+      'mailbox_migrated': '<span class="badge b-green">🔄 Mailbox Migrated</span>',
+      'chat_reply_sent': '<span class="badge b-blue">💬 Chat Reply</span>',
+      'followup_scheduled': '<span class="badge b-amber">⏱ FU Scheduled</span>',
+      'followup_sent': '<span class="badge b-teal">📬 FU Sent</span>',
+      'duplicate_ignored': '<span class="badge b-gray">🛡️ Duplicate Ignored</span>',
+    };
+
+    tb.innerHTML = r.rows.map(l => `<tr>
+      <td style="font-size:11px;color:var(--text2)">${l.created_at || '—'}</td>
+      <td>${evtBadges[l.event_type] || `<span class="badge b-gray">${esc(l.event_type)}</span>`}</td>
+      <td class="mono" style="font-size:11px"><strong>${esc(l.recipient_email || '—')}</strong></td>
+      <td style="font-size:11px">${esc(l.smtp_used || l.incoming_mailbox || '—')}</td>
+      <td style="font-size:11px">
+        ${l.previous_stage ? `<span class="badge b-gray" style="font-size:9px">${esc(l.previous_stage)}</span> → ` : ''}
+        ${l.new_stage ? `<span class="badge b-purple" style="font-size:9px">${esc(l.new_stage)}</span>` : '—'}
+      </td>
+      <td><span class="badge ${l.status==='success'?'b-green':'b-red'}">${esc(l.status)}</span></td>
+      <td style="font-size:11px;color:var(--text2)">${esc(l.details || '—')}</td>
+    </tr>`).join('');
+
+    renderMrPager('mr-logs-pager', r?.total || 0, r?.pages || 1, mrLogsCurrentPage, (p) => {
+      mrLogsCurrentPage = p;
+      loadMailRoutingLogs();
+    });
+  } catch (_e) {}
+}
+
+async function manualMigrateMailbox(threadId, targetMailbox) {
+  const r = await post('mail-routing/migrate-thread', { thread_id: threadId, target_mailbox: targetMailbox });
+  if (r && r.ok) {
+    loadMailRouting();
+  } else {
+    alert(r?.message || 'Error migrating thread');
+  }
+}
+
+async function clearMailRoutingLogs() {
+  if (!confirm('Clear all mail routing audit logs?')) return;
+  const r = await del('mail-routing/logs');
+  if (r && r.ok) {
+    loadMailRoutingLogs();
+  }
+}
+
+async function triggerRoutingCron() {
+  try {
+    const r = await post('cron/run', {});
+    loadMailRouting();
+  } catch (e) {
+    loadMailRouting();
+  }
 }
 
 /* AR Threads */
@@ -5669,7 +6666,10 @@ async function openFuModal(){
   fuEid=null; fuSteps=[];
   $('fu-modal-title').textContent='📬 New Follow-Up Rule';
   al2('fu-al'); sv('fu-name',''); $('fu-status').value='active';
-  // Admin owner picker — same pattern as the AR modal.
+  
+  const trigOpen = $('fu-trigger-open');
+  if(trigOpen) trigOpen.checked = true;
+
   const fuOwnerRow = document.getElementById('fu-owner-row');
   if (fuOwnerRow) fuOwnerRow.style.display = S.isAdmin ? 'block' : 'none';
   if (S.isAdmin) {
@@ -5692,7 +6692,10 @@ async function editFu(id){
   fuEid=id; fuSteps=[];
   $('fu-modal-title').textContent='✏️ Edit Follow-Up Rule';
   al2('fu-al'); sv('fu-name',r.name||''); $('fu-status').value=r.status||'active';
-  // Owner picker — defaults to current owner so a no-op edit doesn't transfer.
+  
+  const trigOpen = $('fu-trigger-open');
+  if(trigOpen) trigOpen.checked = (r.trigger_on_open == null || r.trigger_on_open == 1 || r.trigger_on_open === '1');
+
   const fuOwnerRow2 = document.getElementById('fu-owner-row');
   if (fuOwnerRow2) fuOwnerRow2.style.display = S.isAdmin ? 'block' : 'none';
   if (S.isAdmin) {
@@ -5708,12 +6711,29 @@ async function editFu(id){
     r.steps.forEach(st=>{
       let imgIds=[];
       try{const p=st.image_ids;imgIds=Array.isArray(p)?p:(typeof p==='string'&&p?JSON.parse(p):[]);}catch(e){imgIds=[];}
-      fuSteps.push({delay_minutes:st.delay_minutes||24,subject:st.subject||'',html_body:st.html_body||'',
-        text_body:st.text_body||'',image_ids:Array.isArray(imgIds)?imgIds:[],
-        img_width:st.img_width||'600',img_align:st.img_align||'center',img_position:st.img_position||'top'});
+      const rawMin = parseInt(st.delay_minutes) || 30;
+      let dVal = st.delay_value != null ? parseInt(st.delay_value) : null;
+      let dUnit = st.delay_unit || null;
+      if(!dVal || !dUnit){
+        if(rawMin >= 1440 && rawMin % 1440 === 0){ dVal = rawMin / 1440; dUnit = 'days'; }
+        else if(rawMin >= 60 && rawMin % 60 === 0){ dVal = rawMin / 60; dUnit = 'hours'; }
+        else { dVal = rawMin; dUnit = 'minutes'; }
+      }
+      fuSteps.push({
+        delay_value: dVal,
+        delay_unit: dUnit,
+        delay_minutes: rawMin,
+        subject: st.subject||'',
+        html_body: st.html_body||'',
+        text_body: st.text_body||'',
+        image_ids: Array.isArray(imgIds)?imgIds:[],
+        img_width: st.img_width||'600',
+        img_align: st.img_align||'center',
+        img_position: st.img_position||'top'
+      });
     });
   }
-  if(!fuSteps.length)fuAddStep();
+  if(!fuSteps.length) fuAddStep();
   renderFuSteps();
   await refreshFuQuota();
   showModal('fu-modal');
@@ -5747,13 +6767,34 @@ async function saveFu(){
     if(!smtpIds.length){al('fu-al','Select at least one SMTP server','err');return;}
     imapId=parseInt($('fu-imap').value)||null;
   } else {
-    // Non-admin: auto-use admin-assigned SMTP and IMAP
     if(!allSmtps.length){al('fu-al','No SMTP servers assigned to your account. Contact the administrator.','err');return;}
     smtpIds = allSmtps.map(s=>parseInt(s.id));
     imapId  = allImaps.length ? parseInt(allImaps[0].id) : null;
   }
 
-  const payload={name,imap_id:imapId,smtp_ids:smtpIds,from_emails:getFuFromEmails(),status:$('fu-status').value,steps:fuSteps.map(st=>({...st,image_ids:st.image_ids||[]}))};
+  const triggerOnOpen = $('fu-trigger-open')?.checked ? 1 : 0;
+
+  const payload = {
+    name,
+    imap_id: imapId,
+    smtp_ids: smtpIds,
+    from_emails: getFuFromEmails(),
+    status: $('fu-status').value,
+    trigger_on_open: triggerOnOpen,
+    steps: fuSteps.map(st => {
+      const v = st.delay_value || (st.delay_minutes || 30);
+      const u = st.delay_unit || 'minutes';
+      const m = u === 'days' ? v * 1440 : (u === 'hours' ? v * 60 : v);
+      return {
+        ...st,
+        delay_value: v,
+        delay_unit: u,
+        delay_minutes: m,
+        image_ids: st.image_ids || []
+      };
+    })
+  };
+
   if (S.isAdmin) {
     const ownerVal = parseInt(document.getElementById('fu-owner-sel')?.value);
     if (ownerVal > 0) payload.user_id = ownerVal;
@@ -5763,6 +6804,429 @@ async function saveFu(){
   btn.disabled=false;btn.textContent='💾 Save Rule';
   if(r?.ok){al('fu-al','✅ Saved!','ok');loadFollowup();setTimeout(()=>closeModal('fu-modal'),1000);}
   else al('fu-al',r?.message||r?.error||'Error','err');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RICH TEXT COMPOSER & TEMPLATE STUDIO
+   ══════════════════════════════════════════════════════════════════ */
+let allTemplates = [];
+let _targetEditorId = null;
+let _targetStepIndex = null;
+let _targetStepPrefix = null;
+
+function initRteToolbar(barId, editorId, rawId){
+  const bar = document.getElementById(barId);
+  if(!bar) return;
+  bar.innerHTML = `
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','bold')" title="Bold (Ctrl+B)"><strong>B</strong></button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','italic')" title="Italic (Ctrl+I)"><em>I</em></button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','strikeThrough')" title="Strikethrough"><s>S</s></button>
+    <div class="rte-sep"></div>
+    <select class="rte-select" onchange="rteExec('${editorId}','formatBlock',this.value);this.selectedIndex=0">
+      <option value="">Heading</option>
+      <option value="<h1>">Heading 1</option>
+      <option value="<h2>">Heading 2</option>
+      <option value="<h3>">Heading 3</option>
+      <option value="<p>">Paragraph</option>
+      <option value="<blockquote>">Quote</option>
+    </select>
+    <select class="rte-select" onchange="rteExec('${editorId}','fontName',this.value);this.selectedIndex=0">
+      <option value="">Font</option>
+      <option value="Arial, sans-serif">Arial</option>
+      <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+      <option value="'Segoe UI', Roboto, sans-serif">Segoe UI</option>
+      <option value="Georgia, serif">Georgia</option>
+      <option value="'Courier New', monospace">Courier</option>
+    </select>
+    <div class="rte-sep"></div>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','justifyLeft')" title="Align Left">⫷</button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','justifyCenter')" title="Align Center">≡</button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','justifyRight')" title="Align Right">⫸</button>
+    <div class="rte-sep"></div>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','insertUnorderedList')" title="Bullet List">• List</button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','insertOrderedList')" title="Numbered List">1. List</button>
+    <div class="rte-sep"></div>
+    <button type="button" class="rte-btn" onclick="openRteLinkModal('${editorId}')" title="Insert / Edit Link">🔗 Link</button>
+    <button type="button" class="rte-btn" onclick="rteInsertTable('${editorId}')" title="Insert Table">📊 Table</button>
+    <button type="button" class="rte-btn" onclick="rteExec('${editorId}','removeFormat')" title="Clear Formatting">🧹</button>
+    <div class="rte-sep"></div>
+    <button type="button" class="rte-btn" onclick="rteToggleCodeView('${editorId}','${rawId}',this)" title="Toggle HTML Code View">&lt;/&gt; Code</button>
+  `;
+}
+
+function rteExec(editorId, cmd, val=null){
+  const ed = document.getElementById(editorId);
+  if(!ed) return;
+  ed.focus();
+  document.execCommand(cmd, false, val);
+}
+
+function rteToggleCodeView(editorId, rawId, btn){
+  const ed = document.getElementById(editorId);
+  const raw = document.getElementById(rawId);
+  if(!ed || !raw) return;
+  if(ed.style.display === 'none'){
+    // Switch to visual editor
+    ed.innerHTML = raw.value;
+    raw.style.display = 'none';
+    ed.style.display = 'block';
+    btn?.classList.remove('active');
+  } else {
+    // Switch to raw HTML code
+    raw.value = ed.innerHTML;
+    ed.style.display = 'none';
+    raw.style.display = 'block';
+    btn?.classList.add('active');
+  }
+}
+
+function rteInsertTable(editorId){
+  const html = `
+    <table style="width:100%;border-collapse:collapse;margin:12px 0;border:1px solid rgba(255,255,255,0.15)">
+      <thead>
+        <tr style="background:rgba(255,255,255,0.06)">
+          <th style="border:1px solid rgba(255,255,255,0.15);padding:8px">Header 1</th>
+          <th style="border:1px solid rgba(255,255,255,0.15);padding:8px">Header 2</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="border:1px solid rgba(255,255,255,0.15);padding:8px">Data 1</td>
+          <td style="border:1px solid rgba(255,255,255,0.15);padding:8px">Data 2</td>
+        </tr>
+      </tbody>
+    </table><p></p>
+  `;
+  rteExec(editorId, 'insertHTML', html);
+}
+
+let _currentLinkEditorId = null;
+function openRteLinkModal(editorId){
+  _currentLinkEditorId = editorId;
+  al2('rte-link-al');
+  const sel = window.getSelection();
+  const txt = sel ? sel.toString() : '';
+  sv('rte-link-text', txt);
+  sv('rte-link-url', 'https://');
+  showModal('rte-link-modal');
+}
+
+function rteApplyLink(){
+  const url = v('rte-link-url');
+  const text = v('rte-link-text');
+  const target = $('rte-link-blank')?.checked ? '_blank' : '_self';
+  if(!url || url === 'https://'){
+    al('rte-link-al','Please enter a valid URL','err');
+    return;
+  }
+  closeModal('rte-link-modal');
+  const ed = document.getElementById(_currentLinkEditorId);
+  if(ed){
+    ed.focus();
+    const linkHtml = `<a href="${esc(url)}" target="${target}">${esc(text || url)}</a>`;
+    document.execCommand('insertHTML', false, linkHtml);
+  }
+}
+
+/* Canvas-based Client-Side Image Compressor */
+async function compressImageCanvas(file, maxWidth = 1200, quality = 0.85){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > maxWidth){
+          h = Math.round((h * maxWidth) / w);
+          w = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ── Template Studio Management ── */
+async function loadTemplates(){
+  const r = await get('templates');
+  allTemplates = r?.rows || [];
+  const tb = $('templates-body');
+  if(!tb) return;
+  if(!allTemplates.length){
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5">No templates yet — click "+ Create Template" to build one</td></tr>';
+    return;
+  }
+  tb.innerHTML = allTemplates.map(t => `
+    <tr>
+      <td><strong>${esc(t.name)}</strong></td>
+      <td style="color:var(--text2);font-size:12px">${esc(t.subject || '—')}</td>
+      <td><span class="badge b-gray">${esc(t.owner || 'You')}</span></td>
+      <td style="color:var(--text3);font-size:11px">${t.created_at || '—'}</td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-sm" onclick="editTemplate(${t.id})">Edit</button>
+          <button class="btn btn-blue btn-sm" onclick="previewTemplate(${t.id})">👁️ Preview</button>
+          <button class="btn btn-purple btn-sm" onclick="duplicateTemplate(${t.id})">Copy</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteTemplate(${t.id})">Del</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openNewTemplateModal(){
+  $('tmpl-id').value = '';
+  $('tmpl-name').value = '';
+  $('tmpl-subject').value = '';
+  $('tmpl-text').value = '';
+  $('template-modal-title').textContent = '📝 Create Email Template';
+  const ed = $('tmpl-html-editor');
+  if(ed) ed.innerHTML = '<p>Hi {{NAME}},</p><p>Type your beautiful email content here...</p>';
+  const raw = $('tmpl-html-raw');
+  if(raw){ raw.value = ed.innerHTML; raw.style.display = 'none'; }
+  if(ed) ed.style.display = 'block';
+  initRteToolbar('tmpl-rte-bar', 'tmpl-html-editor', 'tmpl-html-raw');
+  al2('template-al');
+  showModal('template-modal');
+}
+
+async function editTemplate(id){
+  const r = await get('templates/' + id);
+  if(!r?.row){ alert('Failed to load template'); return; }
+  const t = r.row;
+  $('tmpl-id').value = t.id;
+  $('tmpl-name').value = t.name || '';
+  $('tmpl-subject').value = t.subject || '';
+  $('tmpl-text').value = t.text_body || '';
+  $('template-modal-title').textContent = '✏️ Edit Template — ' + (t.name || '');
+  const ed = $('tmpl-html-editor');
+  if(ed) ed.innerHTML = t.html_body || '';
+  const raw = $('tmpl-html-raw');
+  if(raw){ raw.value = t.html_body || ''; raw.style.display = 'none'; }
+  if(ed) ed.style.display = 'block';
+  initRteToolbar('tmpl-rte-bar', 'tmpl-html-editor', 'tmpl-html-raw');
+  al2('template-al');
+  showModal('template-modal');
+}
+
+async function saveTemplateFromModal(){
+  const id = $('tmpl-id').value;
+  const name = $('tmpl-name').value.trim();
+  const subject = $('tmpl-subject').value.trim();
+  const text_body = $('tmpl-text').value.trim();
+  const ed = $('tmpl-html-editor');
+  const raw = $('tmpl-html-raw');
+  const html_body = (ed && ed.style.display !== 'none') ? ed.innerHTML : (raw?.value || '');
+
+  if(!name){ al('template-al','Template name is required','err'); return; }
+
+  const payload = { name, subject, html_body, text_body };
+  const r = id ? await put('templates/' + id, payload) : await post('templates', payload);
+  if(r?.ok){
+    al('template-al','✅ Template saved successfully!','ok');
+    loadTemplates();
+    setTimeout(() => closeModal('template-modal'), 800);
+  } else {
+    al('template-al', r?.message || r?.error || 'Save failed', 'err');
+  }
+}
+
+async function duplicateTemplate(id){
+  const r = await post('templates/' + id + '/duplicate', {});
+  if(r?.ok){ loadTemplates(); }
+  else { alert('Duplicate failed: ' + (r?.message || 'Error')); }
+}
+
+async function deleteTemplate(id){
+  if(!confirm('Are you sure you want to delete this template?')) return;
+  const r = await del('templates/' + id);
+  if(r?.ok){ loadTemplates(); }
+  else { alert('Delete failed: ' + (r?.message || 'Error')); }
+}
+
+/* ── Template Picker for Step Cards ── */
+async function openTemplatePickerForStep(stepIndex, prefix){
+  _targetStepIndex = stepIndex;
+  _targetStepPrefix = prefix;
+  const r = await get('templates');
+  allTemplates = r?.rows || [];
+  renderTemplatePickerGrid(allTemplates);
+  showModal('template-picker-modal');
+}
+
+function renderTemplatePickerGrid(list){
+  const grid = $('tmpl-picker-grid');
+  if(!grid) return;
+  if(!list.length){
+    grid.innerHTML = '<div style="color:var(--text3);font-size:12px;grid-column:1/-1;text-align:center;padding:24px">No templates found. Go to Templates to create one.</div>';
+    return;
+  }
+  grid.innerHTML = list.map(t => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:6px;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(t.name)}</div>
+      <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.subject || 'No Subject')}</div>
+      <div style="margin-top:auto;display:flex;gap:6px;padding-top:8px">
+        <button class="btn btn-secondary btn-sm" onclick="previewTemplate(${t.id})">👁️ Preview</button>
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="applyTemplateToStep(${t.id})">Apply ↵</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterTemplatePicker(){
+  const q = $('tmpl-picker-search')?.value.toLowerCase() || '';
+  const filtered = allTemplates.filter(t => (t.name || '').toLowerCase().includes(q) || (t.subject || '').toLowerCase().includes(q));
+  renderTemplatePickerGrid(filtered);
+}
+
+async function applyTemplateToStep(tmplId){
+  const t = allTemplates.find(x => x.id == tmplId) || (await get('templates/' + tmplId))?.row;
+  if(!t) return;
+  const pid = _targetStepPrefix === 'ar' ? 'ars' : 'fus';
+  const subEl = document.getElementById(pid + '-sub-' + _targetStepIndex);
+  const bodyEl = document.getElementById(pid + '-body-' + _targetStepIndex);
+  const txtEl = document.getElementById(pid + '-txt-' + _targetStepIndex);
+
+  if(subEl && t.subject) subEl.value = t.subject;
+  if(bodyEl && t.html_body) bodyEl.value = t.html_body;
+  if(txtEl && t.text_body) txtEl.value = t.text_body;
+
+  if(_targetStepPrefix === 'fu'){
+    renderFuTimeline();
+  }
+  closeModal('template-picker-modal');
+}
+
+/* ── Live Template Desktop & Mobile Preview ── */
+async function previewTemplate(id){
+  const t = allTemplates.find(x => x.id == id) || (await get('templates/' + id))?.row;
+  if(!t) return;
+  $('tmpl-prev-title').textContent = '📱 Preview — ' + (t.name || '');
+  const ifr = document.getElementById('template-preview-iframe');
+  if(ifr){
+    ifr.srcdoc = `
+      <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:16px;color:#1e293b;line-height:1.6;background:#fff;margin:0;}img{max-width:100%;height:auto;}</style></head><body>
+      ${t.html_body || '<p>No content in this template.</p>'}
+      </body></html>
+    `;
+  }
+  switchPreviewDevice('desktop');
+  showModal('template-preview-modal');
+}
+
+function switchPreviewDevice(dev){
+  const ifr = document.getElementById('template-preview-iframe');
+  const btnDesk = $('btn-prev-desk');
+  const btnMob = $('btn-prev-mob');
+  if(!ifr) return;
+  if(dev === 'mobile'){
+    ifr.className = 'device-frame-mobile';
+    btnDesk?.classList.remove('active');
+    btnMob?.classList.add('active');
+  } else {
+    ifr.className = 'device-frame-desktop';
+    btnDesk?.classList.add('active');
+    btnMob?.classList.remove('active');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SYSTEM & DELIVERABILITY ACTIVITY LOGS
+   ══════════════════════════════════════════════════════════════════ */
+let _sysLogsCurrentPage = 1;
+let _sysLogTimer = null;
+
+function sysLogDebounce(){
+  if(_sysLogTimer) clearTimeout(_sysLogTimer);
+  _sysLogTimer = setTimeout(() => loadSystemLogs(1), 350);
+}
+
+async function loadSystemLogs(page = 1){
+  _sysLogsCurrentPage = page;
+  const event = $('sys-event-filter')?.value || '';
+  const search = $('sys-email-filter')?.value || '';
+  const qs = '&page=' + page + (event ? '&event=' + encodeURIComponent(event) : '') + (search ? '&search=' + encodeURIComponent(search) : '');
+  const r = await get('system-logs?' + qs);
+  const tb = $('sys-logs-body');
+  if(!tb) return;
+  if(!r?.rows?.length){
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7">No activity logged yet</td></tr>';
+    $('sys-logs-pager').innerHTML = '';
+    return;
+  }
+  const badges = {
+    sent: 'sys-badge sys-badge-sent',
+    opened: 'sys-badge sys-badge-opened',
+    clicked: 'sys-badge sys-badge-clicked',
+    queued: 'sys-badge sys-badge-queued',
+    retry: 'sys-badge sys-badge-retry',
+    failed: 'sys-badge sys-badge-failed',
+    unsubscribed: 'sys-badge sys-badge-unsubscribed'
+  };
+  const icons = {
+    sent: '📤', opened: '👁️', clicked: '🖱️', queued: '🕒', retry: '🔄', failed: '❌', unsubscribed: '🛑'
+  };
+
+  tb.innerHTML = r.rows.map(l => `
+    <tr>
+      <td><span class="${badges[l.event_type] || 'badge b-gray'}">${icons[l.event_type] || '•'} ${esc(l.event_type.toUpperCase())}</span></td>
+      <td class="mono" style="font-size:11px;font-weight:600">${esc(l.recipient_email || '—')}</td>
+      <td style="font-size:11px;color:var(--text2);max-width:280px;overflow:hidden;text-overflow:ellipsis">
+        ${esc(l.link_url || l.subject || l.error_message || l.details || '—')}
+      </td>
+      <td style="font-size:10px;color:var(--text3)">${esc(l.smtp_host || '—')}</td>
+      <td class="mono" style="font-size:10px">${esc(l.ip_address || '—')}</td>
+      <td style="font-size:10px;color:var(--text3);max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.user_agent || '')}">${esc(l.user_agent ? l.user_agent.substring(0,25)+'…' : '—')}</td>
+      <td style="font-size:10px;color:var(--text2);white-space:nowrap">${l.created_at || '—'}</td>
+    </tr>
+  `).join('');
+
+  const pg = $('sys-logs-pager');
+  if(r.pages > 1){
+    let h = '';
+    if(page > 1) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page-1})">← Prev</button>`;
+    h += `<span style="font-size:11px;color:var(--text3)">Page ${page} of ${r.pages} (${fmt(r.total)} events)</span>`;
+    if(page < r.pages) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page+1})">Next →</button>`;
+    pg.innerHTML = h;
+  } else {
+    pg.innerHTML = `<span style="font-size:11px;color:var(--text3)">${fmt(r.total)} total events</span>`;
+  }
+}
+
+async function loadSystemLogStats(){
+  const s = await get('system-logs/stats');
+  if(!s?.stats) return;
+  const st = s.stats;
+  set('sys-stat-sent-today', fmt(st.sent_today || 0));
+  set('sys-stat-opened', fmt(st.opened || 0));
+  set('sys-stat-open-rate', (st.open_rate || 0) + '% open rate');
+  set('sys-stat-clicked', fmt(st.clicked || 0));
+  set('sys-stat-click-rate', (st.click_rate || 0) + '% CTR');
+  set('sys-stat-sched-fu', fmt(st.scheduled_followups || 0));
+  set('sys-stat-retry-queue', fmt(st.retry_queue || 0));
+  set('sys-stat-failed-today', fmt(st.failed_today || 0));
+  set('sys-stat-unsub', fmt(st.unsubscribed || 0));
+}
+
+async function clearSystemLogs(){
+  if(!confirm('Are you sure you want to clear all system activity logs?')) return;
+  const r = await del('system-logs');
+  if(r?.ok){
+    loadSystemLogs(1);
+    loadSystemLogStats();
+  } else {
+    alert('Clear failed: ' + (r?.message || 'Error'));
+  }
 }
 
 /* FU Contacts */

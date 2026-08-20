@@ -230,6 +230,15 @@ $lockTimeoutSeconds = 300;
 try {
     $activeImaps = db()->query("SELECT * FROM imap_accounts WHERE status='active'")->fetchAll();
 
+    // ── Smart Priority Sorting: Prioritize Gmail and Primary Inboxes ──
+    usort($activeImaps, function($a, $b) {
+        $aIsGmail = (stripos($a['host'] ?? '', 'gmail') !== false || stripos($a['username'] ?? '', '@gmail.com') !== false);
+        $bIsGmail = (stripos($b['host'] ?? '', 'gmail') !== false || stripos($b['username'] ?? '', '@gmail.com') !== false);
+        if ($aIsGmail && !$bIsGmail) return -1;
+        if (!$aIsGmail && $bIsGmail) return 1;
+        return (int)$a['id'] <=> (int)$b['id'];
+    });
+
     foreach ($activeImaps as $ia) {
         if (time() - $CRON_START_TIME > 45) {
             $results[] = ['status'=>'time_limit', 'message'=>'Time limit reached, stopping IMAP processing.'];
@@ -450,21 +459,35 @@ try {
                     continue; // Already persisted — duplicate protection active
                 }
 
+                $mMsgId = substr(trim((string)($m['message_id'] ?? '')), 0, 255);
+                $mIrt   = substr(trim((string)($m['in_reply_to'] ?? '')), 0, 255);
+                $mRef   = trim((string)($m['references'] ?? ''));
+                $mSubj  = substr((string)($m['subject'] ?? ''), 0, 500);
+                $mThId  = resolveConversationThreadId($mMsgId, $mIrt, $mRef, $mFE, $mSubj);
+
                 db()->prepare(
                     "INSERT INTO inbound_emails
-                     (imap_account_id, uid, uid_validity, from_email, from_name, subject, received_at)
-                     VALUES (?, ?, ?, ?, ?, ?, NOW())
+                     (imap_account_id, uid, uid_validity, from_email, from_name, subject, message_id, in_reply_to, references_header, thread_id, received_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                      ON DUPLICATE KEY UPDATE
                        from_email = VALUES(from_email),
                        from_name  = COALESCE(NULLIF(VALUES(from_name), ''), from_name),
-                       subject    = COALESCE(NULLIF(VALUES(subject),   ''), subject)"
+                       subject    = COALESCE(NULLIF(VALUES(subject),   ''), subject),
+                       message_id = COALESCE(NULLIF(VALUES(message_id), ''), message_id),
+                       in_reply_to = COALESCE(NULLIF(VALUES(in_reply_to), ''), in_reply_to),
+                       references_header = COALESCE(NULLIF(VALUES(references_header), ''), references_header),
+                       thread_id  = COALESCE(NULLIF(VALUES(thread_id), ''), thread_id)"
                 )->execute([
                     $iaId,
                     $mUid,
                     $curUidV,
                     substr($mFE, 0, 255),
                     substr((string)($m['from_name'] ?? ''), 0, 255),
-                    substr((string)($m['subject']   ?? ''), 0, 500),
+                    $mSubj,
+                    $mMsgId ?: null,
+                    $mIrt ?: null,
+                    $mRef ?: null,
+                    $mThId ?: null,
                 ]);
                 $persisted++;
             } catch (Exception $insE) {
@@ -807,6 +830,8 @@ try {
                 date('F j, Y g:i A')
             );
 
+            $campTrackingToken = generateTrackingToken();
+
             try {
                 (new Mailer($mailerCfg))->send(
                     $recipient['email'],
@@ -814,7 +839,11 @@ try {
                     $message['subject'],
                     $message['html'],
                     $message['text'],
-                    $message['inlineImages']
+                    $message['inlineImages'],
+                    [
+                        'tracking_token' => $campTrackingToken,
+                        'track_clicks'   => true,
+                    ]
                 );
 
                 db()->prepare(
@@ -823,6 +852,33 @@ try {
                       smtp_name_used, from_email_used, variant_index)
                      VALUES (?, ?, ?, 'sent', 'campaign', ?, ?, ?)"
                 )->execute([$cid, $cUid, $recipient['email'], $smtpNameLog, $fromEmailUsed, $vi]);
+
+                logSystemEvent('sent', $recipient['email'], "Campaign '{$cName}' email sent", $cUid, $cid, null, null, $campTrackingToken, $smtpNameLog);
+
+                // If campaign is linked to a Follow-Up rule, enqueue Step 1 as 'scheduled' (sends after delay whether read or not)
+                if (!empty($camp['followup_rule_id'])) {
+                    $fuRuleId = (int)$camp['followup_rule_id'];
+                    $s1Query = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id = ? ORDER BY step_number ASC LIMIT 1");
+                    $s1Query->execute([$fuRuleId]);
+                    $s1Data = $s1Query->fetch();
+                    if ($s1Data) {
+                        $s1DelayVal = max(0, (int)($s1Data['delay_value'] ?? $s1Data['delay_minutes'] ?? 30));
+                        $s1DelayUnit = in_array(strtolower($s1Data['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($s1Data['delay_unit']) : 'minutes';
+                        $s1DelayMins = delayToMinutes($s1DelayVal, $s1DelayUnit);
+                        $s1SchedAt = date('Y-m-d H:i:s', strtotime("+{$s1DelayMins} minutes"));
+
+                        $insQ = db()->prepare(
+                            "INSERT INTO email_followup_queue
+                             (user_id, campaign_id, rule_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
+                             VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?)"
+                        );
+                        $insQ->execute([
+                            $cUid, $cid, $fuRuleId, $recipient['email'], $recipient['name'] ?? '',
+                            $s1DelayVal, $s1DelayUnit, $s1DelayMins, $s1SchedAt, $campTrackingToken
+                        ]);
+                        logSystemEvent('queued', $recipient['email'], "Follow-up #1 scheduled for {$s1SchedAt} (+{$s1DelayVal} {$s1DelayUnit})", $cUid, $cid, $fuRuleId, db()->lastInsertId(), $campTrackingToken);
+                    }
+                }
 
                 $sent++;
 
@@ -964,7 +1020,6 @@ try {
             if ($_ownerId === $userId) $allowedImapIds[] = (int)$_iaId;
         }
         
-        // Add assigned_imap_ids
         if (!empty($rule['u_assigned_imap_ids'])) {
             $sharedIds = json_decode($rule['u_assigned_imap_ids'], true);
             if (is_array($sharedIds)) {
@@ -977,7 +1032,6 @@ try {
             }
         }
         
-        // Check for admin-granted shared permissions (legacy fallback)
         try {
             $sharedStmt = db()->prepare(
                 "SELECT imap_account_id, owner_user_id FROM imap_shared_permissions WHERE grantee_user_id = ?"
@@ -993,38 +1047,20 @@ try {
 
         $newMsgs = [];
         foreach ($imapMessages as $iaId => $msgs) {
-            if (!in_array((int)$iaId, $allowedImapIds, true)) continue; // ISOLATION: skip non-owned, non-shared IMAPs
+            if (!in_array((int)$iaId, $allowedImapIds, true)) continue;
             foreach ($msgs as $m) {
                 $m['source_imap_id'] = $iaId;
                 $newMsgs[] = $m;
             }
         }
-        if (!$newMsgs) {
-            // No messages for this user's IMAPs — this is normal (inbox empty or no new mail).
-            // Do NOT fall back to other users' IMAP messages. That path caused cross-user
-            // lead duplication and has been permanently removed.
-            $totalOwned = 0;
-            foreach ($allowedImapIds as $_aid) {
-                $totalOwned += count($imapMessages[$_aid] ?? []);
-            }
-            // Diagnostic: if there ARE messages on other users' IMAPs, note that we
-            // correctly isolated them (without enrolling them).
-            $totalOther = 0;
-            foreach ($imapMessages as $_iaId => $_ms) {
-                if (!in_array((int)$_iaId, $allowedImapIds, true)) $totalOther += count($_ms);
-            }
-            if ($totalOther > 0) {
-                $results[] = ['status'=>'ar_info','rule'=>$rule['name'],
-                    'message'=>"Isolation active: {$totalOther} messages on other users' IMAP accounts were correctly NOT processed for this rule (user_id={$userId}). Use admin shared permissions to grant access if needed."];
-            }
-        }
-
-        // Fail-safe diagnostic per the user's spec: warn (don't block) when
-        // sequential mode is on but no IMAP 2 is configured.
-        if ($isSeq && $imap2Id === 0) {
-            $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                'message'=>'Sequential mode without IMAP 2 — single-IMAP fallback (no auto-delete, no move). Configure IMAP 2 to enable the two-stage workflow.'];
-        }
+         $isSmart = !empty($rule['enable_smart_routing']);
+        $primaryImapId = (int)($rule['primary_imap_id'] ?? $rule['imap_id'] ?? 0);
+        $secondaryImapId = (int)($rule['secondary_imap_id'] ?? $rule['imap2_id'] ?? 0);
+        $backupImapId = (int)($rule['backup_imap_id'] ?? 0);
+        $primarySmtpId = (int)($rule['primary_smtp_id'] ?? 0);
+        $secondarySmtpId = (int)($rule['secondary_smtp_id'] ?? 0);
+        $replyToSwitch = !isset($rule['enable_reply_to_switch']) || (int)$rule['enable_reply_to_switch'] === 1;
+        $fuRuleId = (int)($rule['followup_rule_id'] ?? 0);
 
         foreach($newMsgs as $msg){
             $fe=strtolower(trim($msg['from_email']??''));
@@ -1033,30 +1069,19 @@ try {
             $uid=(int)($msg['uid']??0);
             $srcId=(int)($msg['source_imap_id']??0);
             $inMsgId=trim($msg['message_id']??'');
+            $inIrt=trim($msg['in_reply_to']??'');
+            $inRef=trim($msg['references']??'');
             if(!$fe||!filter_var($fe,FILTER_VALIDATE_EMAIL))continue;
             if(isBlacklisted($fe,$userId))continue;
-            // Subject Blacklist + "Has the Words" filter — additive to the
-            // email/domain blacklist above. If the inbound subject contains a
-            // blacklisted phrase, or the combined subject+from text matches a
-            // keyword entry, skip enrolment without touching the existing
-            // email/domain code path.
             if (isMessageBlocked($userId, $fs, $fe, $fn)) continue;
 
-            // ── Per-message fault isolation ────────────────────────────────
-            // Each inbound message is processed inside its own try/catch so a
-            // schema mismatch or transient DB error on message N cannot prevent
-            // messages N+1..M from enrolling. This is the second half of the
-            // fix for "first email not added to AR list" — even after the
-            // base-column fallback below, we never want one weird sender to
-            // poison the whole batch.
             try {
+            $thId = resolveConversationThreadId($inMsgId, $inIrt, $inRef, $fe, $fs);
             $th=db()->prepare("SELECT * FROM autoreply_threads WHERE rule_id=? AND from_email=?");
             $th->execute([$ruleId,$fe]);$thread=$th->fetch();
+
             if(!$thread){
-                // New sender — compute when to send step 1 (respects delay_minutes even in sequential mode)
-                // Defensive read of step 1 delay_minutes. Old code coerced
-                // (false)['delay_minutes'] which produces NULL → (int)NULL = 0,
-                // making "SEND AFTER (MINUTES)" silently collapse to instant.
+                // ── NEW LEAD (Stage 1) ──────────────────────────────────────
                 $step1delay = 1;
                 try {
                     $step1q=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=1");
@@ -1065,26 +1090,20 @@ try {
                     if ($s1r && isset($s1r['delay_minutes']) && $s1r['delay_minutes'] !== null) {
                         $step1delay = max(0, (int)$s1r['delay_minutes']);
                     }
-                } catch (Exception $_s1de) { /* keep default */ }
+                } catch (Exception $_s1de) {}
                 $step1at = $step1delay > 0
                     ? date('Y-m-d H:i:s', strtotime("+{$step1delay} minutes", $arNowTs))
                     : $arNow;
 
-                // ── AR enrollment INSERT with legacy-schema fallback ────────
-                // Primary path uses every column the two-IMAP workflow needs.
-                // If those columns are missing on a legacy install whose ALTER
-                // migrations never applied, the catch falls back to a
-                // base-columns-only INSERT so the row is STILL created. The
-                // user's hard requirement — "every first email must be added
-                // to the auto reply list" — is honoured under any schema state.
                 $arInserted = false;
                 try {
                     db()->prepare(
                         "INSERT INTO autoreply_threads
                          (rule_id,from_email,from_name,subject_in,current_step,next_send_at,
                           reply_count,messages_received,awaiting_reply,status,
-                          current_imap_id,last_trigger_uid,last_trigger_imap_id,last_msg_id)
-                         VALUES(?,?,?,?,1,?,1,1,0,'active',?,?,?,?)
+                          current_imap_id,last_trigger_uid,last_trigger_imap_id,last_msg_id,
+                          active_mailbox,first_reply_sent,imap_source,thread_id,original_message_id,references_header,conversation_stage)
+                         VALUES(?,?,?,?,1,?,1,1,0,'active',?,?,?,?, 'primary', 0, 'primary', ?, ?, ?, 'NEW_LEAD')
                          ON DUPLICATE KEY UPDATE
                            from_name=IF(from_name=''OR from_name IS NULL,VALUES(from_name),from_name),
                            next_send_at=IF(status='active'AND next_send_at IS NULL,VALUES(next_send_at),next_send_at),
@@ -1093,16 +1112,14 @@ try {
                            last_trigger_imap_id=VALUES(last_trigger_imap_id),
                            last_msg_id=COALESCE(VALUES(last_msg_id),last_msg_id)"
                     )->execute([$ruleId,$fe,$fn,substr($fs,0,200),$step1at,
-                                $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null]);
+                                $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null,
+                                $thId,$inMsgId?:null,$inRef?:null]);
                     $arInserted = true;
                 } catch (Exception $arInsEx) {
-                    // Legacy schema — retry with only base columns guaranteed
-                    // by the original CREATE TABLE.
                     try {
                         db()->prepare(
                             "INSERT INTO autoreply_threads
-                             (rule_id,from_email,from_name,subject_in,current_step,
-                              next_send_at,reply_count,status)
+                             (rule_id,from_email,from_name,subject_in,current_step,next_send_at,reply_count,status)
                              VALUES (?, ?, ?, ?, 1, ?, 1, 'active')
                              ON DUPLICATE KEY UPDATE
                                from_name    = IF(from_name='' OR from_name IS NULL, VALUES(from_name), from_name),
@@ -1110,36 +1127,44 @@ try {
                                reply_count  = reply_count + 1"
                         )->execute([$ruleId,$fe,$fn,substr($fs,0,200),$step1at]);
                         $arInserted = true;
-                        $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                            'message'=>'AR enrolled '.$fe.' via legacy fallback (apply schema migrations: '.$arInsEx->getMessage().')'];
-                        // Best-effort: also fill the extension columns if they exist.
+                    } catch (Exception $arBaseEx) {}
+                }
+                if ($arInserted) {
+                    $enrolledAR++;
+                    logMailRoutingEvent($userId, $ruleId, $thId, $fe, 'lead_received', $imapCfgById[$srcId]['username'] ?? 'Primary Gmail', null, null, null, 'NEW_LEAD', 'success', "New lead received in Gmail: {$fs}");
+
+                    // ── SIMULTANEOUS ACTION: SCHEDULE FOLLOW-UP SEQUENCE ─────
+                    if ($fuRuleId > 0) {
                         try {
-                            db()->prepare(
-                                "UPDATE autoreply_threads
-                                 SET messages_received    = COALESCE(messages_received, 0) + 1,
-                                     awaiting_reply       = 0,
-                                     current_imap_id      = ?,
-                                     last_trigger_uid     = ?,
-                                     last_trigger_imap_id = ?
-                                 WHERE rule_id = ? AND from_email = ?"
-                            )->execute([
-                                $srcId>0?$srcId:null,
-                                $uid>0?$uid:null,
-                                $srcId>0?$srcId:null,
-                                $ruleId, $fe
-                            ]);
-                        } catch (Exception $extEx) { /* extension cols absent — base row already inserted */ }
-                    } catch (Exception $arBaseEx) {
-                        $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                            'message'=>'AR enroll failed for '.$fe.': '.$arBaseEx->getMessage()];
+                            $fs1Query = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id = ? ORDER BY step_number ASC LIMIT 1");
+                            $fs1Query->execute([$fuRuleId]);
+                            $fs1Data = $fs1Query->fetch();
+                            if ($fs1Data) {
+                                $fuVal = max(0, (int)($fs1Data['delay_value'] ?? $fs1Data['delay_minutes'] ?? 30));
+                                $fuUnit = in_array(strtolower($fs1Data['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($fs1Data['delay_unit']) : 'minutes';
+                                $fuMins = delayToMinutes($fuVal, $fuUnit);
+                                $fuSchedAt = date('Y-m-d H:i:s', strtotime("+{$fuMins} minutes"));
+                                $fuTok = generateTrackingToken();
+
+                                $insFu = db()->prepare(
+                                    "INSERT INTO email_followup_queue
+                                     (user_id, campaign_id, rule_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
+                                     VALUES (?, NULL, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?)"
+                                );
+                                $insFu->execute([$userId, $fuRuleId, $fe, $fn, $fuVal, $fuUnit, $fuMins, $fuSchedAt, $fuTok]);
+                                $fuQId = db()->lastInsertId();
+
+                                db()->prepare("UPDATE autoreply_threads SET followup_status = 'running', followup_next_run = ? WHERE rule_id = ? AND from_email = ?")
+                                    ->execute([$fuSchedAt, $ruleId, $fe]);
+
+                                logMailRoutingEvent($userId, $ruleId, $thId, $fe, 'followup_scheduled', null, null, null, 'NEW_LEAD', 'FOLLOWUP_RUNNING', 'success', "Follow-up sequence started simultaneously with lead creation (+{$fuVal} {$fuUnit})");
+                                logSystemEvent('queued', $fe, "Follow-up #1 scheduled simultaneously with lead creation for {$fuSchedAt}", $userId, null, $fuRuleId, $fuQId, $fuTok);
+                            }
+                        } catch (Throwable $_fuSimEx) {}
                     }
                 }
-                if ($arInserted) $enrolledAR++;
             } else if($thread['status']==='completed') {
-                // Returning sender — re-enroll from step 1 so they get the full sequence again
-                // Defensive read of step 1 delay_minutes. Old code coerced
-                // (false)['delay_minutes'] which produces NULL → (int)NULL = 0,
-                // making "SEND AFTER (MINUTES)" silently collapse to instant.
+                // Returning sender — re-enroll
                 $step1delay = 1;
                 try {
                     $step1q=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=1");
@@ -1148,116 +1173,78 @@ try {
                     if ($s1r && isset($s1r['delay_minutes']) && $s1r['delay_minutes'] !== null) {
                         $step1delay = max(0, (int)$s1r['delay_minutes']);
                     }
-                } catch (Exception $_s1de) { /* keep default */ }
-                $step1at = $step1delay > 0
-                    ? date('Y-m-d H:i:s', strtotime("+{$step1delay} minutes", $arNowTs))
-                    : $arNow;
+                } catch (Exception $_s1de) {}
+                $step1at = $step1delay > 0 ? date('Y-m-d H:i:s', strtotime("+{$step1delay} minutes", $arNowTs)) : $arNow;
                 db()->prepare(
                     "UPDATE autoreply_threads
                      SET current_step=1,next_send_at=?,awaiting_reply=0,status='active',
                          reply_count=reply_count+1,messages_received=messages_received+1,
                          from_name=IF(? != '' AND ? IS NOT NULL,?,from_name),
-                         current_imap_id=?,last_trigger_uid=?,last_trigger_imap_id=?
+                         current_imap_id=?,last_trigger_uid=?,last_trigger_imap_id=?,
+                         conversation_stage='NEW_LEAD', active_mailbox='primary', first_reply_sent=0
                      WHERE id=?"
                 )->execute([$step1at,$fn,$fn,$fn,
                             $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,
                             $thread['id']]);
                 $enrolledAR++;
             } else {
-                if($isSeq){
-                    $nc=(int)($thread['messages_received']??1)+1;
+                // ── USER REPLIED (Check for Mailbox Migration to Secondary) ──
+                $isReplyToSecondary = ($secondaryImapId > 0 && $srcId === $secondaryImapId) || (!empty($thread['first_reply_sent']));
+                $targetMailbox = $isReplyToSecondary ? 'secondary' : ($thread['active_mailbox'] ?? 'primary');
+                $targetStage = $isReplyToSecondary ? 'MOVED_TO_SECONDARY' : ($thread['conversation_stage'] ?? 'FIRST_REPLY_SENT');
 
-                    // ── Robust "awaiting reply" detection ──────────────────────
-                    // The original check `awaiting_reply===1` silently fails when
-                    // the column never migrated on legacy MariaDB — (int)null===1
-                    // is false, so the unlock branch never fired and step 2+ in
-                    // sequential mode were never scheduled (operator sees:
-                    // "SEND AFTER (MINUTES) does not work"). Structural fallback:
-                    // a thread waiting for a user reply is one that has already
-                    // sent at least one step (current_step > 1) AND has no
-                    // pending timer (next_send_at IS NULL). Either signal counts.
-                    $awaiting = (int)($thread['awaiting_reply'] ?? 0) === 1
-                              || ((int)$thread['current_step'] > 1 && empty($thread['next_send_at']));
+                $nc=(int)($thread['messages_received']??1)+1;
+                $awaiting = (int)($thread['awaiting_reply'] ?? 0) === 1 || ((int)$thread['current_step'] > 1 && empty($thread['next_send_at']));
 
-                    if($thread['status']==='active' && $awaiting){
-                        // User replied — record this UID as the trigger so the next
-                        // send's post-action knows what to delete or move.
-                        // Defensive read of delay_minutes: when the column is
-                        // missing or NULL (legacy schema), default to 1 minute so
-                        // the configured delay is approximated rather than
-                        // collapsing to an instant send.
-                        $unlockStep=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-                        $unlockStep->execute([$ruleId,(int)$thread['current_step']]);
-                        $unlockRow = $unlockStep->fetch();
-                        if ($unlockRow && isset($unlockRow['delay_minutes']) && $unlockRow['delay_minutes'] !== null) {
-                            $unlockDelay = max(0, (int)$unlockRow['delay_minutes']);
-                        } else {
-                            $unlockDelay = 1; // safe default — never collapse to 0
-                        }
-                        $unlockAt = $unlockDelay > 0
-                            ? date('Y-m-d H:i:s', strtotime("+{$unlockDelay} minutes", $arNowTs))
-                            : $arNow;
-                        // Try the full update first (modern schema). Fall back to
-                        // a base-column UPDATE if the awaiting_reply / trigger
-                        // columns are absent so the schedule still gets written.
-                        try {
-                            db()->prepare("UPDATE autoreply_threads
-                                SET messages_received=?,awaiting_reply=0,next_send_at=?,reply_count=reply_count+1,
-                                    last_trigger_uid=?,last_trigger_imap_id=?
-                                WHERE id=?")
-                                ->execute([$nc,$unlockAt,$uid>0?$uid:null,$srcId>0?$srcId:null,$thread['id']]);
-                        } catch (Exception $unlockEx) {
-                            db()->prepare("UPDATE autoreply_threads
-                                SET next_send_at=?, reply_count=reply_count+1
-                                WHERE id=?")
-                                ->execute([$unlockAt, $thread['id']]);
-                        }
-                        // Visibility: surface the scheduled delay so the operator
-                        // can confirm the cron is honouring "SEND AFTER (MINUTES)".
-                        $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                            'message'=>"Sequential reply unlocked for {$fe}: step {$thread['current_step']} scheduled at {$unlockAt} (delay={$unlockDelay}min)"];
-                    }else{
-                        // Already-armed thread — still record latest UID (overwrite is fine,
-                        // we only act on the most recent inbound message per send cycle).
+                if($thread['status']==='active' && ($awaiting || $isSeq || $isReplyToSecondary)){
+                    $unlockStep=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+                    $unlockStep->execute([$ruleId,(int)$thread['current_step']]);
+                    $unlockRow = $unlockStep->fetch();
+                    $unlockDelay = ($unlockRow && isset($unlockRow['delay_minutes']) && $unlockRow['delay_minutes'] !== null)
+                        ? max(0, (int)$unlockRow['delay_minutes']) : 1;
+                    $unlockAt = $unlockDelay > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelay} minutes", $arNowTs)) : $arNow;
+
+                    $newRefs = trim(($thread['references_header'] ?? '') . ' ' . $inMsgId);
+
+                    try {
                         db()->prepare("UPDATE autoreply_threads
-                            SET messages_received=?,reply_count=reply_count+1,
-                                last_trigger_uid=?,last_trigger_imap_id=?
+                            SET messages_received=?,awaiting_reply=0,next_send_at=?,reply_count=reply_count+1,
+                                last_trigger_uid=?,last_trigger_imap_id=?,last_msg_id=?,
+                                active_mailbox=?,conversation_stage=?,references_header=?
                             WHERE id=?")
-                            ->execute([$nc,$uid>0?$uid:null,$srcId>0?$srcId:null,$thread['id']]);
+                            ->execute([$nc,$unlockAt,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null,
+                                       $targetMailbox,$targetStage,$newRefs,$thread['id']]);
+                    } catch (Exception $unlockEx) {
+                        db()->prepare("UPDATE autoreply_threads SET next_send_at=?, reply_count=reply_count+1 WHERE id=?")->execute([$unlockAt, $thread['id']]);
                     }
-                }else{
-                    db()->prepare("UPDATE autoreply_threads SET reply_count=reply_count+1 WHERE id=?")->execute([$thread['id']]);
+
+                    if ($isReplyToSecondary && ($thread['active_mailbox'] !== 'secondary' || $thread['conversation_stage'] !== 'MOVED_TO_SECONDARY')) {
+                        logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? $thId, $fe, 'mailbox_migrated', $imapCfgById[$srcId]['username'] ?? 'Secondary IMAP', null, null, $thread['conversation_stage'] ?? 'FIRST_REPLY_SENT', 'MOVED_TO_SECONDARY', 'success', "Lead replied to IMAP #2 — Thread permanently migrated to Secondary Mailbox (SMTP #2 will handle all future replies & follow-ups)");
+                    }
                 }
             }
-            } catch (Exception $msgEx) {
-                // Per-message isolation: log and continue with the next message.
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                    'message'=>'AR enroll error for '.$fe.': '.$msgEx->getMessage()];
-                // Last-ditch fallback so the email STILL lands in the AR list,
-                // matching the user's hard requirement. INSERT IGNORE is safe
-                // when a partial row already exists from the failing path above.
-                try {
-                    db()->prepare(
-                        "INSERT IGNORE INTO autoreply_threads
-                         (rule_id, from_email, from_name, subject_in, current_step,
-                          next_send_at, reply_count, status)
-                         VALUES (?, ?, ?, ?, 1, ?, 1, 'active')"
-                    )->execute([$ruleId, $fe, $fn, substr($fs, 0, 200), $arNow]);
-                    $enrolledAR++;
-                } catch (Exception $fbEx) { /* gave it our best */ }
+            } catch (Exception $mEx) {
+                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],'message'=>'AR message loop error for '.$fe.': '.$mEx->getMessage()];
             }
         }
 
-        // ── Build main SMTP pool ──────────────────────────────────────
+        // ── Build SMTP Pools ──────────────────────────────────────────
         $smtpIds=[];
         if(!empty($rule['smtp_ids'])){$d=json_decode($rule['smtp_ids'],true);if(is_array($d))$smtpIds=array_values(array_map('intval',$d));}
         if(empty($smtpIds) && !empty($rule['u_assigned_smtp_ids'])){$d=json_decode($rule['u_assigned_smtp_ids'],true);if(is_array($d))$smtpIds=array_values(array_map('intval',$d));}
 
-        // ── Pre-fetch dedicated Step 1 SMTP pool (once per rule, outside thread loop) ──
-        // If step1_smtp_ids is set and resolves to real SMTP records, use them for step 1.
-        // If not set, or the IDs resolve to nothing, fall back to main pool.
-        $step1SmtpPool=null; // null = not configured or not resolvable → use main pool
-        if(!empty($rule['step1_smtp_ids'])){
+        // Pre-fetch dedicated Step 1 / Primary SMTP pool
+        $step1SmtpPool=null;
+        $primarySmtpCfg=null;
+        $secondarySmtpCfg=null;
+
+        if ($primarySmtpId > 0) {
+            $psStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?");
+            $psStmt->execute([$primarySmtpId]);
+            $primarySmtpCfg = $psStmt->fetch();
+            if ($primarySmtpCfg) $step1SmtpPool = [$primarySmtpCfg];
+        }
+        if (!$step1SmtpPool && !empty($rule['step1_smtp_ids'])) {
             $s1Ids=json_decode($rule['step1_smtp_ids'],true);
             if(is_array($s1Ids)&&count($s1Ids)>0){
                 $s1Ids=array_values(array_map('intval',$s1Ids));
@@ -1265,28 +1252,30 @@ try {
                     $s1ph=implode(',',array_fill(0,count($s1Ids),'?'));
                     $s1ss=db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($s1ph)");
                     $s1ss->execute($s1Ids);
-                    $s1Pool=[];foreach($s1ss->fetchAll()as $s2)$s1Pool[]=$s2;
-                    if($s1Pool) $step1SmtpPool=$s1Pool; // only override if records actually exist
-                }catch(Exception $e){
-                    // Step1 pool query failed — log warning, fall back to main pool
-                    $results[]=['status'=>'ar_warn','rule'=>$rule['name'],
-                        'message'=>'Step1 SMTP pool query failed: '.$e->getMessage().' — using main pool'];
-                }
+                    $step1SmtpPool=$s1ss->fetchAll();
+                }catch(Exception $e){}
             }
         }
 
-        if(!$smtpIds && !$step1SmtpPool){
-            $results[]=['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"No SMTP configured — enrolled {$enrolledAR}"];continue;}
-            
+        if ($secondarySmtpId > 0) {
+            $ssStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?");
+            $ssStmt->execute([$secondarySmtpId]);
+            $secondarySmtpCfg = $ssStmt->fetch();
+        }
+
         $smtpPool=[];
         if($smtpIds){
             $ph=implode(',',array_fill(0,count($smtpIds),'?'));
             $ss=db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");$ss->execute($smtpIds);
-            foreach($ss->fetchAll()as $s2)$smtpPool[]=$s2;
+            $smtpPool=$ss->fetchAll();
         }
-        
+        if ($secondarySmtpCfg && empty($smtpPool)) {
+            $smtpPool = [$secondarySmtpCfg];
+        }
+
         if(!$smtpPool && !$step1SmtpPool){
-            $results[]=['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"SMTP servers not found in DB (deleted?) — enrolled {$enrolledAR}"];continue;}
+            $results[]=['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"No SMTP configured — enrolled {$enrolledAR}"];continue;
+        }
 
         $fromPool=[];
         if(!empty($rule['from_emails'])){$d=json_decode($rule['from_emails'],true);if(is_array($d))$fromPool=$d;}
@@ -1295,101 +1284,104 @@ try {
         $due->execute([$ruleId,$arNow]);$dueThreads=$due->fetchAll();
         $sent=0;$failed=0;
 
-        // Per-rule queues for IMAP post-actions, applied AFTER all sends complete.
-        // - $arDeleteQueue[imap_id] = [uid, uid, ...]   (drive IMAP 1 cleanup after AR1)
-        // - $arMoveQueue[src_imap_id] = ['to'=>dst_id, 'uids'=>[...]]   (IMAP 1 → IMAP 2 on first user reply)
         $arDeleteQueue = [];
         $arMoveQueue   = [];
 
         foreach($dueThreads as $thread){
-            // Send-time blacklist enforcement. The enrollment check at the top
-            // of Step 3 only runs once per inbound message; if the operator
-            // adds a sender (or its domain/TLD) to the blacklist AFTER the
-            // thread was created, every remaining step in the sequence would
-            // still fire without this guard. Mark the thread completed so the
-            // dueThreads SELECT stops returning it.
             if (isBlacklisted($thread['from_email'], $userId)) {
-                try {
-                    db()->prepare("UPDATE autoreply_threads SET status='completed', next_send_at=NULL WHERE id=?")
-                        ->execute([$thread['id']]);
-                } catch (Exception $_blEx) {}
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                    'message'=>"Blacklist blocked AR send to {$thread['from_email']} — thread closed."];
+                try { db()->prepare("UPDATE autoreply_threads SET status='completed', next_send_at=NULL WHERE id=?")->execute([$thread['id']]); } catch (Exception $_blEx) {}
                 continue;
             }
+            $stepNumNow = (int)$thread['current_step'];
             $sr=db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-            $sr->execute([$ruleId,$thread['current_step']]);$step=$sr->fetch();
+            $sr->execute([$ruleId,$stepNumNow]);$step=$sr->fetch();
             if(!$step){db()->prepare("UPDATE autoreply_threads SET status='completed',next_send_at=NULL WHERE id=?")->execute([$thread['id']]);continue;}
 
-            // ── SMTP Pool selection: step 1 uses pre-fetched dedicated pool; others use main pool ──
-            // $step1SmtpPool is null when no dedicated pool configured → always falls back to main pool
-            $stepNumNow = (int)$thread['current_step'];
-            $activeSmtpPool = (($stepNumNow === 1) && $step1SmtpPool !== null)
-                ? $step1SmtpPool
-                : $smtpPool;
+            // ── SMART ROUTING: Pick SMTP #1 for First Reply, SMTP #2 for Chat & Migration ──
+            $isFirstReply = ($stepNumNow === 1 || empty($thread['first_reply_sent']));
+            if ($isFirstReply) {
+                $activeSmtpPool = ($step1SmtpPool !== null && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($smtpPool ?: [$primarySmtpCfg]);
+            } else {
+                // Secondary Sender (SMTP #2)
+                $activeSmtpPool = ($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: $step1SmtpPool);
+            }
 
             if (empty($activeSmtpPool)) {
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                    'message'=>"No SMTP pool available for step {$stepNumNow}"];
+                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"No SMTP available for step {$stepNumNow}"];
                 continue;
             }
 
-            $mc=$activeSmtpPool[array_rand($activeSmtpPool)];
+            $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
             if($fromPool){$pk=$fromPool[array_rand($fromPool)];if(is_array($pk)){$mc['from_email']=$pk['email']??$mc['from_email'];$mc['from_name']=$pk['name']??$mc['from_name'];}else $mc['from_email']=$pk;}
             $msg=buildMessage((array)$step,$thread['from_name']??'',$thread['from_email'],'Re: '.($thread['subject_in']??''),$mc['from_name']??'',date('F j, Y g:i A'));
             $mc=applyDisplayName($mc,$userId);
             $smtpNameUsed=$mc['name']??'';
             $fromEmailUsed=$mc['from_email']??'';
+
+            // Resolve Secondary Email for Reply-To Switching
+            $secReplyTo = '';
+            if ($secondarySmtpCfg && !empty($secondarySmtpCfg['from_email'])) {
+                $secReplyTo = $secondarySmtpCfg['from_email'];
+            } elseif ($secondarySmtpCfg && !empty($secondarySmtpCfg['username']) && filter_var($secondarySmtpCfg['username'], FILTER_VALIDATE_EMAIL)) {
+                $secReplyTo = $secondarySmtpCfg['username'];
+            }
+
             try{
+                $inReplyToHdr = $thread['last_message_id'] ?: ($thread['original_message_id'] ?: ($thread['last_msg_id'] ?? ''));
+                $referencesHdr = $thread['references_header'] ?: ($thread['original_message_id'] ?: ($thread['last_msg_id'] ?? ''));
+
                 $arOpts = [
                     'is_auto_reply' => true,
-                    'in_reply_to'   => $thread['last_msg_id'] ?? '',
-                    'references'    => $thread['last_msg_id'] ?? '',
+                    'in_reply_to'   => $inReplyToHdr,
+                    'references'    => $referencesHdr,
                 ];
+
+                // If Reply-To switching is enabled and this is the first reply from SMTP #1:
+                if ($isFirstReply && $replyToSwitch && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
+                    $arOpts['reply_to']    = $secReplyTo;
+                    $arOpts['return_path'] = $secReplyTo;
+                    $arOpts['sender']      = $fromEmailUsed;
+                }
+
                 (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages'], $arOpts);
-                // Log to autoreply_logs (rule-level detail)
+
+                // Update Thread Stage & Status
+                $newStage = $isFirstReply ? 'FIRST_REPLY_SENT' : ($thread['conversation_stage'] ?? 'MOVED_TO_SECONDARY');
+                db()->prepare("UPDATE autoreply_threads SET first_reply_sent = 1, smtp_used = ?, conversation_stage = ? WHERE id = ?")
+                    ->execute([$mc['id'] ?? null, $newStage, $thread['id']]);
+
+                // Log to autoreply_logs and send_logs
                 db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
                     ->execute([$ruleId,$thread['id'],$thread['current_step'],$thread['from_email'],$smtpNameUsed]);
-                // Also log to send_logs so All Send Logs captures this autoreply send
                 db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','autoreply',?,?)")
                     ->execute([$userId,$thread['from_email'],$smtpNameUsed,$fromEmailUsed]);
 
-                // ── Two-IMAP post-action: queue cleanup of the trigger UID ──
-                // We can only act if we know which UID triggered this send (recorded
-                // at enrollment / reply time) and which IMAP it lives in.
+                if ($isFirstReply) {
+                    logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? null, $thread['from_email'], 'first_reply_sent', null, $smtpNameUsed, $secReplyTo ?: $fromEmailUsed, 'NEW_LEAD', 'FIRST_REPLY_SENT', 'success', "First reply sent from SMTP #1 with Reply-To set to " . ($secReplyTo ?: $fromEmailUsed));
+                } else {
+                    logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? null, $thread['from_email'], 'chat_reply_sent', null, $smtpNameUsed, null, $thread['conversation_stage'], $thread['conversation_stage'], 'success', "Chat reply #{$stepNumNow} sent via SMTP #2");
+                }
+
+                // Two-IMAP post-action cleanup
                 $trigUid    = (int)($thread['last_trigger_uid'] ?? 0);
                 $trigImapId = (int)($thread['last_trigger_imap_id'] ?? 0);
                 if ($twoImap && $trigUid > 0 && $trigImapId > 0) {
                     if ($stepNumNow === 1) {
-                        // After AR1: delete the trigger from IMAP 1 (per spec — lead
-                        // is removed so it can't be re-processed).
                         $arDeleteQueue[$trigImapId][] = $trigUid;
                     } elseif ($trigImapId === $imap1Id) {
-                        // After AR2..N when the inbound landed in IMAP 1 (because the
-                        // previous reply was sent from a Gsuite/IMAP-1 address): move
-                        // the trigger message to IMAP 2 so the conversation lives there.
                         if (!isset($arMoveQueue[$trigImapId])) {
                             $arMoveQueue[$trigImapId] = ['to' => $imap2Id, 'uids' => []];
                         }
                         $arMoveQueue[$trigImapId]['uids'][] = $trigUid;
                     }
-                    // If the trigger came from IMAP 2 already, nothing to do — it
-                    // stays in IMAP 2 where the conversation is rooted.
                 }
 
                 $nextNum=$thread['current_step']+1;
                 $nr=db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
                 $nr->execute([$ruleId,$nextNum]);$nextRow=$nr->fetch();
-                // After this send, ownership of the thread moves to IMAP 2 (if
-                // configured). This is informational — we still poll both IMAPs —
-                // but it surfaces the transition in the threads UI.
                 $newCurImap = $twoImap ? $imap2Id : ($imap1Id ?: null);
                 if($nextRow){
-                    if($isSeq){
-                        // Sequential: park awaiting_reply=1 until user replies.
-                        // Try modern schema first; fall back to a base-column
-                        // UPDATE if the awaiting_reply / current_imap_id /
-                        // last_trigger_* columns are missing on legacy MariaDB.
+                    if($isSeq || $isSmart){
                         try {
                             db()->prepare("UPDATE autoreply_threads
                                 SET current_step=?,last_sent_at=NOW(),next_send_at=NULL,awaiting_reply=1,status='active',
@@ -1397,9 +1389,7 @@ try {
                                 WHERE id=?")
                                 ->execute([$nextNum,$newCurImap,$thread['id']]);
                         } catch (Exception $seqUpdEx) {
-                            db()->prepare("UPDATE autoreply_threads
-                                SET current_step=?, last_sent_at=NOW(), next_send_at=NULL, status='active'
-                                WHERE id=?")
+                            db()->prepare("UPDATE autoreply_threads SET current_step=?, last_sent_at=NOW(), next_send_at=NULL, status='active' WHERE id=?")
                                 ->execute([$nextNum,$thread['id']]);
                         }
                     }else{
@@ -1478,231 +1468,432 @@ try {
 
 
 // ─────────────────────────────────────────────────────────────────
-// STEP 4 — FOLLOW-UP: ENROLL + SEND
+// STEP 4 — FOLLOW-UP: ENROLL + SEQUENTIAL READ-BASED SEND
 //
-// Uses same $imapMessages — no second IMAP connection.
-// Every sender from IMAP is enrolled into follow-up simultaneously
-// with auto-reply (Step 3).
+// 1. Follow-up Timer starts when recipient reads initial email.
+// 2. Sequential Delay: Step 1 starts on read; Step 2 starts after
+//    Step 1 was sent; Step 3 starts after Step 2 was sent, etc.
+// 3. Queue worker processes email_followup_queue with atomic locks
+//    and exponential backoff (5m, 15m, 60m).
 // ─────────────────────────────────────────────────────────────────
 try {
-    $fuNow=date('Y-m-d H:i:s');
-    $fuRules=db()->query(
-        "SELECT r.*,u.status u_status,u.expires_at u_expires,ia.id imap_account_id, u.assigned_imap_ids u_assigned_imap_ids, u.assigned_smtp_ids u_assigned_smtp_ids
-         FROM followup_rules r
-         JOIN users u ON u.id=r.user_id
-         LEFT JOIN imap_accounts ia ON ia.id=r.imap_id
-         WHERE r.status='active' AND u.status='active'")->fetchAll();
+    $fuNow = date('Y-m-d H:i:s');
+    $fuPid = getmypid() ?: bin2hex(random_bytes(4));
 
-    // Reuse the IMAP-owner map built in Step 3. If Step 3 was skipped (e.g.
-    // the AR query threw before the map was constructed) rebuild it locally
-    // so FU enrollment can still match messages by user_id.
+    // ── 4A. RECOVER STUCK QUEUE JOBS (>15m in sending state) ────────
+    try {
+        db()->exec("UPDATE email_followup_queue 
+                    SET status = 'scheduled', locked_at = NULL, lock_token = NULL 
+                    WHERE status = 'sending' AND locked_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    } catch (Throwable $_recEx) {}
+
+    // ── 4B. PROCESS DEDICATED FOLLOW-UP QUEUE (email_followup_queue) ──
+    try {
+        $qDue = db()->query(
+            "SELECT q.*, r.smtp_ids, r.from_emails, r.name rule_name, u.status u_status, u.expires_at u_expires
+             FROM email_followup_queue q
+             LEFT JOIN followup_rules r ON r.id = q.rule_id
+             JOIN users u ON u.id = q.user_id
+             WHERE q.status = 'scheduled' AND q.scheduled_at IS NOT NULL AND q.scheduled_at <= NOW() AND u.status = 'active'
+             ORDER BY q.scheduled_at ASC
+             LIMIT 50"
+        )->fetchAll();
+
+        foreach ($qDue as $qItem) {
+            $qId = (int)$qItem['id'];
+            $qUserId = (int)$qItem['user_id'];
+            $qEmail = strtolower(trim($qItem['recipient_email']));
+
+            // Expiry check
+            if (!empty($qItem['u_expires']) && strtotime($qItem['u_expires']) < time()) continue;
+
+            // Blacklist check
+            if (isBlacklisted($qEmail, $qUserId)) {
+                db()->prepare("UPDATE email_followup_queue SET status = 'cancelled', last_error = 'Blacklisted recipient' WHERE id = ?")->execute([$qId]);
+                logSystemEvent('failed', $qEmail, 'Follow-up cancelled: Blacklisted recipient', $qUserId, $qItem['campaign_id'], $qItem['rule_id'], $qId);
+                continue;
+            }
+
+            // Atomic Lock
+            $lockStmt = db()->prepare("UPDATE email_followup_queue SET status = 'sending', locked_at = NOW(), lock_token = ? WHERE id = ? AND status = 'scheduled'");
+            $lockStmt->execute([$fuPid, $qId]);
+            if ($lockStmt->rowCount() === 0) continue; // Concurrently claimed by another worker
+
+            // Fetch step content
+            $ruleId = (int)$qItem['rule_id'];
+            $stepOrder = (int)$qItem['followup_order'];
+            $stepStmt = db()->prepare("SELECT * FROM followup_steps WHERE rule_id = ? AND step_number = ?");
+            $stepStmt->execute([$ruleId, $stepOrder]);
+            $stepRow = $stepStmt->fetch();
+
+            if (!$stepRow) {
+                db()->prepare("UPDATE email_followup_queue SET status = 'skipped', last_error = 'Step template not found', locked_at = NULL WHERE id = ?")->execute([$qId]);
+                continue;
+            }
+
+            // ── Resolve SMTP pool (Smart Follow-Up routing: SMTP #1 before switch, SMTP #2 after switch) ──
+            $smtpIds = [];
+            $activeMailbox = 'primary';
+            $activeTh = null;
+            try {
+                $thCheck = db()->prepare("SELECT active_mailbox, rule_id, thread_id, conversation_stage FROM autoreply_threads WHERE from_email = ? ORDER BY id DESC LIMIT 1");
+                $thCheck->execute([$qEmail]);
+                $activeTh = $thCheck->fetch();
+                if ($activeTh) {
+                    $activeMailbox = $activeTh['active_mailbox'] ?? 'primary';
+                    if (!empty($activeTh['rule_id'])) {
+                        $arRuleStmt = db()->prepare("SELECT primary_smtp_id, secondary_smtp_id, enable_smart_routing FROM autoreply_rules WHERE id = ?");
+                        $arRuleStmt->execute([(int)$activeTh['rule_id']]);
+                        $arRuleData = $arRuleStmt->fetch();
+                        if ($arRuleData && !empty($arRuleData['enable_smart_routing'])) {
+                            if ($activeMailbox === 'secondary' && !empty($arRuleData['secondary_smtp_id'])) {
+                                $smtpIds = [(int)$arRuleData['secondary_smtp_id']];
+                            } elseif (!empty($arRuleData['primary_smtp_id'])) {
+                                $smtpIds = [(int)$arRuleData['primary_smtp_id']];
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $_thEx) {}
+
+            if (!$smtpIds && !empty($qItem['smtp_ids'])) { $d = json_decode($qItem['smtp_ids'], true); if (is_array($d)) $smtpIds = $d; }
+            if (!$smtpIds) {
+                $userSmtps = db()->prepare("SELECT id FROM smtp_providers WHERE user_id = ?");
+                $userSmtps->execute([$qUserId]);
+                $smtpIds = $userSmtps->fetchAll(PDO::FETCH_COLUMN);
+            }
+            if (!$smtpIds) {
+                db()->prepare("UPDATE email_followup_queue SET status = 'failed', last_error = 'No SMTP configured for user', locked_at = NULL WHERE id = ?")->execute([$qId]);
+                continue;
+            }
+
+            $ph = implode(',', array_fill(0, count($smtpIds), '?'));
+            $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");
+            $ss->execute($smtpIds);
+            $smtpPool = $ss->fetchAll();
+            if (!$smtpPool) {
+                db()->prepare("UPDATE email_followup_queue SET status = 'failed', last_error = 'SMTP provider not found', locked_at = NULL WHERE id = ?")->execute([$qId]);
+                continue;
+            }
+
+            $mc = $smtpPool[array_rand($smtpPool)];
+            $fromPool = [];
+            if (!empty($qItem['from_emails'])) { $d = json_decode($qItem['from_emails'], true); if (is_array($d)) $fromPool = $d; }
+            if ($fromPool) {
+                $pk = $fromPool[array_rand($fromPool)];
+                if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
+                else { $mc['from_email'] = $pk; }
+            }
+
+            $defSubj = $qItem['rule_name'] ?: 'Follow-up';
+            if ($stepOrder > 1) {
+                $s1Stmt = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id = ? AND step_number = 1");
+                $s1Stmt->execute([$ruleId]);
+                $s1Subj = $s1Stmt->fetchColumn();
+                if ($s1Subj) {
+                    $defSubj = (stripos(trim($s1Subj), 're:') === 0) ? $s1Subj : 'Re: ' . $s1Subj;
+                }
+            }
+
+            $msg = buildMessage((array)$stepRow, $qItem['recipient_name'] ?? '', $qEmail, $defSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
+            $mc = applyDisplayName($mc, $qUserId);
+            $fuSmtpName = $mc['name'] ?? '';
+            $fuFromEmail = $mc['from_email'] ?? '';
+
+            try {
+                $mailer = new Mailer($mc);
+                $mailer->send(
+                    $qEmail,
+                    $qItem['recipient_name'] ?? '',
+                    $msg['subject'],
+                    $msg['html'],
+                    $msg['text'],
+                    $msg['inlineImages'],
+                    [
+                        'tracking_token' => $qItem['tracking_token'],
+                        'track_clicks'   => true,
+                    ]
+                );
+
+                // Mark current queue item SENT
+                db()->prepare("UPDATE email_followup_queue SET status = 'sent', sent_at = NOW(), locked_at = NULL, lock_token = NULL WHERE id = ?")->execute([$qId]);
+                logSystemEvent('sent', $qEmail, "Follow-up #{$stepOrder} sent successfully", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token'], $fuSmtpName);
+
+                // Log to send_logs
+                db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used) VALUES (?, ?, ?, 'sent', 'followup', ?, ?)")
+                    ->execute([$qItem['campaign_id'], $qUserId, $qEmail, $fuSmtpName, $fuFromEmail]);
+
+                // Check for NEXT STEP (Sequential chaining: Step N+1 delay starts from Step N sent_at)
+                $nextStepStmt = db()->prepare("SELECT * FROM followup_steps WHERE rule_id = ? AND step_number = ?");
+                $nextStepStmt->execute([$ruleId, $stepOrder + 1]);
+                $nextStepRow = $nextStepStmt->fetch();
+
+                if ($nextStepRow) {
+                    $nextDelayVal = max(0, (int)($nextStepRow['delay_value'] ?? $nextStepRow['delay_minutes'] ?? 30));
+                    $nextDelayUnit = in_array(strtolower($nextStepRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($nextStepRow['delay_unit']) : 'minutes';
+                    $nextDelayMins = delayToMinutes($nextDelayVal, $nextDelayUnit);
+                    $nextSchedAt = date('Y-m-d H:i:s', strtotime("+{$nextDelayMins} minutes"));
+                    $nextTrackingToken = generateTrackingToken();
+
+                    $insNext = db()->prepare(
+                        "INSERT INTO email_followup_queue 
+                         (user_id, campaign_id, rule_id, contact_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)"
+                    );
+                    $insNext->execute([
+                        $qUserId, $qItem['campaign_id'], $ruleId, $qItem['contact_id'],
+                        $qEmail, $qItem['recipient_name'], $stepOrder + 1,
+                        $nextDelayVal, $nextDelayUnit, $nextDelayMins, $nextSchedAt, $nextTrackingToken
+                    ]);
+                    $nextQid = db()->lastInsertId();
+                    logSystemEvent('queued', $qEmail, "Follow-up #" . ($stepOrder + 1) . " scheduled for {$nextSchedAt} (+{$nextDelayVal} {$nextDelayUnit})", $qUserId, $qItem['campaign_id'], $ruleId, $nextQid, $nextTrackingToken);
+                } else {
+                    // Sequence fully completed
+                    saveToBackup($qUserId, $qEmail, $qItem['recipient_name'] ?? '', 'followup', $ruleId);
+                }
+
+            } catch (Throwable $sendEx) {
+                $err = substr($sendEx->getMessage(), 0, 500);
+                $retryCount = (int)$qItem['retry_count'] + 1;
+
+                if ($retryCount < 3) {
+                    // Exponential backoff: attempt 1 -> 5 min, attempt 2 -> 15 min, attempt 3 -> 60 min
+                    $backoffMins = ($retryCount === 1) ? 5 : (($retryCount === 2) ? 15 : 60);
+                    $retryAt = date('Y-m-d H:i:s', strtotime("+{$backoffMins} minutes"));
+
+                    db()->prepare(
+                        "UPDATE email_followup_queue 
+                         SET status = 'scheduled', retry_count = ?, scheduled_at = ?, last_error = ?, locked_at = NULL, lock_token = NULL 
+                         WHERE id = ?"
+                    )->execute([$retryCount, $retryAt, $err, $qId]);
+
+                    logSystemEvent('retry', $qEmail, "Retry #{$retryCount} scheduled in {$backoffMins}m due to error: {$err}", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token']);
+                } else {
+                    // Max retries exceeded
+                    db()->prepare(
+                        "UPDATE email_followup_queue 
+                         SET status = 'failed', retry_count = ?, last_error = ?, locked_at = NULL, lock_token = NULL 
+                         WHERE id = ?"
+                    )->execute([$retryCount, $err, $qId]);
+
+                    logSystemEvent('failed', $qEmail, "Follow-up #{$stepOrder} failed after 3 retries: {$err}", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token']);
+                    db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used, error) VALUES (?, ?, ?, 'failed', 'followup', ?, ?, ?)")
+                        ->execute([$qItem['campaign_id'], $qUserId, $qEmail, $fuSmtpName, $fuFromEmail, $err]);
+                }
+            }
+        }
+    } catch (Throwable $_qErr) {
+        $results[] = ['status'=>'fu_queue_error', 'message'=>$_qErr->getMessage()];
+    }
+
+    // ── 4C. PROCESS FOLLOW-UP CONTACTS (IMAP enrollments & list contacts) ──
+    $fuRules = db()->query(
+        "SELECT r.*, u.status u_status, u.expires_at u_expires, ia.id imap_account_id, u.assigned_imap_ids u_assigned_imap_ids, u.assigned_smtp_ids u_assigned_smtp_ids
+         FROM followup_rules r
+         JOIN users u ON u.id = r.user_id
+         LEFT JOIN imap_accounts ia ON ia.id = r.imap_id
+         WHERE r.status = 'active' AND u.status = 'active'"
+    )->fetchAll();
+
     if (!isset($imapOwnerById) || !is_array($imapOwnerById)) {
         $imapOwnerById = [];
         try {
-            foreach (db()->query("SELECT id,user_id FROM imap_accounts")->fetchAll() as $ic) {
+            foreach (db()->query("SELECT id, user_id FROM imap_accounts")->fetchAll() as $ic) {
                 $imapOwnerById[(int)$ic['id']] = (int)$ic['user_id'];
             }
-        } catch (Exception $_e) { /* DB hiccup — empty map causes FU to skip safely */ }
+        } catch (Exception $_e) {}
     }
 
-    foreach($fuRules as $rule){
-        if(!empty($rule['u_expires'])&&strtotime($rule['u_expires'])<time())continue;
-        $ruleId=(int)$rule['id'];$userId=(int)$rule['user_id'];
+    foreach ($fuRules as $rule) {
+        if (!empty($rule['u_expires']) && strtotime($rule['u_expires']) < time()) continue;
+        $ruleId = (int)$rule['id'];
+        $userId = (int)$rule['user_id'];
+        $isTriggerOnOpen = !isset($rule['trigger_on_open']) || (int)$rule['trigger_on_open'] === 1;
 
-        // ── ISOLATED IMAP message gathering for Follow-Up (owner + admin-shared only) ──
-        // ISOLATION: Only process messages from IMAP accounts that belong to
-        // this rule's user_id, OR accounts where admin has granted shared access.
-        //
-        // The legacy "fallback to all IMAPs" behaviour has been REMOVED.
-        // It caused cross-user lead duplication (UserA's FU rules enrolling
-        // UserB's IMAP leads). Without admin-granted permission, leads from
-        // other users' IMAP accounts are completely isolated.
+        // Isolation
         $fuAllowedImapIds = [];
         foreach ($imapOwnerById as $_iaId => $_ownerId) {
             if ($_ownerId === $userId) $fuAllowedImapIds[] = (int)$_iaId;
         }
-        
-        // Add assigned_imap_ids
         if (!empty($rule['u_assigned_imap_ids'])) {
             $sharedIds = json_decode($rule['u_assigned_imap_ids'], true);
             if (is_array($sharedIds)) {
                 foreach ($sharedIds as $sharedIaId) {
                     $sharedIaId = (int)$sharedIaId;
-                    if (!in_array($sharedIaId, $fuAllowedImapIds, true)) {
-                        $fuAllowedImapIds[] = $sharedIaId;
-                    }
+                    if (!in_array($sharedIaId, $fuAllowedImapIds, true)) $fuAllowedImapIds[] = $sharedIaId;
                 }
             }
         }
-
-        // Check for admin-granted shared permissions (legacy fallback)
-        try {
-            $fuShareStmt = db()->prepare(
-                "SELECT imap_account_id, owner_user_id FROM imap_shared_permissions WHERE grantee_user_id = ?"
-            );
-            $fuShareStmt->execute([$userId]);
-            foreach ($fuShareStmt->fetchAll() as $fuSharedRow) {
-                $fuSharedIaId = (int)$fuSharedRow['imap_account_id'];
-                if (!in_array($fuSharedIaId, $fuAllowedImapIds, true)) {
-                    $fuAllowedImapIds[] = $fuSharedIaId;
-                }
-            }
-        } catch (Exception $_fuShareEx) { /* imap_shared_permissions table may not exist yet */ }
 
         $fuMsgs = [];
         foreach ($imapMessages as $iaId => $_msgs) {
-            if (!in_array((int)$iaId, $fuAllowedImapIds, true)) continue; // ISOLATION: skip non-owned, non-shared
+            if (!in_array((int)$iaId, $fuAllowedImapIds, true)) continue;
             foreach ($_msgs as $_m) $fuMsgs[] = $_m;
         }
-        if (!$fuMsgs) {
-            // No messages for this user's IMAPs. Do NOT fall back to other users'
-            // messages — that caused cross-user duplication and has been removed.
-            $fuTotalOther = 0;
-            foreach ($imapMessages as $_iaId => $_ms) {
-                if (!in_array((int)$_iaId, $fuAllowedImapIds, true)) $fuTotalOther += count($_ms);
-            }
-            if ($fuTotalOther > 0) {
-                $results[] = ['status'=>'fu_info','rule'=>$rule['name'],
-                    'message'=>"Isolation active: {$fuTotalOther} messages on other users' IMAP accounts were correctly NOT processed for this FU rule (user_id={$userId})."];
-            }
-        }
-        $enrolledFU=0;
 
-        // Defensive read of step1.delay_minutes. Old code coerced
-        // (int)$row['delay_minutes'] without checking whether the column
-        // existed, so a missing column on legacy MariaDB silently became 0
-        // (instant send) — operator's "DELAY (MINUTES)" appeared ignored.
-        $delay1 = 1;
+        $enrolledFU = 0;
+        // Step 1 delay
+        $delay1Val = 30; $delay1Unit = 'minutes';
         try {
-            $fs1 = db()->prepare("SELECT delay_minutes FROM followup_steps WHERE rule_id=? ORDER BY step_number ASC LIMIT 1");
+            $fs1 = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id=? ORDER BY step_number ASC LIMIT 1");
             $fs1->execute([$ruleId]);
             $fs1r = $fs1->fetch();
-            if ($fs1r && isset($fs1r['delay_minutes']) && $fs1r['delay_minutes'] !== null) {
-                $delay1 = max(0, (int)$fs1r['delay_minutes']);
+            if ($fs1r) {
+                $delay1Val = max(0, (int)($fs1r['delay_value'] ?? $fs1r['delay_minutes'] ?? 30));
+                $delay1Unit = in_array(strtolower($fs1r['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($fs1r['delay_unit']) : 'minutes';
             }
-        } catch (Exception $_dle) {
-            // Column missing or query failed — keep default 1 min so DELAY
-            // is at least non-zero.
-        }
-        $nextSend = $delay1 > 0
-            ? date('Y-m-d H:i:s', strtotime("+{$delay1} minutes"))
-            : date('Y-m-d H:i:s');
+        } catch (Exception $_dle) {}
+        $delay1Mins = delayToMinutes($delay1Val, $delay1Unit);
 
-        foreach($fuMsgs as $msg){
-            $fuE=strtolower(trim($msg['from_email']??''));
-            $fuN=trim($msg['from_name']??'');
-            $fuS=trim($msg['subject']??'');
-            if(!$fuE||!filter_var($fuE,FILTER_VALIDATE_EMAIL))continue;
-            if(isBlacklisted($fuE,$userId))continue;
-            // Subject Blacklist + "Has the Words" filter (additive to email/domain).
+        // Follow-up timer begins upon enrollment: Step 1 sends after delay whether read or not
+        $nextSend = date('Y-m-d H:i:s', strtotime("+{$delay1Mins} minutes"));
+
+        foreach ($fuMsgs as $msg) {
+            $fuE = strtolower(trim($msg['from_email'] ?? ''));
+            $fuN = trim($msg['from_name'] ?? '');
+            $fuS = trim($msg['subject'] ?? '');
+            if (!$fuE || !filter_var($fuE, FILTER_VALIDATE_EMAIL)) continue;
+            if (isBlacklisted($fuE, $userId)) continue;
             if (isMessageBlocked($userId, $fuS, $fuE, $fuN)) continue;
-            $ex=db()->prepare("SELECT id,status FROM followup_contacts WHERE rule_id=? AND email=?");
-            $ex->execute([$ruleId,$fuE]);$exRow=$ex->fetch();
-            if(!$exRow){
-                // New — enroll into follow-up queue
+
+            $ex = db()->prepare("SELECT id, status FROM followup_contacts WHERE rule_id=? AND email=?");
+            $ex->execute([$ruleId, $fuE]);
+            $exRow = $ex->fetch();
+            $tTok = generateTrackingToken();
+
+            if (!$exRow) {
                 db()->prepare(
-                    "INSERT INTO followup_contacts(rule_id,email,name,current_step,next_send_at,status)
-                     VALUES(?,?,?,1,?,'active')
-                     ON DUPLICATE KEY UPDATE
-                       next_send_at=IF(status!='active',VALUES(next_send_at),next_send_at),
-                       status=IF(status!='active','active',status)"
-                )->execute([$ruleId,$fuE,$fuN,$nextSend]);
+                    "INSERT INTO followup_contacts (rule_id, email, name, current_step, next_send_at, tracking_token, status)
+                     VALUES (?, ?, ?, 1, ?, ?, 'active')"
+                )->execute([$ruleId, $fuE, $fuN, $nextSend, $tTok]);
                 $enrolledFU++;
-            }elseif($exRow['status']==='completed'){
-                // Re-enroll after sequence completed
-                db()->prepare("UPDATE followup_contacts SET current_step=1,next_send_at=?,status='active',last_sent_at=NULL WHERE id=?")
-                    ->execute([$nextSend,$exRow['id']]);
+            } elseif ($exRow['status'] === 'completed') {
+                db()->prepare("UPDATE followup_contacts SET current_step=1, next_send_at=?, tracking_token=?, status='active', last_sent_at=NULL, opened_at=NULL WHERE id=?")
+                    ->execute([$nextSend, $tTok, $exRow['id']]);
                 $enrolledFU++;
             }
-            // status='active' = already enrolled, skip
         }
 
-        $smtpIds=[];
-        if(!empty($rule['smtp_ids'])){$d=json_decode($rule['smtp_ids'],true);if(is_array($d))$smtpIds=$d;}
-        if(empty($smtpIds) && !empty($rule['u_assigned_smtp_ids'])){$d=json_decode($rule['u_assigned_smtp_ids'],true);if(is_array($d))$smtpIds=array_values(array_map('intval',$d));}
+        $smtpIds = [];
+        if (!empty($rule['smtp_ids'])) { $d = json_decode($rule['smtp_ids'], true); if (is_array($d)) $smtpIds = $d; }
+        if (empty($smtpIds) && !empty($rule['u_assigned_smtp_ids'])) { $d = json_decode($rule['u_assigned_smtp_ids'], true); if (is_array($d)) $smtpIds = array_values(array_map('intval', $d)); }
 
-        if(!$smtpIds){
-            $results[]=['status'=>'fu_warn','rule'=>$rule['name'],'message'=>"No SMTP configured — enrolled {$enrolledFU}"];continue;}
-        $ph=implode(',',array_fill(0,count($smtpIds),'?'));
-        $ss=db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");$ss->execute($smtpIds);
-        $smtpPool=[];foreach($ss->fetchAll()as $s2)$smtpPool[]=$s2;if(!$smtpPool)continue;
-        $fromPool=[];
-        if(!empty($rule['from_emails'])){$d=json_decode($rule['from_emails'],true);if(is_array($d))$fromPool=$d;}
+        if (!$smtpIds) {
+            $results[] = ['status'=>'fu_warn', 'rule'=>$rule['name'], 'message'=>"No SMTP configured — enrolled {$enrolledFU}"];
+            continue;
+        }
 
-        $due=db()->prepare("SELECT * FROM followup_contacts WHERE rule_id=? AND status='active' AND next_send_at IS NOT NULL AND next_send_at<=? LIMIT 100");
-        $due->execute([$ruleId,$fuNow]);$contacts=$due->fetchAll();
-        $sent=0;$failed=0;
+        $ph = implode(',', array_fill(0, count($smtpIds), '?'));
+        $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");
+        $ss->execute($smtpIds);
+        $smtpPool = $ss->fetchAll();
+        if (!$smtpPool) continue;
 
-        foreach($contacts as $contact){
-            // Send-time blacklist enforcement (covers contacts blacklisted
-            // after enrollment). Mark them stopped so the dueThreads SELECT
-            // stops including them on every subsequent run.
+        $fromPool = [];
+        if (!empty($rule['from_emails'])) { $d = json_decode($rule['from_emails'], true); if (is_array($d)) $fromPool = $d; }
+
+        // Due contacts: next_send_at IS NOT NULL AND next_send_at <= NOW()
+        // (Contacts whose read-timer has not fired yet have next_send_at = NULL and are safely waiting)
+        $due = db()->prepare("SELECT * FROM followup_contacts WHERE rule_id=? AND status='active' AND next_send_at IS NOT NULL AND next_send_at<=? LIMIT 50");
+        $due->execute([$ruleId, $fuNow]);
+        $contacts = $due->fetchAll();
+        $sent = 0; $failed = 0;
+
+        foreach ($contacts as $contact) {
             if (isBlacklisted($contact['email'], $userId)) {
                 try {
-                    db()->prepare("UPDATE followup_contacts SET status='stopped', next_send_at=NULL WHERE id=?")
-                        ->execute([$contact['id']]);
+                    db()->prepare("UPDATE followup_contacts SET status='stopped', next_send_at=NULL WHERE id=?")->execute([$contact['id']]);
                 } catch (Exception $_blEx) {}
-                $results[] = ['status'=>'fu_warn','rule'=>$rule['name'],
-                    'message'=>"Blacklist blocked FU send to {$contact['email']} — contact stopped."];
                 continue;
             }
-            $sr=db()->prepare("SELECT * FROM followup_steps WHERE rule_id=? AND step_number=?");
-            $sr->execute([$ruleId,$contact['current_step']]);$step=$sr->fetch();
-            if(!$step){db()->prepare("UPDATE followup_contacts SET status='completed',next_send_at=NULL WHERE id=?")->execute([$contact['id']]);continue;}
-            $mc=$smtpPool[array_rand($smtpPool)];
-            if($fromPool){$pk=$fromPool[array_rand($fromPool)];if(is_array($pk)){$mc['from_email']=$pk['email']??$mc['from_email'];$mc['from_name']=$pk['name']??$mc['from_name'];}else $mc['from_email']=$pk;}
+
+            $sr = db()->prepare("SELECT * FROM followup_steps WHERE rule_id=? AND step_number=?");
+            $sr->execute([$ruleId, $contact['current_step']]);
+            $step = $sr->fetch();
+            if (!$step) {
+                db()->prepare("UPDATE followup_contacts SET status='completed', next_send_at=NULL WHERE id=?")->execute([$contact['id']]);
+                continue;
+            }
+
+            $mc = $smtpPool[array_rand($smtpPool)];
+            if ($fromPool) {
+                $pk = $fromPool[array_rand($fromPool)];
+                if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
+                else { $mc['from_email'] = $pk; }
+            }
+
             $defSubj = $rule['name'];
             if ($contact['current_step'] > 1) {
-                $sr1=db()->prepare("SELECT subject FROM followup_steps WHERE rule_id=? AND step_number=1");
+                $sr1 = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id=? AND step_number=1");
                 $sr1->execute([$ruleId]);
-                $s1=$sr1->fetchColumn();
+                $s1 = $sr1->fetchColumn();
                 if ($s1) {
                     $defSubj = (stripos(trim($s1), 're:') === 0) ? $s1 : 'Re: ' . $s1;
                 }
             }
-            $msg=buildMessage((array)$step,$contact['name']??'',$contact['email'],$defSubj,$mc['from_name']??'',date('F j, Y g:i A'));
-            $mc=applyDisplayName($mc,$userId);
-            $fuSmtpName=$mc['name']??'';
-            $fuFromEmail=$mc['from_email']??'';
-            try{
-                (new Mailer($mc))->send($contact['email'],$contact['name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages']);
-                // Log to followup_logs (rule-level detail)
-                db()->prepare("INSERT INTO followup_logs(rule_id,contact_id,step_number,email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
-                    ->execute([$ruleId,$contact['id'],$contact['current_step'],$contact['email'],$fuSmtpName]);
-                // Also log to send_logs so All Send Logs captures this follow-up send
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','followup',?,?)")
-                    ->execute([$userId,$contact['email'],$fuSmtpName,$fuFromEmail]);
-                $nr=db()->prepare("SELECT * FROM followup_steps WHERE rule_id=? AND step_number=?");
-                $nr->execute([$ruleId,$contact['current_step']+1]);$nxtRow=$nr->fetch();
-                if($nxtRow){
-                    // Defensive: never let a missing/null delay_minutes collapse
-                    // the schedule to NOW (which makes "DELAY (MINUTES)" look broken).
-                    $nxtDelay = (isset($nxtRow['delay_minutes']) && $nxtRow['delay_minutes'] !== null)
-                        ? max(0, (int)$nxtRow['delay_minutes']) : 60;
-                    $nAt=date('Y-m-d H:i:s',strtotime("+{$nxtDelay} minutes"));
-                    db()->prepare("UPDATE followup_contacts SET current_step=?,next_send_at=?,last_sent_at=NOW(),status='active' WHERE id=?")
-                        ->execute([$contact['current_step']+1,$nAt,$contact['id']]);
-                }else{
-                    db()->prepare("UPDATE followup_contacts SET status='completed',last_sent_at=NOW(),next_send_at=NULL WHERE id=?")->execute([$contact['id']]);
-                    // Sequence fully completed — persist completed lead to backup_emails
-                    saveToBackup($userId,$contact['email'],$contact['name']??'','followup',$ruleId);
+
+            $msg = buildMessage((array)$step, $contact['name'] ?? '', $contact['email'], $defSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
+            $mc = applyDisplayName($mc, $userId);
+            $fuSmtpName = $mc['name'] ?? '';
+            $fuFromEmail = $mc['from_email'] ?? '';
+
+            try {
+                $mailer = new Mailer($mc);
+                $mailer->send(
+                    $contact['email'],
+                    $contact['name'] ?? '',
+                    $msg['subject'],
+                    $msg['html'],
+                    $msg['text'],
+                    $msg['inlineImages'],
+                    [
+                        'tracking_token' => $contact['tracking_token'] ?? '',
+                        'track_clicks'   => true,
+                    ]
+                );
+
+                // Log to followup_logs
+                db()->prepare("INSERT INTO followup_logs (rule_id, contact_id, step_number, email, status, smtp_used) VALUES (?, ?, ?, ?, 'sent', ?)")
+                    ->execute([$ruleId, $contact['id'], $contact['current_step'], $contact['email'], $fuSmtpName]);
+                db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used) VALUES (NULL, ?, ?, 'sent', 'followup', ?, ?)")
+                    ->execute([$userId, $contact['email'], $fuSmtpName, $fuFromEmail]);
+
+                logSystemEvent('sent', $contact['email'], "Follow-up step #{$contact['current_step']} sent", $userId, null, $ruleId, null, $contact['tracking_token'] ?? null, $fuSmtpName);
+
+                // Next Step in Sequence
+                $nr = db()->prepare("SELECT * FROM followup_steps WHERE rule_id=? AND step_number=?");
+                $nr->execute([$ruleId, $contact['current_step'] + 1]);
+                $nxtRow = $nr->fetch();
+
+                if ($nxtRow) {
+                    $nxtDelayVal = max(0, (int)($nxtRow['delay_value'] ?? $nxtRow['delay_minutes'] ?? 60));
+                    $nxtDelayUnit = in_array(strtolower($nxtRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($nxtRow['delay_unit']) : 'minutes';
+                    $nxtDelayMins = delayToMinutes($nxtDelayVal, $nxtDelayUnit);
+
+                    // Sequential Delay: Step N+1 delay starts from Step N sent_at (NOW)
+                    $nAt = date('Y-m-d H:i:s', strtotime("+{$nxtDelayMins} minutes"));
+                    db()->prepare("UPDATE followup_contacts SET current_step=?, next_send_at=?, last_sent_at=NOW(), status='active' WHERE id=?")
+                        ->execute([$contact['current_step'] + 1, $nAt, $contact['id']]);
+                } else {
+                    db()->prepare("UPDATE followup_contacts SET status='completed', last_sent_at=NOW(), next_send_at=NULL WHERE id=?")->execute([$contact['id']]);
+                    saveToBackup($userId, $contact['email'], $contact['name'] ?? '', 'followup', $ruleId);
                 }
                 $sent++;
-            }catch(Exception $e){
-                $fuErrMsg=substr($e->getMessage(),0,500);
-                // Log to followup_logs (rule-level detail)
-                db()->prepare("INSERT INTO followup_logs(rule_id,contact_id,step_number,email,status,error,smtp_used)VALUES(?,?,?,?,'failed',?,?)")
-                    ->execute([$ruleId,$contact['id'],$contact['current_step'],$contact['email'],$fuErrMsg,$fuSmtpName]);
-                // Also log failure to send_logs so All Send Logs shows it
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used,error)VALUES(NULL,?,?,'failed','followup',?,?,?)")
-                    ->execute([$userId,$contact['email'],$fuSmtpName,$fuFromEmail,$fuErrMsg]);
+            } catch (Throwable $e) {
+                $fuErrMsg = substr($e->getMessage(), 0, 500);
+                db()->prepare("INSERT INTO followup_logs (rule_id, contact_id, step_number, email, status, error, smtp_used) VALUES (?, ?, ?, ?, 'failed', ?, ?)")
+                    ->execute([$ruleId, $contact['id'], $contact['current_step'], $contact['email'], $fuErrMsg, $fuSmtpName]);
+                db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used, error) VALUES (NULL, ?, ?, 'failed', 'followup', ?, ?, ?)")
+                    ->execute([$userId, $contact['email'], $fuSmtpName, $fuFromEmail, $fuErrMsg]);
+                logSystemEvent('failed', $contact['email'], "Follow-up step #{$contact['current_step']} failed: {$fuErrMsg}", $userId, null, $ruleId, null, $contact['tracking_token'] ?? null);
                 $failed++;
             }
         }
-        $results[]=['status'=>'followup','rule'=>$rule['name'],
-            'imap_msgs'=>count($fuMsgs),'new_enrolled'=>$enrolledFU,'sent'=>$sent,'failed'=>$failed];
+        $results[] = ['status'=>'followup', 'rule'=>$rule['name'], 'imap_msgs'=>count($fuMsgs), 'new_enrolled'=>$enrolledFU, 'sent'=>$sent, 'failed'=>$failed];
     }
-}catch(Exception $e){$results[]=['status'=>'error','message'=>'FollowUp error: '.$e->getMessage()];}
+} catch (Throwable $e) {
+    $results[] = ['status'=>'error', 'message'=>'FollowUp error: ' . $e->getMessage()];
+}
 
 
 // ─────────────────────────────────────────────────────────────────

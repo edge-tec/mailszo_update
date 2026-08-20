@@ -195,8 +195,43 @@ class Mailer {
         $fd   = $fn ? "=?UTF-8?B?" . base64_encode($fn) . "?= <{$from}>" : "<{$from}>";
         $td   = $toName ? "=?UTF-8?B?" . base64_encode($toName) . "?= <{$to}>" : "<{$to}>";
         $sb   = "=?UTF-8?B?" . base64_encode($subject) . "?=";
-        $mid  = '<' . md5(uniqid('', true)) . '@' . (explode('@', $from)[1] ?? 'mailszo') . '>';
+        $fromDomain = explode('@', $from)[1] ?? 'mailpro';
+        $mid  = '<' . md5(uniqid('', true)) . '@' . $fromDomain . '>';
         $date = date('r');
+
+        // Tracking token & Unsubscribe processing
+        $trackingToken = trim($options['tracking_token'] ?? '');
+        $baseUrl = getAppBaseUrl();
+
+        if ($trackingToken) {
+            $pixelUrl = $baseUrl . '/api.php?r=track/open&t=' . urlencode($trackingToken);
+            $pixelTag = '<img src="' . htmlspecialchars($pixelUrl) . '" width="1" height="1" style="display:none!important;width:1px!important;height:1px!important;max-height:0!important;max-width:0!important;opacity:0!important;border:0!important;" alt="" />';
+            if (stripos($html, '</body>') !== false) {
+                $html = preg_replace('/<\/body>/i', $pixelTag . "\n</body>", $html, 1);
+            } else {
+                $html .= "\n" . $pixelTag;
+            }
+
+            // Click Tracking rewrite if enabled
+            if (!empty($options['track_clicks'])) {
+                $html = preg_replace_callback('/<a\s+([^>]*?)href=["\'](https?:\/\/[^"\']+)["\']([^>]*)>/i', function($m) use ($baseUrl, $trackingToken) {
+                    $originalUrl = $m[2];
+                    // Skip tracking our own tracking links or mailto
+                    if (strpos($originalUrl, 'r=track') !== false) return $m[0];
+                    $trackUrl = $baseUrl . '/api.php?r=track/click&t=' . urlencode($trackingToken) . '&url=' . urlencode($originalUrl);
+                    return '<a ' . $m[1] . 'href="' . htmlspecialchars($trackUrl) . '"' . $m[3] . '>';
+                }, $html);
+            }
+        }
+
+        // Unsubscribe placeholder replacement
+        $unsubUrl = trim($options['list_unsubscribe'] ?? ($trackingToken ? $baseUrl . '/api.php?r=track/unsub&t=' . urlencode($trackingToken) : ''));
+        if ($unsubUrl) {
+            $html = str_ireplace('{{UNSUBSCRIBE_URL}}', $unsubUrl, $html);
+            $html = str_ireplace('{{unsubscribe_url}}', $unsubUrl, $html);
+            $text = str_ireplace('{{UNSUBSCRIBE_URL}}', $unsubUrl, $text);
+            $text = str_ireplace('{{unsubscribe_url}}', $unsubUrl, $text);
+        }
 
         // Optional headers & Auto-Reply RFC 3834 compliance
         $isAutoReply = !empty($options['is_auto_reply']);
@@ -234,14 +269,19 @@ class Mailer {
             $threadHdrs .= "References: {$formattedInReplyTo}\r\n";
         }
 
-        // Optional List-Unsubscribe headers (RFC 8058 One-Click compliance)
-        $unsubUrl  = trim($options['list_unsubscribe'] ?? '');
+        // List-Unsubscribe headers (RFC 8058 One-Click compliance)
         $unsubHdrs = '';
         if ($unsubUrl) {
             $formattedUnsub = (strpos($unsubUrl, '<') === false) ? "<{$unsubUrl}>" : $unsubUrl;
             $unsubHdrs .= "List-Unsubscribe: {$formattedUnsub}\r\n";
             $unsubHdrs .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
         }
+
+        // Deliverability compliance headers
+        $returnPathVal = !empty($options['return_path']) ? trim($options['return_path']) : $from;
+        $deliverabilityHdrs  = "Return-Path: <{$returnPathVal}>\r\n";
+        $deliverabilityHdrs .= "X-Mailer: Mailpro/4.0\r\n";
+        $deliverabilityHdrs .= "Feedback-ID: mailpro:campaign:user{$this->cfg['user_id']}:general\r\n";
 
         // Filter out missing/unreadable image files before building MIME
         $inlineImages = array_values(array_filter($inlineImages,
@@ -270,6 +310,7 @@ class Mailer {
             if ($arHdrs) $msg .= $arHdrs;
             if ($threadHdrs) $msg .= $threadHdrs;
             if ($unsubHdrs) $msg .= $unsubHdrs;
+            $msg .= $deliverabilityHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";
@@ -333,6 +374,7 @@ class Mailer {
             if ($arHdrs) $msg .= $arHdrs;
             if ($threadHdrs) $msg .= $threadHdrs;
             if ($unsubHdrs) $msg .= $unsubHdrs;
+            $msg .= $deliverabilityHdrs;
             $msg .= "Subject: {$sb}\r\n";
             $msg .= "Date: {$date}\r\n";
             $msg .= "Message-ID: {$mid}\r\n";

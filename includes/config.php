@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '10'; // bump this when adding new migrations
+    $migrationVersion = '12'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -82,6 +82,102 @@ function db() {
             "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `sender_name` VARCHAR(150) DEFAULT NULL",
             "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `imap_read_limit` INT DEFAULT 0",
             "ALTER TABLE `blacklist` MODIFY COLUMN `type` ENUM('email','domain','subject','keyword') NOT NULL DEFAULT 'email'",
+            "CREATE TABLE IF NOT EXISTS `email_followup_queue` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL DEFAULT 1,
+                `campaign_id` INT DEFAULT NULL,
+                `rule_id` INT DEFAULT NULL,
+                `contact_id` INT DEFAULT NULL,
+                `recipient_email` VARCHAR(255) NOT NULL,
+                `recipient_name` VARCHAR(150) DEFAULT NULL,
+                `followup_order` INT NOT NULL DEFAULT 1,
+                `delay_value` INT NOT NULL DEFAULT 30,
+                `delay_unit` ENUM('minutes','hours','days') NOT NULL DEFAULT 'minutes',
+                `delay_in_minutes` INT NOT NULL DEFAULT 30,
+                `scheduled_at` DATETIME DEFAULT NULL,
+                `opened_at` DATETIME DEFAULT NULL,
+                `followup_started_at` DATETIME DEFAULT NULL,
+                `sent_at` DATETIME DEFAULT NULL,
+                `status` ENUM('pending','scheduled','sending','sent','failed','cancelled','skipped') NOT NULL DEFAULT 'pending',
+                `retry_count` INT NOT NULL DEFAULT 0,
+                `timezone` VARCHAR(64) DEFAULT 'UTC',
+                `last_error` TEXT DEFAULT NULL,
+                `tracking_token` VARCHAR(64) UNIQUE NOT NULL,
+                `locked_at` DATETIME DEFAULT NULL,
+                `lock_token` VARCHAR(64) DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX `idx_efq_status_sched` (`status`, `scheduled_at`),
+                INDEX `idx_efq_token` (`tracking_token`),
+                INDEX `idx_efq_rule_email` (`rule_id`, `recipient_email`),
+                INDEX `idx_efq_user_status` (`user_id`, `status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `email_templates` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL DEFAULT 1,
+                `name` VARCHAR(150) NOT NULL,
+                `subject` VARCHAR(255) DEFAULT NULL,
+                `html_body` LONGTEXT DEFAULT NULL,
+                `text_body` LONGTEXT DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX `idx_tmpl_user` (`user_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `system_logs` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT DEFAULT NULL,
+                `campaign_id` INT DEFAULT NULL,
+                `rule_id` INT DEFAULT NULL,
+                `queue_id` BIGINT DEFAULT NULL,
+                `tracking_token` VARCHAR(64) DEFAULT NULL,
+                `recipient_email` VARCHAR(255) NOT NULL,
+                `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry') NOT NULL,
+                `smtp_server` VARCHAR(150) DEFAULT NULL,
+                `ip_address` VARCHAR(45) DEFAULT NULL,
+                `user_agent` VARCHAR(500) DEFAULT NULL,
+                `details` TEXT DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_slog_event_created` (`event_type`, `created_at`),
+                INDEX `idx_slog_email` (`recipient_email`),
+                INDEX `idx_slog_token` (`tracking_token`),
+                INDEX `idx_slog_user_created` (`user_id`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `mail_routing_logs` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT DEFAULT NULL,
+                `rule_id` INT DEFAULT NULL,
+                `thread_id` VARCHAR(255) DEFAULT NULL,
+                `email` VARCHAR(255) NOT NULL,
+                `event_type` VARCHAR(64) NOT NULL,
+                `incoming_mailbox` VARCHAR(255) DEFAULT NULL,
+                `smtp_used` VARCHAR(255) DEFAULT NULL,
+                `reply_to_address` VARCHAR(255) DEFAULT NULL,
+                `stage_before` VARCHAR(64) DEFAULT NULL,
+                `stage_after` VARCHAR(64) DEFAULT NULL,
+                `delivery_status` VARCHAR(64) DEFAULT 'success',
+                `details` TEXT DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_mrl_email` (`email`),
+                INDEX `idx_mrl_event` (`event_type`, `created_at`),
+                INDEX `idx_mrl_user` (`user_id`, `created_at`),
+                INDEX `idx_mrl_thread` (`thread_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `mail_routing_queue` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `queue_type` ENUM('incoming-mail','auto-reply','followup-mail','mailbox-routing','webhook-events') NOT NULL,
+                `payload` LONGTEXT NOT NULL,
+                `status` ENUM('pending','processing','completed','failed') NOT NULL DEFAULT 'pending',
+                `attempts` INT NOT NULL DEFAULT 0,
+                `max_attempts` INT NOT NULL DEFAULT 3,
+                `scheduled_at` DATETIME NOT NULL,
+                `locked_at` DATETIME DEFAULT NULL,
+                `lock_token` VARCHAR(64) DEFAULT NULL,
+                `last_error` TEXT DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_mrq_status_sched` (`status`, `scheduled_at`),
+                INDEX `idx_mrq_user` (`user_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         ];
         foreach ($migrations as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) { /* ignore */ }
@@ -94,25 +190,63 @@ function db() {
             ['autoreply_threads','last_trigger_uid',     "BIGINT UNSIGNED DEFAULT NULL"],
             ['autoreply_threads','last_trigger_imap_id', "INT DEFAULT NULL"],
             ['autoreply_threads','last_msg_id',          "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','active_mailbox',       "ENUM('primary','secondary','backup') NOT NULL DEFAULT 'primary'"],
+            ['autoreply_threads','first_reply_sent',     "TINYINT(1) NOT NULL DEFAULT 0"],
+            ['autoreply_threads','reply_to_mailbox',     "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','smtp_used',            "INT DEFAULT NULL"],
+            ['autoreply_threads','imap_source',          "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','thread_id',            "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','original_message_id',  "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','last_message_id',      "VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','references_header',    "TEXT DEFAULT NULL"],
+            ['autoreply_threads','followup_status',      "ENUM('pending','running','completed','cancelled') DEFAULT 'pending'"],
+            ['autoreply_threads','followup_next_run',    "DATETIME DEFAULT NULL"],
+            ['autoreply_threads','conversation_stage',   "ENUM('NEW_LEAD','FIRST_REPLY_SENT','MOVED_TO_SECONDARY','FOLLOWUP_RUNNING','FOLLOWUP_COMPLETED') NOT NULL DEFAULT 'NEW_LEAD'"],
             ['autoreply_rules',  'sequential_mode',      "TINYINT(1) NOT NULL DEFAULT 0"],
             ['autoreply_rules',  'imap2_id',             "INT DEFAULT NULL"],
             ['autoreply_rules',  'step1_smtp_ids',       "TEXT DEFAULT NULL"],
+            ['autoreply_rules',  'enable_smart_routing', "TINYINT(1) NOT NULL DEFAULT 0"],
+            ['autoreply_rules',  'primary_imap_id',      "INT DEFAULT NULL"],
+            ['autoreply_rules',  'secondary_imap_id',    "INT DEFAULT NULL"],
+            ['autoreply_rules',  'backup_imap_id',       "INT DEFAULT NULL"],
+            ['autoreply_rules',  'primary_smtp_id',      "INT DEFAULT NULL"],
+            ['autoreply_rules',  'secondary_smtp_id',    "INT DEFAULT NULL"],
+            ['autoreply_rules',  'enable_reply_to_switch', "TINYINT(1) NOT NULL DEFAULT 1"],
+            ['autoreply_rules',  'enable_always_send_followup', "TINYINT(1) NOT NULL DEFAULT 1"],
+            ['autoreply_rules',  'enable_gmail_priority', "TINYINT(1) NOT NULL DEFAULT 1"],
+            ['autoreply_rules',  'followup_rule_id',     "INT DEFAULT NULL"],
             ['imap_accounts',    'last_uid',             "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
             ['imap_accounts',    'last_uid_validity',    "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
             ['imap_accounts',    'process_lock_at',      "DATETIME DEFAULT NULL"],
             ['imap_accounts',    'process_lock_pid',     "VARCHAR(64) DEFAULT NULL"],
             ['autoreply_steps',  'delay_minutes',        "INT NOT NULL DEFAULT 1"],
             ['followup_steps',   'delay_minutes',        "INT NOT NULL DEFAULT 60"],
+            ['followup_steps',   'delay_value',          "INT NOT NULL DEFAULT 30"],
+            ['followup_steps',   'delay_unit',           "ENUM('minutes','hours','days') NOT NULL DEFAULT 'minutes'"],
+            ['followup_contacts','opened_at',            "DATETIME DEFAULT NULL"],
+            ['followup_contacts','followup_started_at',  "DATETIME DEFAULT NULL"],
+            ['followup_contacts','tracking_token',       "VARCHAR(64) DEFAULT NULL"],
+            ['followup_contacts','open_count',           "INT NOT NULL DEFAULT 0"],
+            ['followup_contacts','click_count',          "INT NOT NULL DEFAULT 0"],
+            ['followup_rules',   'trigger_on_open',      "TINYINT(1) NOT NULL DEFAULT 1"],
             ['blacklist',        'phrase',               "VARCHAR(255) DEFAULT NULL"],
-            ['users',            'autoreply_limit',      "INT DEFAULT 5"],
-            ['users',            'followup_limit',       "INT DEFAULT 5"],
+            ['users',            'autoreply_limit',      "INT DEFAULT 10"],
+            ['users',            'followup_limit',       "INT DEFAULT 10"],
+            ['users',            'smtp_limit',           "INT DEFAULT 10"],
+            ['users',            'imap_limit',           "INT DEFAULT 10"],
             ['users',            'assigned_smtp_ids',    "TEXT DEFAULT NULL"],
             ['users',            'assigned_imap_ids',    "TEXT DEFAULT NULL"],
             ['campaigns',        'sender_name',          "VARCHAR(150) DEFAULT NULL"],
+            ['campaigns',        'followup_rule_id',     "INT DEFAULT NULL"],
             ['users',            'remember_token',       "VARCHAR(64) DEFAULT NULL"],
             ['users',            'imap_read_limit',      "INT DEFAULT 0"],
             ['imap_accounts',    'emails_read',          "INT NOT NULL DEFAULT 0"],
             ['emails',           'created_at',           "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
+            ['inbound_emails',   'message_id',           "VARCHAR(255) DEFAULT NULL"],
+            ['inbound_emails',   'in_reply_to',          "VARCHAR(255) DEFAULT NULL"],
+            ['inbound_emails',   'references_header',    "TEXT DEFAULT NULL"],
+            ['inbound_emails',   'thread_id',            "VARCHAR(255) DEFAULT NULL"],
+            ['inbound_emails',   'body',                 "LONGTEXT DEFAULT NULL"],
         ];
         foreach ($arCols as [$tbl, $col, $def]) {
             try {
@@ -132,6 +266,7 @@ function db() {
         $idxSqls = [
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_status_next` (`status`, `next_send_at`)",
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_status_step` (`status`, `current_step`)",
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_token` (`tracking_token`)",
             "ALTER TABLE `autoreply_threads` ADD INDEX `idx_art_status_next` (`status`, `next_send_at`)",
             "ALTER TABLE `autoreply_threads` ADD INDEX `idx_art_status_step` (`status`, `current_step`)",
             "ALTER TABLE `autoreply_logs` ADD INDEX `idx_arl_status_sent` (`status`, `sent_at`)",
@@ -527,3 +662,216 @@ function isMessageBlocked(int $userId, string $subject = '', string $fromEmail =
         return false;
     }
 }
+
+/**
+ * Convert delay value & unit ('minutes', 'hours', 'days') to total minutes.
+ */
+function delayToMinutes(int $value, string $unit = 'minutes'): int {
+    $val = max(0, $value);
+    switch (strtolower(trim($unit))) {
+        case 'days':
+        case 'day':
+        case 'd':
+            return $val * 1440; // 24 * 60
+        case 'hours':
+        case 'hour':
+        case 'h':
+            return $val * 60;
+        case 'minutes':
+        case 'minute':
+        case 'm':
+        default:
+            return $val;
+    }
+}
+
+/**
+ * Generate a cryptographically secure tracking token.
+ */
+function generateTrackingToken(): string {
+    return bin2hex(random_bytes(32));
+}
+
+/**
+ * Get client IP address safely.
+ */
+function getClientIp(): string {
+    $keys = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_CLIENT_IP', 'REMOTE_ADDR'];
+    foreach ($keys as $k) {
+        if (!empty($_SERVER[$k])) {
+            $ips = explode(',', $_SERVER[$k]);
+            $ip = trim($ips[0]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) return $ip;
+        }
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+}
+
+/**
+ * Get client User Agent string safely.
+ */
+function getClientUserAgent(): string {
+    return substr(trim($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500);
+}
+
+/**
+ * Detect Apple Mail Privacy Protection (MPP) or Google Image Proxy.
+ */
+function isProxyOrPrefetch(string $ua = ''): bool {
+    $ua = $ua ?: getClientUserAgent();
+    $low = strtolower($ua);
+    return (
+        strpos($low, 'googleimageproxy') !== false ||
+        strpos($low, 'mozilla/5.0') !== false && (strpos($low, 'apple mail') !== false || strpos($low, 'applewebkit') !== false && strpos($low, 'safari') === false)
+    );
+}
+
+/**
+ * Log unified system event to system_logs table.
+ */
+function logSystemEvent(
+    string $eventType,
+    string $recipientEmail,
+    string $details = '',
+    ?int $userId = null,
+    ?int $campaignId = null,
+    ?int $ruleId = null,
+    ?int $queueId = null,
+    ?string $token = null,
+    ?string $smtpServer = null
+): bool {
+    try {
+        $ip = getClientIp();
+        $ua = getClientUserAgent();
+        $stmt = db()->prepare(
+            "INSERT INTO system_logs
+             (user_id, campaign_id, rule_id, queue_id, tracking_token, recipient_email, event_type, smtp_server, ip_address, user_agent, details)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        return $stmt->execute([
+            $userId, $campaignId, $ruleId, $queueId, $token,
+            strtolower(trim($recipientEmail)), $eventType, $smtpServer, $ip, $ua, $details
+        ]);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Resolve root application URL for tracking links and pixels.
+ */
+function getAppBaseUrl(): string {
+    $cfg = getConfig();
+    if (!empty($cfg['app_url'])) {
+        return rtrim($cfg['app_url'], '/');
+    }
+    $isHttps = (
+        (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
+        (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+        (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+    );
+    $scheme = $isHttps ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '/');
+    $scriptDir = ($scriptDir === '/' || $scriptDir === '\\') ? '' : $scriptDir;
+    return rtrim($scheme . $host . $scriptDir, '/');
+}
+
+/**
+ * Log Smart Mail Routing event.
+ */
+function logMailRoutingEvent(
+    ?int $userId,
+    ?int $ruleId,
+    ?string $threadId,
+    string $email,
+    string $eventType,
+    ?string $incomingMailbox = null,
+    ?string $smtpUsed = null,
+    ?string $replyToAddress = null,
+    ?string $stageBefore = null,
+    ?string $stageAfter = null,
+    string $deliveryStatus = 'success',
+    ?string $details = null
+): bool {
+    try {
+        $stmt = db()->prepare(
+            "INSERT INTO mail_routing_logs
+             (user_id, rule_id, thread_id, email, event_type, incoming_mailbox, smtp_used, reply_to_address, stage_before, stage_after, delivery_status, details)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        return $stmt->execute([
+            $userId, $ruleId, $threadId, strtolower(trim($email)), $eventType,
+            $incomingMailbox, $smtpUsed, $replyToAddress, $stageBefore, $stageAfter,
+            $deliveryStatus, $details
+        ]);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Canonical clean subject line for thread hashing (removes Re:, Fwd:, [Tag], extra spaces).
+ */
+function canonicalSubject(string $subject): string {
+    $s = trim($subject);
+    $prev = '';
+    while ($prev !== $s) {
+        $prev = $s;
+        $s = preg_replace('/^\s*(re|fwd|fw|aw|sv|vs|r)\s*:\s*/i', '', $s);
+        $s = preg_replace('/^\s*\[[^\]]+\]\s*/i', '', $s);
+    }
+    $s = preg_replace('/[!\?\.\s]+$/', '', $s);
+    return strtolower(trim(preg_replace('/\s+/', ' ', (string)$s)));
+}
+
+/**
+ * Resolve or generate thread ID based on headers and subject.
+ */
+function resolveConversationThreadId(
+    ?string $messageId,
+    ?string $inReplyTo,
+    ?string $references,
+    string $fromEmail,
+    string $subject
+): string {
+    $fromEmail = strtolower(trim($fromEmail));
+    // 1. Try matching against existing thread using In-Reply-To or References
+    $refCandidates = [];
+    if ($inReplyTo) {
+        $cleanIrt = trim($inReplyTo, " <>\r\n\t");
+        if ($cleanIrt) $refCandidates[] = $cleanIrt;
+    }
+    if ($references) {
+        preg_match_all('/<([^>]+)>/', $references, $m);
+        if (!empty($m[1])) {
+            foreach ($m[1] as $r) { $refCandidates[] = trim($r); }
+        }
+    }
+    if ($refCandidates) {
+        $ph = implode(',', array_fill(0, count($refCandidates), '?'));
+        try {
+            $stmt = db()->prepare(
+                "SELECT thread_id FROM autoreply_threads 
+                 WHERE original_message_id IN ($ph) OR last_message_id IN ($ph) 
+                 ORDER BY id DESC LIMIT 1"
+            );
+            $stmt->execute($refCandidates);
+            $existingTh = $stmt->fetchColumn();
+            if ($existingTh) return $existingTh;
+        } catch (Throwable $_e) {}
+    }
+
+    // 2. Try matching by active thread with sender
+    try {
+        $stmt = db()->prepare("SELECT thread_id FROM autoreply_threads WHERE from_email = ? AND thread_id IS NOT NULL ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$fromEmail]);
+        $existingTh = $stmt->fetchColumn();
+        if ($existingTh) return $existingTh;
+    } catch (Throwable $_e) {}
+
+    // 3. Fallback: generate new unique thread ID
+    $cleanSub = canonicalSubject($subject);
+    return 'th_' . substr(md5($fromEmail . '|' . $cleanSub . '|' . microtime(true)), 0, 16);
+}
+

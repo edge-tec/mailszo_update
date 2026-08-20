@@ -338,8 +338,8 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
     foreach ($processBatch as $uid) {
         $tFetch = sprintf('A%03d', $tagNum++);
 
-        // UID FETCH — use BODY.PEEK so we don't alter \Seen flag
-        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT MESSAGE-ID)])\r\n");
+        // UID FETCH — use BODY.PEEK so we don't alter \Seen flag, fetching threading headers
+        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT MESSAGE-ID IN-REPLY-TO REFERENCES DATE)])\r\n");
 
         // Read response, handling IMAP literal blocks inline
         $fetchLines  = '';
@@ -380,29 +380,37 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
         // Unfold RFC 5322 multi-line headers
         $headerBlock = preg_replace("/\r?\n([ \t])/", ' $1', $headerBlock);
 
-        $fromLine = ''; $subjectLine = ''; $msgIdLine = '';
+        $fromLine = ''; $subjectLine = ''; $msgIdLine = ''; $inReplyToLine = ''; $referencesLine = ''; $dateLine = '';
         foreach (explode("\n", $headerBlock) as $hLine) {
             $hLine = rtrim($hLine, "\r");
-            if ($fromLine    === '' && preg_match('/^From\s*:/i',       $hLine)) $fromLine    = $hLine;
-            if ($subjectLine === '' && preg_match('/^Subject\s*:/i',    $hLine)) $subjectLine = $hLine;
-            if ($msgIdLine   === '' && preg_match('/^Message-ID\s*:/i', $hLine)) $msgIdLine   = $hLine;
-            if ($fromLine !== '' && $subjectLine !== '' && $msgIdLine !== '') break;
+            if ($fromLine       === '' && preg_match('/^From\s*:/i',        $hLine)) $fromLine       = $hLine;
+            if ($subjectLine    === '' && preg_match('/^Subject\s*:/i',     $hLine)) $subjectLine    = $hLine;
+            if ($msgIdLine      === '' && preg_match('/^Message-ID\s*:/i',  $hLine)) $msgIdLine      = $hLine;
+            if ($inReplyToLine  === '' && preg_match('/^In-Reply-To\s*:/i', $hLine)) $inReplyToLine  = $hLine;
+            if ($referencesLine === '' && preg_match('/^References\s*:/i',  $hLine)) $referencesLine = $hLine;
+            if ($dateLine       === '' && preg_match('/^Date\s*:/i',        $hLine)) $dateLine       = $hLine;
         }
 
         if ($fromLine === '') continue; // No FROM header found
 
-        $parsed  = imapParseFromHeader($fromLine);
-        $subject = imapParseSubject($subjectLine);
-        $msgId   = trim(preg_replace('/^Message-ID\s*:\s*/i', '', $msgIdLine));
+        $parsed     = imapParseFromHeader($fromLine);
+        $subject    = imapParseSubject($subjectLine);
+        $msgId      = trim(preg_replace('/^Message-ID\s*:\s*/i', '', $msgIdLine));
+        $inReplyTo  = trim(preg_replace('/^In-Reply-To\s*:\s*/i', '', $inReplyToLine));
+        $references = trim(preg_replace('/^References\s*:\s*/i', '', $referencesLine));
+        $dateHeader = trim(preg_replace('/^Date\s*:\s*/i', '', $dateLine));
 
         if (!$parsed['email'] || !filter_var($parsed['email'], FILTER_VALIDATE_EMAIL)) continue;
 
         $messages[] = [
-            'from_email' => $parsed['email'],
-            'from_name'  => $parsed['name'],
-            'subject'    => $subject,
-            'message_id' => $msgId,
-            'uid'        => $uid,
+            'from_email'  => $parsed['email'],
+            'from_name'   => $parsed['name'],
+            'subject'     => $subject,
+            'message_id'  => $msgId,
+            'in_reply_to' => $inReplyTo,
+            'references'  => $references,
+            'date_header' => $dateHeader,
+            'uid'         => $uid,
         ];
     }
 

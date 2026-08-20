@@ -149,6 +149,143 @@ if ($res==='auth') {
     }
     jsonOut(['error'=>'Not found'],404);
 }
+
+// ── PUBLIC TRACKING (Open pixel, click redirect, unsubscribe) ───
+if ($res === 'track') {
+    $subAction = $id; // 'open', 'click', 'unsub'
+    $token = trim($_GET['t'] ?? $action ?? '');
+
+    // 1. OPEN TRACKING PIXEL
+    if ($subAction === 'open') {
+        while (ob_get_level() > 0) { ob_end_clean(); }
+        header('Content-Type: image/gif');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0');
+        header('Pragma: no-cache');
+        header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+        echo base64_decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+
+        if ($token) {
+            try {
+                // Check email_followup_queue
+                $qStmt = db()->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ?");
+                $qStmt->execute([$token]);
+                $qRow = $qStmt->fetch();
+
+                if ($qRow) {
+                    $isFirstOpen = empty($qRow['opened_at']);
+                    if ($isFirstOpen) {
+                        db()->prepare(
+                            "UPDATE email_followup_queue 
+                             SET opened_at = NOW(), followup_started_at = IFNULL(followup_started_at, NOW())
+                             WHERE id = ?"
+                        )->execute([$qRow['id']]);
+
+                        logSystemEvent('opened', $qRow['recipient_email'], "Recipient opened email (Follow-up #{$qRow['followup_order']})", $qRow['user_id'], $qRow['campaign_id'], $qRow['rule_id'], $qRow['id'], $token);
+                    } else {
+                        logSystemEvent('opened', $qRow['recipient_email'], "Repeat open", $qRow['user_id'], $qRow['campaign_id'], $qRow['rule_id'], $qRow['id'], $token);
+                    }
+                }
+
+                // Also check followup_contacts
+                $fcStmt = db()->prepare("SELECT * FROM followup_contacts WHERE tracking_token = ?");
+                $fcStmt->execute([$token]);
+                $fcRow = $fcStmt->fetch();
+                if ($fcRow) {
+                    $isFirstOpen = empty($fcRow['opened_at']);
+                    if ($isFirstOpen) {
+                        $ruleId = (int)$fcRow['rule_id'];
+                        db()->prepare(
+                            "UPDATE followup_contacts
+                             SET opened_at = NOW(), followup_started_at = IFNULL(followup_started_at, NOW()), open_count = open_count + 1
+                             WHERE id = ?"
+                        )->execute([$fcRow['id']]);
+
+                        $uStmt = db()->prepare("SELECT user_id FROM followup_rules WHERE id = ?");
+                        $uStmt->execute([$ruleId]);
+                        $ruleOwner = (int)$uStmt->fetchColumn();
+
+                        logSystemEvent('opened', $fcRow['email'], "Contact opened email", $ruleOwner, null, $ruleId, null, $token);
+                    } else {
+                        db()->prepare("UPDATE followup_contacts SET open_count = open_count + 1 WHERE id = ?")->execute([$fcRow['id']]);
+                    }
+                }
+            } catch (Throwable $_tEx) {}
+        }
+        exit;
+    }
+
+    // 2. CLICK TRACKING
+    if ($subAction === 'click') {
+        $targetUrl = trim($_GET['url'] ?? $_GET['u'] ?? '');
+        if (!$targetUrl) {
+            header('Location: ' . getAppBaseUrl(), true, 302);
+            exit;
+        }
+        if ($token) {
+            try {
+                // Look up queue or contact
+                $qStmt = db()->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ?");
+                $qStmt->execute([$token]);
+                $qRow = $qStmt->fetch();
+                if ($qRow) {
+                    logSystemEvent('clicked', $qRow['recipient_email'], "Clicked link: " . substr($targetUrl, 0, 300), $qRow['user_id'], $qRow['campaign_id'], $qRow['rule_id'], $qRow['id'], $token);
+                }
+                $fcStmt = db()->prepare("SELECT * FROM followup_contacts WHERE tracking_token = ?");
+                $fcStmt->execute([$token]);
+                $fcRow = $fcStmt->fetch();
+                if ($fcRow) {
+                    db()->prepare("UPDATE followup_contacts SET click_count = click_count + 1 WHERE id = ?")->execute([$fcRow['id']]);
+                }
+            } catch (Throwable $_cEx) {}
+        }
+        header('Location: ' . $targetUrl, true, 302);
+        exit;
+    }
+
+    // 3. UNSUBSCRIBE
+    if ($subAction === 'unsub') {
+        $email = '';
+        $userId = 1;
+        if ($token) {
+            try {
+                $qStmt = db()->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ?");
+                $qStmt->execute([$token]);
+                $qRow = $qStmt->fetch();
+                if ($qRow) {
+                    $email = $qRow['recipient_email'];
+                    $userId = (int)$qRow['user_id'];
+                    db()->prepare("UPDATE email_followup_queue SET status = 'cancelled' WHERE recipient_email = ? AND status IN ('pending','scheduled')")->execute([$email]);
+                }
+                $fcStmt = db()->prepare("SELECT c.*, r.user_id FROM followup_contacts c JOIN followup_rules r ON r.id = c.rule_id WHERE c.tracking_token = ?");
+                $fcStmt->execute([$token]);
+                $fcRow = $fcStmt->fetch();
+                if ($fcRow) {
+                    $email = $fcRow['email'];
+                    $userId = (int)$fcRow['user_id'];
+                    db()->prepare("UPDATE followup_contacts SET status = 'stopped' WHERE email = ?")->execute([$email]);
+                }
+                if ($email) {
+                    db()->prepare("UPDATE emails SET status = 'unsubscribed' WHERE email = ?")->execute([$email]);
+                    db()->prepare("INSERT INTO blacklist (user_id, type, email) VALUES (?, 'email', ?) ON DUPLICATE KEY UPDATE type='email'")->execute([$userId, $email]);
+                    logSystemEvent('unsubscribed', $email, 'Recipient unsubscribed via tracking link', $userId, null, null, null, $token);
+                }
+            } catch (Throwable $_uEx) {}
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            jsonOut(['ok' => true, 'message' => 'Successfully unsubscribed.']);
+        }
+
+        // Output clean HTML unsubscribe confirmation page
+        while (ob_get_level() > 0) { ob_end_clean(); }
+        header('Content-Type: text/html; charset=UTF-8');
+        echo '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribed</title><style>body{background:#090c12;color:#e2eaf6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}.card{background:#0e1420;border:1px solid #1a2540;padding:36px 24px;border-radius:14px;max-width:420px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}.ic{font-size:44px;margin-bottom:16px}h2{color:#4ade80;font-size:20px;margin-bottom:10px}p{color:#7a92b8;font-size:14px;line-height:1.6}</style></head><body><div class="card"><div class="ic">📬</div><h2>You have been unsubscribed</h2><p>' . htmlspecialchars($email ?: 'Your email address') . ' has been removed from our mailing list. You will not receive any further automated emails from this sequence.</p></div></body></html>';
+        exit;
+    }
+
+    jsonOut(['error' => 'Unknown tracking action'], 404);
+}
+
 requireAuth();
 $CUR = currentUser();
 if (!$CUR) jsonOut(['error'=>'Session invalid'],401);
@@ -1593,6 +1730,23 @@ if ($res==='autoreply') {
         $ac->execute([$row['id']]); $row['active_threads'] = (int)$ac->fetchColumn();
         $sl = db()->prepare("SELECT COUNT(*) FROM autoreply_logs WHERE rule_id=? AND status='sent'");
         $sl->execute([$row['id']]); $row['total_sent'] = (int)$sl->fetchColumn();
+
+        // Enrich smart routing account names
+        if (!empty($row['primary_imap_id'])) {
+            $row['primary_imap_name'] = db()->query("SELECT name FROM imap_accounts WHERE id=".(int)$row['primary_imap_id'])->fetchColumn() ?: null;
+        }
+        if (!empty($row['secondary_imap_id'])) {
+            $row['secondary_imap_name'] = db()->query("SELECT name FROM imap_accounts WHERE id=".(int)$row['secondary_imap_id'])->fetchColumn() ?: null;
+        }
+        if (!empty($row['primary_smtp_id'])) {
+            $row['primary_smtp_name'] = db()->query("SELECT name FROM smtp_providers WHERE id=".(int)$row['primary_smtp_id'])->fetchColumn() ?: null;
+        }
+        if (!empty($row['secondary_smtp_id'])) {
+            $row['secondary_smtp_name'] = db()->query("SELECT name FROM smtp_providers WHERE id=".(int)$row['secondary_smtp_id'])->fetchColumn() ?: null;
+        }
+        if (!empty($row['followup_rule_id'])) {
+            $row['followup_rule_name'] = db()->query("SELECT name FROM followup_rules WHERE id=".(int)$row['followup_rule_id'])->fetchColumn() ?: null;
+        }
     }
     if ($method==='GET' && !$id) {
         $stmt = $IS_ADMIN
@@ -1638,15 +1792,6 @@ if ($res==='autoreply') {
     if ($method==='POST' && !$action) {
         $b = body();
         if (empty($b['name'])) jsonOut(['ok'=>false,'message'=>'Name required']);
-        // Enforce per-user AUTO-REPLY MESSAGE limit. The cap is on the total
-        // number of step rows (one row = one configured reply message); we
-        // pass the proposed step count from the request body so a save with
-        // 5 steps when the user already has 18 is blocked when the cap is 20.
-        // Owner resolution. Admin may pass `user_id` in the body to create
-        // the rule directly under another user's account ("admin can manually
-        // add any message rule to any user account at any time"). The target
-        // user must exist; otherwise we fall back to the admin's own UID.
-        // Non-admin users always get $UID — they cannot impersonate.
         $targetUid = $UID;
         if ($IS_ADMIN && !empty($b['user_id'])) {
             $tu = (int)$b['user_id'];
@@ -1654,8 +1799,6 @@ if ($res==='autoreply') {
             $chk->execute([$tu]);
             if ($chk->fetchColumn()) $targetUid = $tu;
         }
-        // Quota check runs against the EFFECTIVE owner so admin assigning a
-        // rule to a capped user can't push them over their cap.
         $quotaTarget = $CUR;
         if ($targetUid !== $UID) {
             $tuRow = db()->prepare('SELECT * FROM users WHERE id=?');
@@ -1667,23 +1810,32 @@ if ($res==='autoreply') {
         $limCheck = checkUserLimit($quotaTarget, 'autoreply_count', ['adding' => $proposedSteps]);
         if (!$limCheck['ok']) jsonOut(['ok'=>false,'message'=>$limCheck['msg']]);
 
-        $valErr = validateRuleSmtpImap(
-            $targetUid,
-            !empty($b['imap_id']) ? (int)$b['imap_id'] : null,
-            !empty($b['imap2_id']) ? (int)$b['imap2_id'] : null,
-            $b['smtp_ids'] ?? null,
-            $b['step1_smtp_ids'] ?? null
-        );
-        if ($valErr) jsonOut(['ok'=>false,'message'=>$valErr]);
+        $pImap = !empty($b['primary_imap_id']) ? (int)$b['primary_imap_id'] : (!empty($b['imap_id']) ? (int)$b['imap_id'] : null);
+        $sImap = !empty($b['secondary_imap_id']) ? (int)$b['secondary_imap_id'] : (!empty($b['imap2_id']) ? (int)$b['imap2_id'] : null);
+        $bImap = !empty($b['backup_imap_id']) ? (int)$b['backup_imap_id'] : null;
+        $pSmtp = !empty($b['primary_smtp_id']) ? (int)$b['primary_smtp_id'] : null;
+        $sSmtp = !empty($b['secondary_smtp_id']) ? (int)$b['secondary_smtp_id'] : null;
+        $fuRuleId = !empty($b['followup_rule_id']) ? (int)$b['followup_rule_id'] : null;
 
-        db()->prepare("INSERT INTO autoreply_rules (user_id,name,imap_id,imap2_id,smtp_ids,from_emails,status,sequential_mode,step1_smtp_ids) VALUES (?,?,?,?,?,?,?,?,?)")
-            ->execute([$targetUid,$b['name'],!empty($b['imap_id'])?(int)$b['imap_id']:null,
-                       !empty($b['imap2_id'])?(int)$b['imap2_id']:null,
-                       !empty($b['smtp_ids'])?json_encode($b['smtp_ids']):null,
-                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,
-                       $b['status']??'active',
-                       !empty($b['sequential_mode'])?1:0,
-                       !empty($b['step1_smtp_ids'])?json_encode($b['step1_smtp_ids']):null]);
+        db()->prepare("INSERT INTO autoreply_rules 
+            (user_id,name,imap_id,imap2_id,smtp_ids,from_emails,status,sequential_mode,step1_smtp_ids,
+             enable_smart_routing,primary_imap_id,secondary_imap_id,backup_imap_id,primary_smtp_id,secondary_smtp_id,
+             enable_reply_to_switch,enable_always_send_followup,enable_gmail_priority,followup_rule_id) 
+            VALUES (?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?)")
+            ->execute([
+                $targetUid, $b['name'], $pImap, $sImap,
+                !empty($b['smtp_ids'])?json_encode($b['smtp_ids']):null,
+                !empty($b['from_emails'])?json_encode($b['from_emails']):null,
+                $b['status']??'active',
+                !empty($b['sequential_mode'])?1:0,
+                !empty($b['step1_smtp_ids'])?json_encode($b['step1_smtp_ids']):null,
+                !empty($b['enable_smart_routing'])?1:0,
+                $pImap, $sImap, $bImap, $pSmtp, $sSmtp,
+                isset($b['enable_reply_to_switch'])?(int)$b['enable_reply_to_switch']:1,
+                isset($b['enable_always_send_followup'])?(int)$b['enable_always_send_followup']:1,
+                isset($b['enable_gmail_priority'])?(int)$b['enable_gmail_priority']:1,
+                $fuRuleId
+            ]);
         $rid = db()->lastInsertId();
         if (!empty($b['steps'])) {
             $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
@@ -1698,10 +1850,6 @@ if ($res==='autoreply') {
         if (!$row||(!$IS_ADMIN&&(int)$row['user_id']!==$UID)) jsonOut(['ok'=>false,'message'=>'Not found'],404);
         $b = body();
 
-        // Owner transfer. Only admin may change the rule's user_id, and the
-        // new owner must be an existing user. After transfer the previous
-        // owner has no read/write access — every endpoint above gates by
-        // r.user_id = $UID for non-admin, so visibility flips automatically.
         $newOwner = (int)$row['user_id'];
         if ($IS_ADMIN && isset($b['user_id'])) {
             $cand = (int)$b['user_id'];
@@ -1712,10 +1860,6 @@ if ($res==='autoreply') {
             }
         }
 
-        // Re-check the message cap on every save against the EFFECTIVE owner
-        // (the new one if a transfer is happening, otherwise the existing).
-        // Exclude THIS rule's existing steps because we're about to delete +
-        // re-insert them.
         $quotaTarget = $CUR;
         if ($newOwner !== $UID) {
             $tuRow = db()->prepare('SELECT * FROM users WHERE id=?');
@@ -1730,26 +1874,35 @@ if ($res==='autoreply') {
         ]);
         if (!$limCheck['ok']) jsonOut(['ok'=>false,'message'=>$limCheck['msg']]);
 
-        $valErr = validateRuleSmtpImap(
-            $newOwner,
-            $IS_ADMIN ? (!empty($b['imap_id']) ? (int)$b['imap_id'] : null) : $row['imap_id'],
-            $IS_ADMIN ? (!empty($b['imap2_id']) ? (int)$b['imap2_id'] : null) : $row['imap2_id'],
-            $IS_ADMIN ? ($b['smtp_ids'] ?? null) : $row['smtp_ids'],
-            $IS_ADMIN ? ($b['step1_smtp_ids'] ?? null) : $row['step1_smtp_ids']
-        );
-        if ($valErr) jsonOut(['ok'=>false,'message'=>$valErr]);
+        $pImap = !empty($b['primary_imap_id']) ? (int)$b['primary_imap_id'] : (!empty($b['imap_id']) ? (int)$b['imap_id'] : $row['imap_id']);
+        $sImap = !empty($b['secondary_imap_id']) ? (int)$b['secondary_imap_id'] : (!empty($b['imap2_id']) ? (int)$b['imap2_id'] : $row['imap2_id']);
+        $bImap = isset($b['backup_imap_id']) ? (!empty($b['backup_imap_id'])?(int)$b['backup_imap_id']:null) : $row['backup_imap_id'];
+        $pSmtp = isset($b['primary_smtp_id']) ? (!empty($b['primary_smtp_id'])?(int)$b['primary_smtp_id']:null) : $row['primary_smtp_id'];
+        $sSmtp = isset($b['secondary_smtp_id']) ? (!empty($b['secondary_smtp_id'])?(int)$b['secondary_smtp_id']:null) : $row['secondary_smtp_id'];
+        $fuRuleId = isset($b['followup_rule_id']) ? (!empty($b['followup_rule_id'])?(int)$b['followup_rule_id']:null) : $row['followup_rule_id'];
 
-        db()->prepare("UPDATE autoreply_rules SET user_id=?,name=?,imap_id=?,imap2_id=?,smtp_ids=?,from_emails=?,status=?,sequential_mode=?,step1_smtp_ids=? WHERE id=?")
-            ->execute([$newOwner,
-                       $b['name']??$row['name'],
-                       $IS_ADMIN ? (!empty($b['imap_id'])?(int)$b['imap_id']:null) : $row['imap_id'],
-                       $IS_ADMIN ? (!empty($b['imap2_id'])?(int)$b['imap2_id']:null) : $row['imap2_id'],
-                       $IS_ADMIN ? (!empty($b['smtp_ids'])?json_encode($b['smtp_ids']):null) : $row['smtp_ids'],
-                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,
-                       $b['status']??$row['status'],
-                       isset($b['sequential_mode'])?(int)$b['sequential_mode']:(int)($row['sequential_mode']??0),
-                       $IS_ADMIN ? (isset($b['step1_smtp_ids'])&&is_array($b['step1_smtp_ids'])&&count($b['step1_smtp_ids'])>0?json_encode($b['step1_smtp_ids']):null) : $row['step1_smtp_ids'],
-                       $id]);
+        db()->prepare("UPDATE autoreply_rules SET 
+            user_id=?,name=?,imap_id=?,imap2_id=?,smtp_ids=?,from_emails=?,status=?,sequential_mode=?,step1_smtp_ids=?,
+            enable_smart_routing=?,primary_imap_id=?,secondary_imap_id=?,backup_imap_id=?,primary_smtp_id=?,secondary_smtp_id=?,
+            enable_reply_to_switch=?,enable_always_send_followup=?,enable_gmail_priority=?,followup_rule_id=? 
+            WHERE id=?")
+            ->execute([
+                $newOwner,
+                $b['name']??$row['name'],
+                $pImap, $sImap,
+                !empty($b['smtp_ids'])?json_encode($b['smtp_ids']):$row['smtp_ids'],
+                !empty($b['from_emails'])?json_encode($b['from_emails']):$row['from_emails'],
+                $b['status']??$row['status'],
+                isset($b['sequential_mode'])?(int)$b['sequential_mode']:(int)($row['sequential_mode']??0),
+                isset($b['step1_smtp_ids'])&&is_array($b['step1_smtp_ids'])&&count($b['step1_smtp_ids'])>0?json_encode($b['step1_smtp_ids']):$row['step1_smtp_ids'],
+                isset($b['enable_smart_routing'])?(int)$b['enable_smart_routing']:(int)($row['enable_smart_routing']??0),
+                $pImap, $sImap, $bImap, $pSmtp, $sSmtp,
+                isset($b['enable_reply_to_switch'])?(int)$b['enable_reply_to_switch']:(int)($row['enable_reply_to_switch']??1),
+                isset($b['enable_always_send_followup'])?(int)$b['enable_always_send_followup']:(int)($row['enable_always_send_followup']??1),
+                isset($b['enable_gmail_priority'])?(int)$b['enable_gmail_priority']:(int)($row['enable_gmail_priority']??1),
+                $fuRuleId,
+                $id
+            ]);
         db()->prepare("DELETE FROM autoreply_steps WHERE rule_id=?")->execute([$id]);
         if (!empty($b['steps'])) {
             $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
@@ -1954,15 +2107,19 @@ if ($res==='followup') {
         );
         if ($valErr) jsonOut(['ok'=>false,'message'=>$valErr]);
 
-        db()->prepare("INSERT INTO followup_rules (user_id,name,imap_id,smtp_ids,from_emails,status) VALUES (?,?,?,?,?,?)")
+        db()->prepare("INSERT INTO followup_rules (user_id,name,imap_id,smtp_ids,from_emails,status,trigger_on_open) VALUES (?,?,?,?,?,?,?)")
             ->execute([$targetUid,$b['name'],!empty($b['imap_id'])?(int)$b['imap_id']:null,!empty($b['smtp_ids'])?json_encode($b['smtp_ids']):null,
-                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,$b['status']??'active']);
+                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,$b['status']??'active',isset($b['trigger_on_open'])?(int)$b['trigger_on_open']:1]);
         $rid = db()->lastInsertId();
         if (!empty($b['steps'])) {
-            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach (array_slice($b['steps'],0,15) as $i=>$st)
-                $ins->execute([$rid,$i+1,(int)($st['delay_minutes']??60),$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
-                    safeImageIds($st['image_ids']??[]),$st['img_width']??'600',$st['img_align']??'center',$st['img_position']??'top']);
+            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach (array_slice($b['steps'],0,15) as $i=>$st) {
+                $dVal = max(0, (int)($st['delay_value'] ?? $st['delay_minutes'] ?? 30));
+                $dUnit = in_array(strtolower($st['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($st['delay_unit']) : 'minutes';
+                $dMins = delayToMinutes($dVal, $dUnit);
+                $ins->execute([$rid, $i+1, $dMins, $dVal, $dUnit, $st['subject']??'', $st['html_body']??'', $st['text_body']??'',
+                    safeImageIds($st['image_ids']??[]), $st['img_width']??'600', $st['img_align']??'center', $st['img_position']??'top']);
+            }
         }
         jsonOut(['ok'=>true,'id'=>$rid]);
     }
@@ -2010,18 +2167,23 @@ if ($res==='followup') {
         );
         if ($valErr) jsonOut(['ok'=>false,'message'=>$valErr]);
 
-        db()->prepare("UPDATE followup_rules SET user_id=?,name=?,imap_id=?,smtp_ids=?,from_emails=?,status=? WHERE id=?")
+        db()->prepare("UPDATE followup_rules SET user_id=?,name=?,imap_id=?,smtp_ids=?,from_emails=?,status=?,trigger_on_open=? WHERE id=?")
             ->execute([$newOwner,
                        $b['name']??$row['name'],
                        $IS_ADMIN ? (!empty($b['imap_id'])?(int)$b['imap_id']:null) : $row['imap_id'],
                        $IS_ADMIN ? (!empty($b['smtp_ids'])?json_encode($b['smtp_ids']):null) : $row['smtp_ids'],
-                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,$b['status']??$row['status'],$id]);
+                       !empty($b['from_emails'])?json_encode($b['from_emails']):null,$b['status']??$row['status'],
+                       isset($b['trigger_on_open'])?(int)$b['trigger_on_open']:($row['trigger_on_open']??1),$id]);
         db()->prepare("DELETE FROM followup_steps WHERE rule_id=?")->execute([$id]);
         if (!empty($b['steps'])) {
-            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach (array_slice($b['steps'],0,15) as $i=>$st)
-                $ins->execute([$id,$i+1,(int)($st['delay_minutes']??60),$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
-                    safeImageIds($st['image_ids']??[]),$st['img_width']??'600',$st['img_align']??'center',$st['img_position']??'top']);
+            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach (array_slice($b['steps'],0,15) as $i=>$st) {
+                $dVal = max(0, (int)($st['delay_value'] ?? $st['delay_minutes'] ?? 30));
+                $dUnit = in_array(strtolower($st['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($st['delay_unit']) : 'minutes';
+                $dMins = delayToMinutes($dVal, $dUnit);
+                $ins->execute([$id, $i+1, $dMins, $dVal, $dUnit, $st['subject']??'', $st['html_body']??'', $st['text_body']??'',
+                    safeImageIds($st['image_ids']??[]), $st['img_width']??'600', $st['img_align']??'center', $st['img_position']??'top']);
+            }
         }
         jsonOut(['ok'=>true]);
     }
@@ -2046,12 +2208,12 @@ if ($res==='followup') {
         $limCheck = checkUserLimit($quotaTarget, 'followup_count', ['adding' => $proposedSteps]);
         if (!$limCheck['ok']) jsonOut(['ok'=>false,'message'=>$limCheck['msg']]);
         $newName = !empty($b['name']) ? $b['name'] : $row['name'] . ' (Copy)';
-        db()->prepare("INSERT INTO followup_rules (user_id,name,imap_id,smtp_ids,from_emails,status) VALUES (?,?,?,?,?,?)")
-            ->execute([$targetUid,$newName,$row['imap_id'],$row['smtp_ids'],$row['from_emails'],'paused']);
+        db()->prepare("INSERT INTO followup_rules (user_id,name,imap_id,smtp_ids,from_emails,status,trigger_on_open) VALUES (?,?,?,?,?,?,?)")
+            ->execute([$targetUid,$newName,$row['imap_id'],$row['smtp_ids'],$row['from_emails'],'paused',$row['trigger_on_open']??1]);
         $rid = db()->lastInsertId();
         if ($proposedSteps > 0) {
-            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach ($steps as $st) $ins->execute([$rid,$st['step_number'],$st['delay_minutes'],$st['subject'],$st['html_body'],$st['text_body'],$st['image_ids'],$st['img_width'],$st['img_align'],$st['img_position']]);
+            $ins = db()->prepare("INSERT INTO followup_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach ($steps as $st) $ins->execute([$rid,$st['step_number'],$st['delay_minutes'],$st['delay_value']??$st['delay_minutes'],$st['delay_unit']??'minutes',$st['subject'],$st['html_body'],$st['text_body'],$st['image_ids'],$st['img_width'],$st['img_align'],$st['img_position']]);
         }
         jsonOut(['ok'=>true,'id'=>$rid]);
     }
@@ -2064,18 +2226,22 @@ if ($res==='followup') {
     if ($method==='POST' && $action==='enroll') {
         $s = db()->prepare('SELECT * FROM followup_rules WHERE id=?'); $s->execute([$id]); $rule=$s->fetch();
         if (!$rule||(!$IS_ADMIN&&(int)$rule['user_id']!==$UID)) jsonOut(['ok'=>false,'message'=>'Not found'],404);
-        $fs = db()->prepare("SELECT delay_minutes FROM followup_steps WHERE rule_id=? ORDER BY step_number ASC LIMIT 1");
+        $fs = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id=? ORDER BY step_number ASC LIMIT 1");
         $fs->execute([$id]); $firstStep = $fs->fetch();
-        $delayMinutes = $firstStep ? (int)$firstStep['delay_minutes'] : 60;
+        $delayMinutes = $firstStep ? delayToMinutes((int)($firstStep['delay_value'] ?? $firstStep['delay_minutes'] ?? 30), $firstStep['delay_unit'] ?? 'minutes') : 30;
+        
+        // Auto-schedule step 1 immediately upon enrollment (sends after delay whether read or not)
         $nextSend = date('Y-m-d H:i:s', strtotime("+{$delayMinutes} minutes"));
+        
         if (!empty($_FILES['file'])) {
             $h=fopen($_FILES['file']['tmp_name'],'r');$hdr=null;$ei=0;$ni=-1;$cnt=0;
-            $ins=db()->prepare("INSERT IGNORE INTO followup_contacts (rule_id,email,name,current_step,next_send_at) VALUES (?,?,?,1,?)");
+            $ins=db()->prepare("INSERT INTO followup_contacts (rule_id,email,name,current_step,next_send_at,tracking_token,status) VALUES (?,?,?,1,?,?,'active') ON DUPLICATE KEY UPDATE status='active'");
             while(($rw=fgetcsv($h))!==false){
                 if(!$hdr){$hdr=array_map('strtolower',array_map('trim',$rw));foreach($hdr as $ki=>$hv){if(strpos($hv,'email')!==false)$ei=$ki;if(strpos($hv,'name')!==false)$ni=$ki;}continue;}
                 $em=strtolower(trim($rw[$ei]??''));if(!filter_var($em,FILTER_VALIDATE_EMAIL))continue;
                 $nm=($ni>=0)?trim($rw[$ni]??''):'';
-                $ins->execute([$id,$em,$nm,$nextSend]);$cnt++;
+                $tTok = generateTrackingToken();
+                $ins->execute([$id,$em,$nm,$nextSend,$tTok]);$cnt++;
             }
             fclose($h); jsonOut(['ok'=>true,'enrolled'=>$cnt]);
         }
@@ -2083,8 +2249,12 @@ if ($res==='followup') {
         if (!empty($b['list_id'])) {
             $em2=db()->prepare("SELECT email,name FROM emails WHERE list_id=? AND status='active'");
             $em2->execute([$b['list_id']]);$list=$em2->fetchAll();
-            $ins=db()->prepare("INSERT IGNORE INTO followup_contacts (rule_id,email,name,current_step,next_send_at) VALUES (?,?,?,1,?)");
-            $cnt=0; foreach($list as $e){$ins->execute([$id,$e['email'],$e['name']??'',$nextSend]);$cnt++;}
+            $ins=db()->prepare("INSERT INTO followup_contacts (rule_id,email,name,current_step,next_send_at,tracking_token,status) VALUES (?,?,?,1,?,?,'active') ON DUPLICATE KEY UPDATE status='active'");
+            $cnt=0; 
+            foreach($list as $e){
+                $tTok = generateTrackingToken();
+                $ins->execute([$id,$e['email'],$e['name']??'',$nextSend,$tTok]);$cnt++;
+            }
             jsonOut(['ok'=>true,'enrolled'=>$cnt]);
         }
         jsonOut(['ok'=>false,'message'=>'No contacts provided']);
@@ -3222,6 +3392,308 @@ if ($res==='backup') {
     }
 
     jsonOut(['error'=>'Not found'],404);
+}
+
+// ── EMAIL TEMPLATES ───────────────────────────────────────────────
+if ($res === 'templates') {
+    if ($method === 'GET' && !$id) {
+        $stmt = $IS_ADMIN
+            ? db()->query("SELECT t.*, u.username owner FROM email_templates t LEFT JOIN users u ON u.id = t.user_id ORDER BY t.id DESC")
+            : db()->prepare("SELECT * FROM email_templates WHERE user_id = ? ORDER BY id DESC");
+        if (!$IS_ADMIN) $stmt->execute([$UID]);
+        jsonOut($stmt->fetchAll() ?: []);
+    }
+    if ($method === 'GET' && $id) {
+        $stmt = db()->prepare("SELECT * FROM email_templates WHERE id = ?" . ($IS_ADMIN ? '' : ' AND user_id = ?'));
+        $params = [$id];
+        if (!$IS_ADMIN) $params[] = $UID;
+        $stmt->execute($params);
+        $tmpl = $stmt->fetch();
+        if (!$tmpl) jsonOut(['error' => 'Template not found'], 404);
+        jsonOut($tmpl);
+    }
+    if ($method === 'POST' && !$action) {
+        $b = body();
+        if (empty($b['name'])) jsonOut(['ok' => false, 'message' => 'Template name is required']);
+        $stmt = db()->prepare("INSERT INTO email_templates (user_id, name, subject, html_body, text_body) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $UID,
+            trim($b['name']),
+            $b['subject'] ?? '',
+            $b['html_body'] ?? '',
+            $b['text_body'] ?? ''
+        ]);
+        jsonOut(['ok' => true, 'id' => db()->lastInsertId()]);
+    }
+    if ($method === 'POST' && $id && $action === 'duplicate') {
+        $stmt = db()->prepare("SELECT * FROM email_templates WHERE id = ?" . ($IS_ADMIN ? '' : ' AND user_id = ?'));
+        $params = [$id];
+        if (!$IS_ADMIN) $params[] = $UID;
+        $stmt->execute($params);
+        $tmpl = $stmt->fetch();
+        if (!$tmpl) jsonOut(['ok' => false, 'message' => 'Template not found'], 404);
+        $newName = $tmpl['name'] . ' (Copy)';
+        $ins = db()->prepare("INSERT INTO email_templates (user_id, name, subject, html_body, text_body) VALUES (?, ?, ?, ?, ?)");
+        $ins->execute([$UID, $newName, $tmpl['subject'], $tmpl['html_body'], $tmpl['text_body']]);
+        jsonOut(['ok' => true, 'id' => db()->lastInsertId()]);
+    }
+    if ($method === 'PUT' && $id) {
+        $stmt = db()->prepare("SELECT id FROM email_templates WHERE id = ?" . ($IS_ADMIN ? '' : ' AND user_id = ?'));
+        $params = [$id];
+        if (!$IS_ADMIN) $params[] = $UID;
+        $stmt->execute($params);
+        if (!$stmt->fetch()) jsonOut(['ok' => false, 'message' => 'Template not found'], 404);
+        $b = body();
+        $up = db()->prepare("UPDATE email_templates SET name = ?, subject = ?, html_body = ?, text_body = ? WHERE id = ?");
+        $up->execute([
+            $b['name'] ?? 'Untitled Template',
+            $b['subject'] ?? '',
+            $b['html_body'] ?? '',
+            $b['text_body'] ?? '',
+            $id
+        ]);
+        jsonOut(['ok' => true]);
+    }
+    if ($method === 'DELETE' && $id) {
+        $stmt = db()->prepare("DELETE FROM email_templates WHERE id = ?" . ($IS_ADMIN ? '' : ' AND user_id = ?'));
+        $params = [$id];
+        if (!$IS_ADMIN) $params[] = $UID;
+        $stmt->execute($params);
+        jsonOut(['ok' => true]);
+    }
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── SYSTEM & EVENT LOGS ───────────────────────────────────────────
+if ($res === 'system-logs' || $res === 'logs') {
+    if ($method === 'GET' && $id === 'stats') {
+        $where = $IS_ADMIN ? '1=1' : "user_id = {$UID}";
+        $today = date('Y-m-d');
+        
+        $stats = [
+            'total_queued'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='queued'")->fetchColumn(),
+            'total_sent'     => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent'")->fetchColumn(),
+            'sent_today'     => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent' AND DATE(created_at)='{$today}'")->fetchColumn(),
+            'failed_today'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='failed' AND DATE(created_at)='{$today}'")->fetchColumn(),
+            'total_opened'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='opened'")->fetchColumn(),
+            'total_clicked'  => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='clicked'")->fetchColumn(),
+            'total_bounced'  => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='bounced'")->fetchColumn(),
+            'total_unsub'    => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='unsubscribed'")->fetchColumn(),
+            'pending_followups' => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='pending'")->fetchColumn(),
+            'scheduled_followups' => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled'")->fetchColumn(),
+            'retry_queue'    => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled' AND retry_count > 0")->fetchColumn(),
+        ];
+        $sentTotal = max(1, $stats['total_sent']);
+        $stats['open_rate'] = round(($stats['total_opened'] / $sentTotal) * 100, 1);
+        $stats['click_rate'] = round(($stats['total_clicked'] / $sentTotal) * 100, 1);
+        $stats['bounce_rate'] = round(($stats['total_bounced'] / $sentTotal) * 100, 1);
+        jsonOut($stats);
+    }
+    if ($method === 'GET') {
+        $pg = max(1, (int)($_GET['page'] ?? 1));
+        $lim = 100;
+        $off = ($pg - 1) * $lim;
+        $where = $IS_ADMIN ? '1=1' : "user_id = {$UID}";
+        $params = [];
+
+        $ev = trim($_GET['event'] ?? '');
+        if ($ev) {
+            $where .= " AND event_type = ?";
+            $params[] = $ev;
+        }
+        $em = trim($_GET['email'] ?? '');
+        if ($em) {
+            $where .= " AND recipient_email LIKE ?";
+            $params[] = '%' . $em . '%';
+        }
+
+        $total = db()->prepare("SELECT COUNT(*) FROM system_logs WHERE {$where}");
+        $total->execute($params);
+        $totalCount = (int)$total->fetchColumn();
+
+        $stmt = db()->prepare("SELECT * FROM system_logs WHERE {$where} ORDER BY id DESC LIMIT {$lim} OFFSET {$off}");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        jsonOut(['rows' => $rows, 'total' => $totalCount, 'pages' => (int)ceil($totalCount / $lim)]);
+    }
+    if ($method === 'DELETE') {
+        if ($IS_ADMIN) {
+            db()->exec("DELETE FROM system_logs");
+        } else {
+            db()->prepare("DELETE FROM system_logs WHERE user_id = ?")->execute([$UID]);
+        }
+        jsonOut(['ok' => true, 'message' => 'System logs cleared.']);
+    }
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── SMART MAIL ROUTING (Multi IMAP/SMTP Engine) ────────────────────
+if ($res === 'mail-routing') {
+    if ($method === 'GET' && $id === 'stats') {
+        $where = $IS_ADMIN ? "1=1" : "r.user_id = $UID";
+        $thWhere = $IS_ADMIN ? "1=1" : "t.rule_id IN (SELECT id FROM autoreply_rules WHERE user_id = $UID)";
+
+        $totalLeads = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere")->fetchColumn();
+        $firstReplies = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere AND t.first_reply_sent = 1")->fetchColumn();
+        $migratedSec = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere AND (t.active_mailbox = 'secondary' OR t.conversation_stage = 'MOVED_TO_SECONDARY')")->fetchColumn();
+        $fuRunning = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere AND t.followup_status = 'running'")->fetchColumn();
+        $completed = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere AND (t.status = 'completed' OR t.conversation_stage = 'FOLLOWUP_COMPLETED')")->fetchColumn();
+        $activeTh = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads t WHERE $thWhere AND t.status = 'active'")->fetchColumn();
+
+        jsonOut([
+            'ok' => true,
+            'total_leads' => $totalLeads,
+            'first_replies_sent' => $firstReplies,
+            'migrated_secondary' => $migratedSec,
+            'followups_active' => $fuRunning,
+            'completed_conversations' => $completed,
+            'active_conversations' => $activeTh,
+        ]);
+    }
+
+    if ($method === 'GET' && $id === 'threads') {
+        $pg = max(1, (int)($_GET['page'] ?? 1));
+        $lim = min(100, max(10, (int)($_GET['limit'] ?? 25)));
+        $off = ($pg - 1) * $lim;
+
+        $conds = [];
+        $params = [];
+
+        if (!$IS_ADMIN) {
+            $conds[] = "r.user_id = ?";
+            $params[] = $UID;
+        }
+
+        if (!empty($_GET['stage'])) {
+            $conds[] = "t.conversation_stage = ?";
+            $params[] = $_GET['stage'];
+        }
+        if (!empty($_GET['mailbox'])) {
+            $conds[] = "t.active_mailbox = ?";
+            $params[] = $_GET['mailbox'];
+        }
+        if (!empty($_GET['q'])) {
+            $conds[] = "(t.from_email LIKE ? OR t.from_name LIKE ? OR t.subject_in LIKE ? OR t.thread_id LIKE ?)";
+            $qLike = '%' . trim($_GET['q']) . '%';
+            $params[] = $qLike;
+            $params[] = $qLike;
+            $params[] = $qLike;
+            $params[] = $qLike;
+        }
+
+        $whereClause = count($conds) > 0 ? "WHERE " . implode(" AND ", $conds) : "";
+
+        $countSql = "SELECT COUNT(*) FROM autoreply_threads t JOIN autoreply_rules r ON r.id = t.rule_id $whereClause";
+        $cStmt = db()->prepare($countSql);
+        $cStmt->execute($params);
+        $total = (int)$cStmt->fetchColumn();
+
+        $sql = "SELECT t.*, r.name as rule_name, r.primary_imap_id, r.secondary_imap_id, r.primary_smtp_id, r.secondary_smtp_id,
+                       p_ia.name as primary_imap_name, s_ia.name as secondary_imap_name,
+                       p_sp.name as primary_smtp_name, s_sp.name as secondary_smtp_name
+                FROM autoreply_threads t
+                JOIN autoreply_rules r ON r.id = t.rule_id
+                LEFT JOIN imap_accounts p_ia ON p_ia.id = r.primary_imap_id
+                LEFT JOIN imap_accounts s_ia ON s_ia.id = r.secondary_imap_id
+                LEFT JOIN smtp_providers p_sp ON p_sp.id = r.primary_smtp_id
+                LEFT JOIN smtp_providers s_sp ON s_sp.id = r.secondary_smtp_id
+                $whereClause
+                ORDER BY t.id DESC LIMIT $lim OFFSET $off";
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        jsonOut([
+            'ok' => true,
+            'rows' => $rows,
+            'total' => $total,
+            'page' => $pg,
+            'pages' => (int)ceil($total / $lim),
+        ]);
+    }
+
+    if ($method === 'GET' && $id === 'logs') {
+        $pg = max(1, (int)($_GET['page'] ?? 1));
+        $lim = min(200, max(10, (int)($_GET['limit'] ?? 50)));
+        $off = ($pg - 1) * $lim;
+
+        $conds = [];
+        $params = [];
+
+        if (!$IS_ADMIN) {
+            $conds[] = "l.user_id = ?";
+            $params[] = $UID;
+        }
+        if (!empty($_GET['event_type'])) {
+            $conds[] = "l.event_type = ?";
+            $params[] = $_GET['event_type'];
+        }
+        if (!empty($_GET['q'])) {
+            $conds[] = "(l.recipient_email LIKE ? OR l.thread_id LIKE ? OR l.details LIKE ?)";
+            $qLike = '%' . trim($_GET['q']) . '%';
+            $params[] = $qLike;
+            $params[] = $qLike;
+            $params[] = $qLike;
+        }
+
+        $whereClause = count($conds) > 0 ? "WHERE " . implode(" AND ", $conds) : "";
+
+        $countSql = "SELECT COUNT(*) FROM mail_routing_logs l $whereClause";
+        $cStmt = db()->prepare($countSql);
+        $cStmt->execute($params);
+        $total = (int)$cStmt->fetchColumn();
+
+        $sql = "SELECT l.*, r.name as rule_name, u.username as user_name
+                FROM mail_routing_logs l
+                LEFT JOIN autoreply_rules r ON r.id = l.rule_id
+                LEFT JOIN users u ON u.id = l.user_id
+                $whereClause
+                ORDER BY l.id DESC LIMIT $lim OFFSET $off";
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        jsonOut([
+            'ok' => true,
+            'rows' => $rows,
+            'total' => $total,
+            'page' => $pg,
+            'pages' => (int)ceil($total / $lim),
+        ]);
+    }
+
+    if ($method === 'DELETE' && $id === 'logs') {
+        if ($IS_ADMIN) {
+            db()->exec("DELETE FROM mail_routing_logs");
+        } else {
+            db()->prepare("DELETE FROM mail_routing_logs WHERE user_id = ?")->execute([$UID]);
+        }
+        jsonOut(['ok' => true, 'message' => 'Mail routing logs cleared.']);
+    }
+
+    if ($method === 'POST' && $id === 'migrate-thread') {
+        $b = body();
+        $thId = (int)($b['thread_id'] ?? 0);
+        $targetMb = ($b['target_mailbox'] ?? 'secondary') === 'primary' ? 'primary' : 'secondary';
+        $targetStg = $targetMb === 'secondary' ? 'MOVED_TO_SECONDARY' : 'FIRST_REPLY_SENT';
+
+        $s = db()->prepare("SELECT t.*, r.user_id as r_uid FROM autoreply_threads t JOIN autoreply_rules r ON r.id = t.rule_id WHERE t.id = ?");
+        $s->execute([$thId]);
+        $th = $s->fetch();
+        if (!$th || (!$IS_ADMIN && (int)$th['r_uid'] !== $UID)) {
+            jsonOut(['ok' => false, 'message' => 'Thread not found'], 404);
+        }
+
+        db()->prepare("UPDATE autoreply_threads SET active_mailbox = ?, conversation_stage = ? WHERE id = ?")
+            ->execute([$targetMb, $targetStg, $thId]);
+
+        logMailRoutingEvent((int)$th['r_uid'], (int)$th['rule_id'], $th['thread_id'], $th['from_email'], 'mailbox_migrated', null, null, null, $th['conversation_stage'], $targetStg, 'success', "Manual mailbox migration to " . ucfirst($targetMb) . " by operator");
+
+        jsonOut(['ok' => true, 'message' => "Thread #{$thId} migrated to " . ucfirst($targetMb)]);
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
 }
 
 jsonOut(['error'=>'Not found'],404);
