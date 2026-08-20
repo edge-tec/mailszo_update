@@ -1253,9 +1253,9 @@ try {
         $ruleId = $job['rule_id'];
         $userId = $job['r_user_id'] ?? 1;
 
-        $lock = db()->prepare("UPDATE autoreply_threads SET status = 'sending', last_sent_at = NOW() WHERE id = ? AND status = 'scheduled'");
-        $lock->execute([$threadId]);
-        if ($lock->rowCount() === 0) continue; 
+        $arLockStmt = db()->prepare("UPDATE autoreply_threads SET status = 'sending', last_sent_at = NOW() WHERE id = ? AND status = 'scheduled'");
+        $arLockStmt->execute([$threadId]);
+        if ($arLockStmt->rowCount() === 0) continue; 
 
         if (($job['u_status'] ?? '') === 'suspended' || (!empty($job['u_expires']) && strtotime($job['u_expires']) < time())) {
             db()->prepare("UPDATE autoreply_threads SET status = 'cancelled' WHERE id = ?")->execute([$threadId]);
@@ -1312,7 +1312,7 @@ try {
         }
 
         $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
-        $fromPool = json_decode($job['from_emails'], true) ?: [];
+        $fromPool = json_decode((string)$job['from_emails'], true) ?: [];
         if ($fromPool) {
             $pk = $fromPool[array_rand($fromPool)];
             if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; } 
