@@ -1313,7 +1313,10 @@ try {
 
             $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
             if($fromPool){$pk=$fromPool[array_rand($fromPool)];if(is_array($pk)){$mc['from_email']=$pk['email']??$mc['from_email'];$mc['from_name']=$pk['name']??$mc['from_name'];}else $mc['from_email']=$pk;}
-            $msg=buildMessage((array)$step,$thread['from_name']??'',$thread['from_email'],'Re: '.($thread['subject_in']??''),$mc['from_name']??'',date('F j, Y g:i A'));
+            $arDefSubj = !empty($thread['subject_in']) 
+                ? ((stripos(trim($thread['subject_in']), 're:') === 0) ? $thread['subject_in'] : 'Re: ' . $thread['subject_in'])
+                : 'Re: Regarding your inquiry';
+            $msg=buildMessage((array)$step,$thread['from_name']??'',$thread['from_email'],$arDefSubj,$mc['from_name']??'',date('F j, Y g:i A'));
             $mc=applyDisplayName($mc,$userId);
             $smtpNameUsed=$mc['name']??'';
             $fromEmailUsed=$mc['from_email']??'';
@@ -1587,14 +1590,54 @@ try {
                 else { $mc['from_email'] = $pk; }
             }
 
-            $defSubj = $qItem['rule_name'] ?: 'Follow-up';
-            if ($stepOrder > 1) {
-                $s1Stmt = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id = ? AND step_number = 1");
+            $defSubj = '';
+            // 1. Try to find the original thread / incoming email subject
+            try {
+                $thSubjStmt = db()->prepare("SELECT subject_in FROM autoreply_threads WHERE from_email = ? AND (rule_id IN (SELECT id FROM autoreply_rules WHERE followup_rule_id = ?) OR user_id = ?) AND subject_in IS NOT NULL AND subject_in != '' ORDER BY id DESC LIMIT 1");
+                $thSubjStmt->execute([$qEmail, $ruleId, $qUserId]);
+                $thSubj = $thSubjStmt->fetchColumn();
+                if ($thSubj) {
+                    $defSubj = (stripos(trim($thSubj), 're:') === 0) ? $thSubj : 'Re: ' . $thSubj;
+                }
+            } catch (Throwable $_subEx) {}
+
+            // 2. If not found, check campaign subject if triggered from campaign
+            if (!$defSubj && !empty($qItem['campaign_id'])) {
+                try {
+                    $campSubjStmt = db()->prepare("SELECT subject FROM campaigns WHERE id = ?");
+                    $campSubjStmt->execute([(int)$qItem['campaign_id']]);
+                    $cSubj = $campSubjStmt->fetchColumn();
+                    if ($cSubj) {
+                        $defSubj = (stripos(trim($cSubj), 're:') === 0) ? $cSubj : 'Re: ' . $cSubj;
+                    }
+                } catch (Throwable $_cEx) {}
+            }
+
+            // 3. If step > 1 and step 1 has custom subject
+            if (!$defSubj && $stepOrder > 1) {
+                $s1Stmt = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id = ? AND step_number = 1 AND subject IS NOT NULL AND subject != ''");
                 $s1Stmt->execute([$ruleId]);
                 $s1Subj = $s1Stmt->fetchColumn();
                 if ($s1Subj) {
                     $defSubj = (stripos(trim($s1Subj), 're:') === 0) ? $s1Subj : 'Re: ' . $s1Subj;
                 }
+            }
+
+            // 4. If still empty, check inbound emails
+            if (!$defSubj) {
+                try {
+                    $inSubjStmt = db()->prepare("SELECT subject FROM inbound_emails WHERE from_email = ? AND subject IS NOT NULL AND subject != '' ORDER BY id DESC LIMIT 1");
+                    $inSubjStmt->execute([$qEmail]);
+                    $inSubj = $inSubjStmt->fetchColumn();
+                    if ($inSubj) {
+                        $defSubj = (stripos(trim($inSubj), 're:') === 0) ? $inSubj : 'Re: ' . $inSubj;
+                    }
+                } catch (Throwable $_inEx) {}
+            }
+
+            // 5. Final fallback (clean natural conversation subject, NEVER the rule name "follow" / "Follow-up")
+            if (!$defSubj) {
+                $defSubj = 'Re: Regarding your inquiry';
             }
 
             $msg = buildMessage((array)$stepRow, $qItem['recipient_name'] ?? '', $qEmail, $defSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
@@ -1851,14 +1894,42 @@ try {
                 else { $mc['from_email'] = $pk; }
             }
 
-            $defSubj = $rule['name'];
-            if ($contact['current_step'] > 1) {
-                $sr1 = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id=? AND step_number=1");
+            $defSubj = '';
+            // 1. Try to find original thread / incoming email subject
+            try {
+                $thSubjStmt = db()->prepare("SELECT subject_in FROM autoreply_threads WHERE from_email = ? AND (rule_id IN (SELECT id FROM autoreply_rules WHERE followup_rule_id = ?) OR user_id = ?) AND subject_in IS NOT NULL AND subject_in != '' ORDER BY id DESC LIMIT 1");
+                $thSubjStmt->execute([$contact['email'], $ruleId, $userId]);
+                $thSubj = $thSubjStmt->fetchColumn();
+                if ($thSubj) {
+                    $defSubj = (stripos(trim($thSubj), 're:') === 0) ? $thSubj : 'Re: ' . $thSubj;
+                }
+            } catch (Throwable $_subEx) {}
+
+            // 2. If step > 1 and step 1 has custom subject
+            if (!$defSubj && $contact['current_step'] > 1) {
+                $sr1 = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id=? AND step_number=1 AND subject IS NOT NULL AND subject != ''");
                 $sr1->execute([$ruleId]);
                 $s1 = $sr1->fetchColumn();
                 if ($s1) {
                     $defSubj = (stripos(trim($s1), 're:') === 0) ? $s1 : 'Re: ' . $s1;
                 }
+            }
+
+            // 3. If still empty, check inbound emails
+            if (!$defSubj) {
+                try {
+                    $inSubjStmt = db()->prepare("SELECT subject FROM inbound_emails WHERE from_email = ? AND subject IS NOT NULL AND subject != '' ORDER BY id DESC LIMIT 1");
+                    $inSubjStmt->execute([$contact['email']]);
+                    $inSubj = $inSubjStmt->fetchColumn();
+                    if ($inSubj) {
+                        $defSubj = (stripos(trim($inSubj), 're:') === 0) ? $inSubj : 'Re: ' . $inSubj;
+                    }
+                } catch (Throwable $_inEx) {}
+            }
+
+            // 4. Final fallback (clean natural subject, NEVER internal rule name)
+            if (!$defSubj) {
+                $defSubj = 'Re: Regarding your inquiry';
             }
 
             $msg = buildMessage((array)$step, $contact['name'] ?? '', $contact['email'], $defSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
