@@ -1198,9 +1198,9 @@ try {
             } else {
                 // ── USER REPLIED (Check for Mailbox Migration to Secondary) ──
                 $isSameMsgId = ($inMsgId && !empty($thread['last_msg_id']) && strtolower(trim($thread['last_msg_id'])) === strtolower(trim($inMsgId)));
-                $isSameUid = ($uid > 0 && $srcId > 0 && !empty($thread['last_trigger_uid']) && $thread['last_trigger_uid'] == $uid && $thread['last_trigger_imap_id'] == $srcId);
+                $isOldUid = ($uid > 0 && $srcId > 0 && !empty($thread['last_trigger_uid']) && $thread['last_trigger_imap_id'] == $srcId && $uid <= $thread['last_trigger_uid']);
                 
-                if ($isSameMsgId || $isSameUid) {
+                if ($isSameMsgId || $isOldUid) {
                     continue; // Skip duplicate IMAP sync of the same reply
                 }
 
@@ -1405,7 +1405,7 @@ try {
                         try {
                             db()->prepare("UPDATE autoreply_threads
                                 SET current_step=?,last_sent_at=NOW(),next_send_at=NULL,awaiting_reply=1,status='active',
-                                    current_imap_id=?,last_trigger_uid=NULL,last_trigger_imap_id=NULL
+                                    current_imap_id=?
                                 WHERE id=?")
                                 ->execute([$nextNum,$newCurImap,$thread['id']]);
                         } catch (Exception $seqUpdEx) {
@@ -1420,14 +1420,14 @@ try {
                         $nAt=date('Y-m-d H:i:s',strtotime("+{$nxtDelayMin} minutes"));
                         db()->prepare("UPDATE autoreply_threads
                             SET current_step=?,last_sent_at=NOW(),next_send_at=?,status='active',
-                                current_imap_id=?,last_trigger_uid=NULL,last_trigger_imap_id=NULL
+                                current_imap_id=?
                             WHERE id=?")
                             ->execute([$nextNum,$nAt,$newCurImap,$thread['id']]);
                     }
                 }else{
                     db()->prepare("UPDATE autoreply_threads
                         SET status='completed',last_sent_at=NOW(),next_send_at=NULL,awaiting_reply=0,
-                            current_imap_id=?,last_trigger_uid=NULL,last_trigger_imap_id=NULL
+                            current_imap_id=?
                         WHERE id=?")
                         ->execute([$newCurImap,$thread['id']]);
                     // Sequence fully completed — persist completed lead to backup_emails.
