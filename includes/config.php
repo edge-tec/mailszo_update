@@ -202,6 +202,9 @@ function db() {
             ['autoreply_threads','followup_status',      "ENUM('pending','running','completed','cancelled') DEFAULT 'pending'"],
             ['autoreply_threads','followup_next_run',    "DATETIME DEFAULT NULL"],
             ['autoreply_threads','conversation_stage',   "ENUM('NEW_LEAD','FIRST_REPLY_SENT','MOVED_TO_SECONDARY','FOLLOWUP_RUNNING','FOLLOWUP_COMPLETED') NOT NULL DEFAULT 'NEW_LEAD'"],
+            ['autoreply_threads','scheduled_send_time',  "DATETIME DEFAULT NULL"],
+            ['autoreply_threads','last_received_message_id',"VARCHAR(255) DEFAULT NULL"],
+            ['autoreply_threads','last_reply_message_id',   "VARCHAR(255) DEFAULT NULL"],
             ['autoreply_rules',  'sequential_mode',      "TINYINT(1) NOT NULL DEFAULT 0"],
             ['autoreply_rules',  'imap2_id',             "INT DEFAULT NULL"],
             ['autoreply_rules',  'step1_smtp_ids',       "TEXT DEFAULT NULL"],
@@ -220,6 +223,8 @@ function db() {
             ['imap_accounts',    'process_lock_at',      "DATETIME DEFAULT NULL"],
             ['imap_accounts',    'process_lock_pid',     "VARCHAR(64) DEFAULT NULL"],
             ['autoreply_steps',  'delay_minutes',        "INT NOT NULL DEFAULT 1"],
+            ['autoreply_steps',  'delay_value',          "INT NOT NULL DEFAULT 1"],
+            ['autoreply_steps',  'delay_unit',           "ENUM('minutes','hours','days') NOT NULL DEFAULT 'minutes'"],
             ['followup_steps',   'delay_minutes',        "INT NOT NULL DEFAULT 60"],
             ['followup_steps',   'delay_value',          "INT NOT NULL DEFAULT 30"],
             ['followup_steps',   'delay_unit',           "ENUM('minutes','hours','days') NOT NULL DEFAULT 'minutes'"],
@@ -276,7 +281,8 @@ function db() {
             "ALTER TABLE `inbound_emails` ADD INDEX `idx_inb_acct_rec` (`imap_account_id`, `received_at`)",
             "ALTER TABLE `emails` ADD INDEX `idx_em_list_created` (`list_id`, `created_at`)",
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_rule_created` (`rule_id`, `created_at`)",
-            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_created` (`created_at`)"
+            "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_created` (`created_at`)",
+            "ALTER TABLE `autoreply_threads` MODIFY COLUMN `status` ENUM('active','completed','pending','scheduled','sending','sent','failed','cancelled') DEFAULT 'active'"
         ];
         foreach ($idxSqls as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) {}

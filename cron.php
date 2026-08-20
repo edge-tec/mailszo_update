@@ -1090,35 +1090,36 @@ try {
 
             if(!$thread){
                 // ── NEW LEAD (Stage 1) ──────────────────────────────────────
-                $step1delay = 1;
+                $step1delayMins = 1;
                 try {
-                    $step1q=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=1");
+                    $step1q = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=1");
                     $step1q->execute([$ruleId]);
                     $s1r = $step1q->fetch();
-                    if ($s1r && isset($s1r['delay_minutes']) && $s1r['delay_minutes'] !== null) {
-                        $step1delay = max(0, (int)$s1r['delay_minutes']);
+                    if ($s1r) {
+                        $s1v = max(0, (int)($s1r['delay_value'] ?? $s1r['delay_minutes'] ?? 1));
+                        $s1u = in_array(strtolower($s1r['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($s1r['delay_unit']) : 'minutes';
+                        $step1delayMins = delayToMinutes($s1v, $s1u);
                     }
                 } catch (Exception $_s1de) {}
-                $step1at = $step1delay > 0
-                    ? date('Y-m-d H:i:s', strtotime("+{$step1delay} minutes", $arNowTs))
-                    : $arNow;
+                $step1at = $step1delayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$step1delayMins} minutes", $arNowTs)) : $arNow;
 
                 $arInserted = false;
                 try {
                     db()->prepare(
                         "INSERT INTO autoreply_threads
-                         (rule_id,from_email,from_name,subject_in,current_step,next_send_at,
-                          reply_count,messages_received,awaiting_reply,status,
-                          current_imap_id,last_trigger_uid,last_trigger_imap_id,last_msg_id,
+                         (rule_id,from_email,from_name,subject_in,current_step,scheduled_send_time,
+                          reply_count,messages_received,status,
+                          current_imap_id,last_trigger_uid,last_trigger_imap_id,last_received_message_id,
                           active_mailbox,first_reply_sent,imap_source,thread_id,original_message_id,references_header,conversation_stage)
-                         VALUES(?,?,?,?,1,?,1,1,0,'active',?,?,?,?, 'primary', 0, 'primary', ?, ?, ?, 'NEW_LEAD')
+                         VALUES(?,?,?,?,1,?,1,1,'scheduled',?,?,?,?, 'primary', 0, 'primary', ?, ?, ?, 'NEW_LEAD')
                          ON DUPLICATE KEY UPDATE
                            from_name=IF(from_name=''OR from_name IS NULL,VALUES(from_name),from_name),
-                           next_send_at=IF(status='active'AND next_send_at IS NULL,VALUES(next_send_at),next_send_at),
+                           scheduled_send_time=VALUES(scheduled_send_time),
                            reply_count=reply_count+1,
                            last_trigger_uid=VALUES(last_trigger_uid),
                            last_trigger_imap_id=VALUES(last_trigger_imap_id),
-                           last_msg_id=COALESCE(VALUES(last_msg_id),last_msg_id)"
+                           last_received_message_id=VALUES(last_received_message_id),
+                           status='scheduled'"
                     )->execute([$ruleId,$fe,$fn,substr($fs,0,200),$step1at,
                                 $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null,
                                 $thId,$inMsgId?:null,$inRef?:null]);
@@ -1127,12 +1128,13 @@ try {
                     try {
                         db()->prepare(
                             "INSERT INTO autoreply_threads
-                             (rule_id,from_email,from_name,subject_in,current_step,next_send_at,reply_count,status)
-                             VALUES (?, ?, ?, ?, 1, ?, 1, 'active')
+                             (rule_id,from_email,from_name,subject_in,current_step,scheduled_send_time,reply_count,status)
+                             VALUES (?, ?, ?, ?, 1, ?, 1, 'scheduled')
                              ON DUPLICATE KEY UPDATE
                                from_name    = IF(from_name='' OR from_name IS NULL, VALUES(from_name), from_name),
-                               next_send_at = IF(status='active' AND next_send_at IS NULL, VALUES(next_send_at), next_send_at),
-                               reply_count  = reply_count + 1"
+                               scheduled_send_time = VALUES(scheduled_send_time),
+                               reply_count  = reply_count + 1,
+                               status = 'scheduled'"
                         )->execute([$ruleId,$fe,$fn,substr($fs,0,200),$step1at]);
                         $arInserted = true;
                     } catch (Exception $arBaseEx) {}
@@ -1140,6 +1142,7 @@ try {
                 if ($arInserted) {
                     $enrolledAR++;
                     logMailRoutingEvent($userId, $ruleId, $thId, $fe, 'lead_received', $imapCfgById[$srcId]['username'] ?? 'Primary Gmail', null, null, null, 'NEW_LEAD', 'success', "New lead received in Gmail: {$fs}");
+                    logSystemEvent('queued', $fe, "Auto Reply #1 scheduled for {$step1at}", $userId, null, $ruleId, null, '');
 
                     // ── SIMULTANEOUS ACTION: SCHEDULE FOLLOW-UP SEQUENCE ─────
                     if ($fuRuleId > 0) {
@@ -1172,307 +1175,49 @@ try {
                     }
                 }
             } else if($thread['status']==='completed') {
-                // Returning sender — re-enroll
-                $step1delay = 1;
-                try {
-                    $step1q=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=1");
-                    $step1q->execute([$ruleId]);
-                    $s1r = $step1q->fetch();
-                    if ($s1r && isset($s1r['delay_minutes']) && $s1r['delay_minutes'] !== null) {
-                        $step1delay = max(0, (int)$s1r['delay_minutes']);
-                    }
-                } catch (Exception $_s1de) {}
-                $step1at = $step1delay > 0 ? date('Y-m-d H:i:s', strtotime("+{$step1delay} minutes", $arNowTs)) : $arNow;
-                db()->prepare(
-                    "UPDATE autoreply_threads
-                     SET current_step=1,next_send_at=?,awaiting_reply=0,status='active',
-                         reply_count=reply_count+1,messages_received=messages_received+1,
-                         from_name=IF(? != '' AND ? IS NOT NULL,?,from_name),
-                         current_imap_id=?,last_trigger_uid=?,last_trigger_imap_id=?,
-                         conversation_stage='NEW_LEAD', active_mailbox='primary', first_reply_sent=0
-                     WHERE id=?"
-                )->execute([$step1at,$fn,$fn,$fn,
-                            $srcId>0?$srcId:null,$uid>0?$uid:null,$srcId>0?$srcId:null,
-                            $thread['id']]);
-                $enrolledAR++;
+                // Completed, do nothing unless restarted via UI
             } else {
-                // ── USER REPLIED (Check for Mailbox Migration to Secondary) ──
-                $isSameMsgId = ($inMsgId && !empty($thread['last_msg_id']) && strtolower(trim($thread['last_msg_id'])) === strtolower(trim($inMsgId)));
+                // ── USER REPLIED (Check duplicate protection) ──
+                $isSameMsgId = ($inMsgId && !empty($thread['last_received_message_id']) && strtolower(trim($thread['last_received_message_id'])) === strtolower(trim($inMsgId)));
                 $isOldUid = ($uid > 0 && $srcId > 0 && !empty($thread['last_trigger_uid']) && $thread['last_trigger_imap_id'] == $srcId && $uid <= $thread['last_trigger_uid']);
                 
                 if ($isSameMsgId || $isOldUid) {
                     continue; // Skip duplicate IMAP sync of the same reply
                 }
 
-                $isReplyToSecondary = ($secondaryImapId > 0 && $srcId === $secondaryImapId) || (!empty($thread['first_reply_sent']));
-                $targetMailbox = $isReplyToSecondary ? 'secondary' : ($thread['active_mailbox'] ?? 'primary');
-                $targetStage = $isReplyToSecondary ? 'MOVED_TO_SECONDARY' : ($thread['conversation_stage'] ?? 'FIRST_REPLY_SENT');
-
                 $nc=(int)($thread['messages_received']??1)+1;
-                $awaiting = (int)($thread['awaiting_reply'] ?? 0) === 1 || ((int)$thread['current_step'] > 1 && empty($thread['next_send_at']));
-
-                if($thread['status']==='active' && ($awaiting || $isSeq || $isReplyToSecondary)){
-                    $unlockStep=db()->prepare("SELECT delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-                    $unlockStep->execute([$ruleId,(int)$thread['current_step']]);
-                    $unlockRow = $unlockStep->fetch();
-                    $unlockDelay = ($unlockRow && isset($unlockRow['delay_minutes']) && $unlockRow['delay_minutes'] !== null)
-                        ? max(0, (int)$unlockRow['delay_minutes']) : 1;
-                    $unlockAt = $unlockDelay > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelay} minutes", $arNowTs)) : $arNow;
-
-                    $newRefs = trim(($thread['references_header'] ?? '') . ' ' . $inMsgId);
+                $newRefs = trim(($thread['references_header'] ?? '') . ' ' . $inMsgId);
+                
+                // For active conversation waiting for reply OR already scheduled (restart delay)
+                if(in_array($thread['status'], ['pending', 'scheduled', 'failed', 'cancelled', 'active'])){
+                    $unlockDelayMins = 1;
+                    try {
+                        $unlockStep = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+                        $unlockStep->execute([$ruleId, (int)$thread['current_step']]);
+                        $unlockRow = $unlockStep->fetch();
+                        if ($unlockRow) {
+                            $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 1));
+                            $unlockUnit = in_array(strtolower($unlockRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($unlockRow['delay_unit']) : 'minutes';
+                            $unlockDelayMins = delayToMinutes($unlockVal, $unlockUnit);
+                        }
+                    } catch(Exception $e){}
+                    
+                    $unlockAt = $unlockDelayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelayMins} minutes", $arNowTs)) : $arNow;
 
                     try {
                         db()->prepare("UPDATE autoreply_threads
-                            SET messages_received=?,awaiting_reply=0,next_send_at=?,reply_count=reply_count+1,
-                                last_trigger_uid=?,last_trigger_imap_id=?,last_msg_id=?,
-                                active_mailbox=?,conversation_stage=?,references_header=?
+                            SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
+                                last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
                             WHERE id=?")
-                            ->execute([$nc,$unlockAt,$uid>0?$uid:null,$srcId>0?$srcId:null,$inMsgId?:null,
-                                       $targetMailbox,$targetStage,$newRefs,$thread['id']]);
-                    } catch (Exception $unlockEx) {
-                        db()->prepare("UPDATE autoreply_threads SET next_send_at=?, reply_count=reply_count+1 WHERE id=?")->execute([$unlockAt, $thread['id']]);
-                    }
-
-                    if ($isReplyToSecondary && ($thread['active_mailbox'] !== 'secondary' || $thread['conversation_stage'] !== 'MOVED_TO_SECONDARY')) {
-                        logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? $thId, $fe, 'mailbox_migrated', $imapCfgById[$srcId]['username'] ?? 'Secondary IMAP', null, null, $thread['conversation_stage'] ?? 'FIRST_REPLY_SENT', 'MOVED_TO_SECONDARY', 'success', "Lead replied to IMAP #2 — Thread permanently migrated to Secondary Mailbox (SMTP #2 will handle all future replies & follow-ups)");
-                    }
+                            ->execute([$nc, $unlockAt, $uid>0?$uid:null, $srcId>0?$srcId:null, $inMsgId?:null, $newRefs, $thread['id']]);
+                        logSystemEvent('queued', $fe, "Auto Reply #" . $thread['current_step'] . " scheduled for {$unlockAt}", $userId, null, $ruleId, null, '');
+                    } catch(Exception $updEx) {}
                 }
             }
             } catch (Exception $mEx) {
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],'message'=>'AR message loop error for '.$fe.': '.$mEx->getMessage()];
+                // Ignore parsing errors for single emails
             }
-        }
-
-        // ── Build SMTP Pools ──────────────────────────────────────────
-        $smtpIds=[];
-        if(!empty($rule['smtp_ids'])){$d=json_decode($rule['smtp_ids'],true);if(is_array($d))$smtpIds=array_values(array_map('intval',$d));}
-        if(empty($smtpIds) && !empty($rule['u_assigned_smtp_ids'])){$d=json_decode($rule['u_assigned_smtp_ids'],true);if(is_array($d))$smtpIds=array_values(array_map('intval',$d));}
-
-        // Pre-fetch dedicated Step 1 / Primary SMTP pool
-        $step1SmtpPool=null;
-        $primarySmtpCfg=null;
-        $secondarySmtpCfg=null;
-
-        if ($primarySmtpId > 0) {
-            $psStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?");
-            $psStmt->execute([$primarySmtpId]);
-            $primarySmtpCfg = $psStmt->fetch();
-            if ($primarySmtpCfg) $step1SmtpPool = [$primarySmtpCfg];
-        }
-        if (!$step1SmtpPool && !empty($rule['step1_smtp_ids'])) {
-            $s1Ids=json_decode($rule['step1_smtp_ids'],true);
-            if(is_array($s1Ids)&&count($s1Ids)>0){
-                $s1Ids=array_values(array_map('intval',$s1Ids));
-                try{
-                    $s1ph=implode(',',array_fill(0,count($s1Ids),'?'));
-                    $s1ss=db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($s1ph)");
-                    $s1ss->execute($s1Ids);
-                    $step1SmtpPool=$s1ss->fetchAll();
-                }catch(Exception $e){}
-            }
-        }
-
-        if ($secondarySmtpId > 0) {
-            $ssStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?");
-            $ssStmt->execute([$secondarySmtpId]);
-            $secondarySmtpCfg = $ssStmt->fetch();
-        }
-
-        $smtpPool=[];
-        if($smtpIds){
-            $ph=implode(',',array_fill(0,count($smtpIds),'?'));
-            $ss=db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");$ss->execute($smtpIds);
-            $smtpPool=$ss->fetchAll();
-        }
-        if ($secondarySmtpCfg && empty($smtpPool)) {
-            $smtpPool = [$secondarySmtpCfg];
-        }
-
-        if(!$smtpPool && !$step1SmtpPool){
-            $results[]=['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"No SMTP configured — enrolled {$enrolledAR}"];continue;
-        }
-
-        $fromPool=[];
-        if(!empty($rule['from_emails'])){$d=json_decode($rule['from_emails'],true);if(is_array($d))$fromPool=$d;}
-
-        $due=db()->prepare("SELECT * FROM autoreply_threads WHERE rule_id=? AND status='active' AND next_send_at IS NOT NULL AND next_send_at<=? LIMIT 100");
-        $due->execute([$ruleId,$arNow]);$dueThreads=$due->fetchAll();
-        $sent=0;$failed=0;
-
-        $arDeleteQueue = [];
-        $arMoveQueue   = [];
-
-        foreach($dueThreads as $thread){
-            if (isBlacklisted($thread['from_email'], $userId)) {
-                try { db()->prepare("UPDATE autoreply_threads SET status='completed', next_send_at=NULL WHERE id=?")->execute([$thread['id']]); } catch (Exception $_blEx) {}
-                continue;
-            }
-            $stepNumNow = (int)$thread['current_step'];
-            $sr=db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-            $sr->execute([$ruleId,$stepNumNow]);$step=$sr->fetch();
-            if(!$step){db()->prepare("UPDATE autoreply_threads SET status='completed',next_send_at=NULL WHERE id=?")->execute([$thread['id']]);continue;}
-
-            // ── SMART ROUTING: Pick SMTP #1 for First Reply, SMTP #2 for Chat & Migration ──
-            $isFirstReply = ($stepNumNow === 1 || empty($thread['first_reply_sent']));
-            if ($isFirstReply) {
-                $activeSmtpPool = ($step1SmtpPool !== null && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($smtpPool ?: [$primarySmtpCfg]);
-            } else {
-                // Secondary Sender (SMTP #2)
-                $activeSmtpPool = ($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: $step1SmtpPool);
-            }
-
-            if (empty($activeSmtpPool)) {
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],'message'=>"No SMTP available for step {$stepNumNow}"];
-                continue;
-            }
-
-            $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
-            if($fromPool){$pk=$fromPool[array_rand($fromPool)];if(is_array($pk)){$mc['from_email']=$pk['email']??$mc['from_email'];$mc['from_name']=$pk['name']??$mc['from_name'];}else $mc['from_email']=$pk;}
-            $arDefSubj = !empty($thread['subject_in']) 
-                ? ((stripos(trim($thread['subject_in']), 're:') === 0) ? $thread['subject_in'] : 'Re: ' . $thread['subject_in'])
-                : 'Re: Regarding your inquiry';
-            $msg=buildMessage((array)$step,$thread['from_name']??'',$thread['from_email'],$arDefSubj,$mc['from_name']??'',date('F j, Y g:i A'));
-            $mc=applyDisplayName($mc,$userId);
-            $smtpNameUsed=$mc['name']??'';
-            $fromEmailUsed=$mc['from_email']??'';
-
-            // Resolve Secondary Email for Reply-To Switching
-            $secReplyTo = '';
-            if ($secondarySmtpCfg && !empty($secondarySmtpCfg['from_email'])) {
-                $secReplyTo = $secondarySmtpCfg['from_email'];
-            } elseif ($secondarySmtpCfg && !empty($secondarySmtpCfg['username']) && filter_var($secondarySmtpCfg['username'], FILTER_VALIDATE_EMAIL)) {
-                $secReplyTo = $secondarySmtpCfg['username'];
-            } elseif ($secondaryImapId > 0 && !empty($imapCfgById[$secondaryImapId]['username']) && filter_var($imapCfgById[$secondaryImapId]['username'], FILTER_VALIDATE_EMAIL)) {
-                $secReplyTo = $imapCfgById[$secondaryImapId]['username'];
-            }
-
-            try{
-                $inReplyToHdr = $thread['last_message_id'] ?: ($thread['original_message_id'] ?: ($thread['last_msg_id'] ?? ''));
-                $referencesHdr = $thread['references_header'] ?: ($thread['original_message_id'] ?: ($thread['last_msg_id'] ?? ''));
-
-                $arOpts = [
-                    'is_auto_reply' => true,
-                    'in_reply_to'   => $inReplyToHdr,
-                    'references'    => $referencesHdr,
-                ];
-
-                // If Reply-To switching is enabled and this is the first reply from SMTP #1:
-                if ($isFirstReply && $replyToSwitch && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
-                    $arOpts['reply_to']    = $secReplyTo;
-                    $arOpts['return_path'] = $secReplyTo;
-                    $arOpts['sender']      = $fromEmailUsed;
-                }
-
-                $sentMsgId = (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages'], $arOpts);
-
-                // Update Thread Stage & Status with sent Message-ID for In-Reply-To matching
-                $newStage = $isFirstReply ? 'FIRST_REPLY_SENT' : ($thread['conversation_stage'] ?? 'MOVED_TO_SECONDARY');
-                db()->prepare("UPDATE autoreply_threads SET first_reply_sent = 1, smtp_used = ?, conversation_stage = ?, last_message_id = COALESCE(?, last_message_id), reply_to_mailbox = ? WHERE id = ?")
-                    ->execute([$mc['id'] ?? null, $newStage, $sentMsgId, $secReplyTo ?: $fromEmailUsed, $thread['id']]);
-
-                // Log to autoreply_logs and send_logs
-                db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
-                    ->execute([$ruleId,$thread['id'],$thread['current_step'],$thread['from_email'],$smtpNameUsed]);
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','autoreply',?,?)")
-                    ->execute([$userId,$thread['from_email'],$smtpNameUsed,$fromEmailUsed]);
-
-                if ($isFirstReply) {
-                    logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? null, $thread['from_email'], 'first_reply_sent', null, $smtpNameUsed, $secReplyTo ?: $fromEmailUsed, 'NEW_LEAD', 'FIRST_REPLY_SENT', 'success', "First reply sent from SMTP #1 with Reply-To set to " . ($secReplyTo ?: $fromEmailUsed));
-                } else {
-                    logMailRoutingEvent($userId, $ruleId, $thread['thread_id'] ?? null, $thread['from_email'], 'chat_reply_sent', null, $smtpNameUsed, null, $thread['conversation_stage'], $thread['conversation_stage'], 'success', "Chat reply #{$stepNumNow} sent via SMTP #2");
-                }
-
-                // Two-IMAP post-action cleanup
-                $trigUid    = (int)($thread['last_trigger_uid'] ?? 0);
-                $trigImapId = (int)($thread['last_trigger_imap_id'] ?? 0);
-                if ($twoImap && $trigUid > 0 && $trigImapId > 0) {
-                    if ($stepNumNow === 1) {
-                        $arDeleteQueue[$trigImapId][] = $trigUid;
-                    } elseif ($trigImapId === $imap1Id) {
-                        if (!isset($arMoveQueue[$trigImapId])) {
-                            $arMoveQueue[$trigImapId] = ['to' => $imap2Id, 'uids' => []];
-                        }
-                        $arMoveQueue[$trigImapId]['uids'][] = $trigUid;
-                    }
-                }
-
-                $nextNum=$thread['current_step']+1;
-                $nr=db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-                $nr->execute([$ruleId,$nextNum]);$nextRow=$nr->fetch();
-                $newCurImap = $twoImap ? $imap2Id : ($imap1Id ?: null);
-                if($nextRow){
-                    if($isSeq || $isSmart){
-                        try {
-                            db()->prepare("UPDATE autoreply_threads
-                                SET current_step=?,last_sent_at=NOW(),next_send_at=NULL,awaiting_reply=1,status='active',
-                                    current_imap_id=?
-                                WHERE id=?")
-                                ->execute([$nextNum,$newCurImap,$thread['id']]);
-                        } catch (Exception $seqUpdEx) {
-                            db()->prepare("UPDATE autoreply_threads SET current_step=?, last_sent_at=NOW(), next_send_at=NULL, status='active' WHERE id=?")
-                                ->execute([$nextNum,$thread['id']]);
-                        }
-                    }else{
-                        // Non-sequential: schedule next send strictly by configured delay.
-                        // Defensive default avoids collapsing to NOW when the column is missing.
-                        $nxtDelayMin = (isset($nextRow['delay_minutes']) && $nextRow['delay_minutes'] !== null)
-                            ? max(0, (int)$nextRow['delay_minutes']) : 1;
-                        $nAt=date('Y-m-d H:i:s',strtotime("+{$nxtDelayMin} minutes"));
-                        db()->prepare("UPDATE autoreply_threads
-                            SET current_step=?,last_sent_at=NOW(),next_send_at=?,status='active',
-                                current_imap_id=?
-                            WHERE id=?")
-                            ->execute([$nextNum,$nAt,$newCurImap,$thread['id']]);
-                    }
-                }else{
-                    db()->prepare("UPDATE autoreply_threads
-                        SET status='completed',last_sent_at=NOW(),next_send_at=NULL,awaiting_reply=0,
-                            current_imap_id=?
-                        WHERE id=?")
-                        ->execute([$newCurImap,$thread['id']]);
-                    // Sequence fully completed — persist completed lead to backup_emails.
-                    // Per-rule, per-user only: same lead email in a different user's AR rule
-                    // is stored independently (user_id scopes the record).
-                    saveToBackup($userId, $thread['from_email'], $thread['from_name'] ?? '', 'autoreply', $ruleId);
-                }
-                $sent++;
-            }catch(Exception $e){
-                $errMsg=substr($e->getMessage(),0,500);
-                // Log to autoreply_logs (rule-level detail)
-                db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,error,smtp_used)VALUES(?,?,?,?,'failed',?,?)")
-                    ->execute([$ruleId,$thread['id'],$thread['current_step'],$thread['from_email'],$errMsg,$smtpNameUsed]);
-                // Also log failure to send_logs so All Send Logs shows it
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used,error)VALUES(NULL,?,?,'failed','autoreply',?,?,?)")
-                    ->execute([$userId,$thread['from_email'],$smtpNameUsed,$fromEmailUsed,$errMsg]);
-                $failed++;
-                // Send failed — do NOT queue any IMAP post-action. The trigger UID
-                // stays on IMAP 1 so the next cron run can retry.
-            }
-        }
-
-        // ── Apply queued IMAP post-actions, one connection per source IMAP ──
-        $deletedTotal = 0; $movedTotal = 0;
-        foreach ($arDeleteQueue as $iid => $uids) {
-            if (!isset($imapCfgById[$iid])) continue;
-            $uids = array_values(array_unique(array_map('intval', $uids)));
-            $del = imapDeleteUids($imapCfgById[$iid], $uids);
-            $deletedTotal += (int)($del['deleted'] ?? 0);
-            if (!$del['ok']) {
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                    'message'=>"IMAP delete failed on imap_id={$iid}: ".$del['message']];
-            }
-        }
-        foreach ($arMoveQueue as $srcId => $info) {
-            $dstId = (int)$info['to'];
-            if (!isset($imapCfgById[$srcId]) || !isset($imapCfgById[$dstId])) continue;
-            $uids = array_values(array_unique(array_map('intval', $info['uids'])));
-            $mv = imapMoveUids($imapCfgById[$srcId], $imapCfgById[$dstId], $uids);
-            $movedTotal += (int)($mv['moved'] ?? 0);
-            if (!$mv['ok']) {
-                $results[] = ['status'=>'ar_warn','rule'=>$rule['name'],
-                    'message'=>"IMAP move failed {$srcId}→{$dstId}: ".$mv['message']];
-            }
-        }
+        } // End of foreach newMsgs
 
         $results[]=['status'=>'autoreply','rule'=>$rule['name'],
             'imap_msgs'=>count($newMsgs),'new_enrolled'=>$enrolledAR,
@@ -1486,6 +1231,142 @@ try {
     }
 }catch(Exception $e){$results[]=['status'=>'error','message'=>'AutoReply error: '.$e->getMessage()];}
 
+
+// ─────────────────────────────────────────────────────────────────
+// STEP 3.5 — SEQUENTIAL AUTO REPLY QUEUE PROCESSOR
+// ─────────────────────────────────────────────────────────────────
+try {
+    db()->exec("UPDATE autoreply_threads SET status = 'scheduled' WHERE status = 'sending' AND (last_sent_at IS NULL OR last_sent_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))");
+
+    $qDue = db()->query(
+        "SELECT t.*, r.smtp_ids, r.from_emails, r.name rule_name, r.sequential_mode, r.primary_smtp_id, r.secondary_smtp_id, r.step1_smtp_ids, r.enable_reply_to_switch, u.status u_status, u.expires_at u_expires, r.user_id as r_user_id
+         FROM autoreply_threads t
+         LEFT JOIN autoreply_rules r ON r.id = t.rule_id
+         LEFT JOIN users u ON u.id = r.user_id
+         WHERE t.status = 'scheduled' AND t.scheduled_send_time <= NOW()
+         LIMIT 100"
+    )->fetchAll();
+
+    foreach ($qDue as $job) {
+        $threadId = $job['id'];
+        $ruleId = $job['rule_id'];
+        $userId = $job['r_user_id'] ?? 1;
+
+        $lock = db()->prepare("UPDATE autoreply_threads SET status = 'sending', last_sent_at = NOW() WHERE id = ? AND status = 'scheduled'");
+        $lock->execute([$threadId]);
+        if ($lock->rowCount() === 0) continue; 
+
+        if (($job['u_status'] ?? '') === 'suspended' || (!empty($job['u_expires']) && strtotime($job['u_expires']) < time())) {
+            db()->prepare("UPDATE autoreply_threads SET status = 'cancelled' WHERE id = ?")->execute([$threadId]);
+            continue;
+        }
+
+        $stepNum = (int)$job['current_step'];
+        $sr = db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+        $sr->execute([$ruleId, $stepNum]);
+        $step = $sr->fetch();
+        
+        if (!$step) {
+            db()->prepare("UPDATE autoreply_threads SET status = 'completed' WHERE id = ?")->execute([$threadId]);
+            continue;
+        }
+
+        $primarySmtpCfg = null; $secondarySmtpCfg = null; $step1SmtpPool = null; $smtpPool = [];
+        if ($job['primary_smtp_id'] > 0) {
+            $psStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?"); $psStmt->execute([$job['primary_smtp_id']]);
+            $primarySmtpCfg = $psStmt->fetch();
+            if ($primarySmtpCfg) $step1SmtpPool = [$primarySmtpCfg];
+        }
+        if (!$step1SmtpPool && !empty($job['step1_smtp_ids'])) {
+            $s1Ids = array_values(array_map('intval', json_decode($job['step1_smtp_ids'], true) ?: []));
+            if ($s1Ids) {
+                $s1ph = implode(',', array_fill(0, count($s1Ids), '?'));
+                $s1ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($s1ph)"); $s1ss->execute($s1Ids);
+                $step1SmtpPool = $s1ss->fetchAll();
+            }
+        }
+        if ($job['secondary_smtp_id'] > 0) {
+            $ssStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?"); $ssStmt->execute([$job['secondary_smtp_id']]);
+            $secondarySmtpCfg = $ssStmt->fetch();
+        }
+        
+        $smtpIds = array_values(array_map('intval', json_decode($job['smtp_ids'], true) ?: []));
+        if ($smtpIds) {
+            $ph = implode(',', array_fill(0, count($smtpIds), '?'));
+            $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)"); $ss->execute($smtpIds);
+            $smtpPool = $ss->fetchAll();
+        }
+        if ($secondarySmtpCfg && empty($smtpPool)) {
+            $smtpPool = [$secondarySmtpCfg];
+        }
+
+        $isFirstReply = ($stepNum === 1 || empty($job['first_reply_sent']));
+        $activeSmtpPool = $isFirstReply ? (($step1SmtpPool !== null && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($smtpPool ?: [$primarySmtpCfg])) 
+                                        : (($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: $step1SmtpPool));
+
+        if (empty($activeSmtpPool) || empty($activeSmtpPool[0])) {
+            db()->prepare("UPDATE autoreply_threads SET status = 'failed' WHERE id = ?")->execute([$threadId]);
+            logSystemEvent('failed', $job['from_email'], "No SMTP available for step {$stepNum}", $userId, null, $ruleId);
+            continue;
+        }
+
+        $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
+        $fromPool = json_decode($job['from_emails'], true) ?: [];
+        if ($fromPool) {
+            $pk = $fromPool[array_rand($fromPool)];
+            if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; } 
+            else { $mc['from_email'] = $pk; }
+        }
+
+        $arDefSubj = !empty($job['subject_in']) ? ((stripos(trim($job['subject_in']), 're:') === 0) ? $job['subject_in'] : 'Re: ' . $job['subject_in']) : 'Re: Regarding your inquiry';
+        $msg = buildMessage((array)$step, $job['from_name'] ?? '', $job['from_email'], $arDefSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
+        $mc = applyDisplayName($mc, $userId);
+        
+        $smtpNameUsed = $mc['name'] ?? '';
+        $fromEmailUsed = $mc['from_email'] ?? '';
+        $secReplyTo = ($secondarySmtpCfg && !empty($secondarySmtpCfg['from_email'])) ? $secondarySmtpCfg['from_email'] : '';
+
+        try {
+            $inReplyToHdr = $job['last_received_message_id'] ?: ($job['last_message_id'] ?: ($job['original_message_id'] ?: ''));
+            $referencesHdr = $job['references_header'] ?: ($job['original_message_id'] ?: '');
+            $arOpts = ['is_auto_reply' => true, 'in_reply_to' => $inReplyToHdr, 'references' => $referencesHdr];
+
+            if ($isFirstReply && $job['enable_reply_to_switch'] && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
+                $arOpts['reply_to'] = $secReplyTo; $arOpts['return_path'] = $secReplyTo; $arOpts['sender'] = $fromEmailUsed;
+            }
+
+            $sentMsgId = (new Mailer($mc))->send($job['from_email'], $job['from_name'] ?? '', $msg['subject'], $msg['html'], $msg['text'], $msg['inlineImages'], $arOpts);
+
+            $nextNum = $stepNum + 1;
+            $nr = db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+            $nr->execute([$ruleId, $nextNum]);
+            $nextRow = $nr->fetch();
+
+            if ($nextRow) {
+                db()->prepare("UPDATE autoreply_threads SET current_step=?, status='pending', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
+                  ->execute([$nextNum, $mc['id'] ?? null, $sentMsgId, $threadId]);
+            } else {
+                db()->prepare("UPDATE autoreply_threads SET status='completed', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
+                  ->execute([$mc['id'] ?? null, $sentMsgId, $threadId]);
+            }
+
+            db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
+                ->execute([$ruleId, $threadId, $stepNum, $job['from_email'], $smtpNameUsed]);
+            db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','autoreply',?,?)")
+                ->execute([$userId, $job['from_email'], $smtpNameUsed, $fromEmailUsed]);
+            logSystemEvent('sent', $job['from_email'], "Auto Reply #{$stepNum} sent", $userId, null, $ruleId);
+
+        } catch (Exception $e) {
+            $errMsg = substr($e->getMessage(), 0, 500);
+            db()->prepare("UPDATE autoreply_threads SET status='failed' WHERE id=?")->execute([$threadId]);
+            db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,error,smtp_used)VALUES(?,?,?,?,'failed',?,?)")
+                ->execute([$ruleId, $threadId, $stepNum, $job['from_email'], $errMsg, $smtpNameUsed]);
+            db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used,error)VALUES(NULL,?,?,'failed','autoreply',?,?,?)")
+                ->execute([$userId, $job['from_email'], $smtpNameUsed, $fromEmailUsed, $errMsg]);
+            logSystemEvent('failed', $job['from_email'], "Auto Reply #{$stepNum} failed: $errMsg", $userId, null, $ruleId);
+        }
+    }
+} catch (Exception $e) { }
 
 // ─────────────────────────────────────────────────────────────────
 // STEP 4 — FOLLOW-UP: ENROLL + SEQUENTIAL READ-BASED SEND

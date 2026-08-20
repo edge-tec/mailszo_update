@@ -1850,10 +1850,14 @@ if ($res==='autoreply') {
             ]);
         $rid = db()->lastInsertId();
         if (!empty($b['steps'])) {
-            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach (array_slice($b['steps'],0,15) as $i=>$st)
-                $ins->execute([$rid,$i+1,(int)($st['delay_minutes']??1),$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
+            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach (array_slice($b['steps'],0,15) as $i=>$st) {
+                $dVal = max(0, (int)($st['delay_value'] ?? $st['delay_minutes'] ?? 1));
+                $dUnit = in_array(strtolower($st['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($st['delay_unit']) : 'minutes';
+                $dMins = delayToMinutes($dVal, $dUnit);
+                $ins->execute([$rid,$i+1,$dMins,$dVal,$dUnit,$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
                     safeImageIds($st['image_ids']??[]),$st['img_width']??'600',$st['img_align']??'center',$st['img_position']??'top']);
+            }
         }
         jsonOut(['ok'=>true,'id'=>$rid]);
     }
@@ -1917,10 +1921,14 @@ if ($res==='autoreply') {
             ]);
         db()->prepare("DELETE FROM autoreply_steps WHERE rule_id=?")->execute([$id]);
         if (!empty($b['steps'])) {
-            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach (array_slice($b['steps'],0,15) as $i=>$st)
-                $ins->execute([$id,$i+1,(int)($st['delay_minutes']??1),$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
+            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach (array_slice($b['steps'],0,15) as $i=>$st) {
+                $dVal = max(0, (int)($st['delay_value'] ?? $st['delay_minutes'] ?? 1));
+                $dUnit = in_array(strtolower($st['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($st['delay_unit']) : 'minutes';
+                $dMins = delayToMinutes($dVal, $dUnit);
+                $ins->execute([$id,$i+1,$dMins,$dVal,$dUnit,$st['subject']??'',$st['html_body']??'',$st['text_body']??'',
                     safeImageIds($st['image_ids']??[]),$st['img_width']??'600',$st['img_align']??'center',$st['img_position']??'top']);
+            }
         }
         jsonOut(['ok'=>true]);
     }
@@ -1985,8 +1993,8 @@ if ($res==='autoreply') {
             ->execute([$targetUid,$newName,$row['imap_id'],$row['imap2_id'],$row['smtp_ids'],$row['from_emails'],'paused',$row['sequential_mode'],$row['step1_smtp_ids']]);
         $rid = db()->lastInsertId();
         if ($proposedSteps > 0) {
-            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach ($steps as $st) $ins->execute([$rid,$st['step_number'],$st['delay_minutes'],$st['subject'],$st['html_body'],$st['text_body'],$st['image_ids'],$st['img_width'],$st['img_align'],$st['img_position']]);
+            $ins = db()->prepare("INSERT INTO autoreply_steps (rule_id,step_number,delay_minutes,delay_value,delay_unit,subject,html_body,text_body,image_ids,img_width,img_align,img_position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach ($steps as $st) $ins->execute([$rid,$st['step_number'],$st['delay_minutes'],$st['delay_value']??$st['delay_minutes'],$st['delay_unit']??'minutes',$st['subject'],$st['html_body'],$st['text_body'],$st['image_ids'],$st['img_width'],$st['img_align'],$st['img_position']]);
         }
         jsonOut(['ok'=>true,'id'=>$rid]);
     }

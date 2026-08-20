@@ -6374,9 +6374,22 @@ async function editAr(id){
     r.steps.forEach(st=>{
       let imgIds=[];
       try{const p=st.image_ids;imgIds=Array.isArray(p)?p:(typeof p==='string'&&p?JSON.parse(p):[]);}catch(e){imgIds=[];}
-      arSteps.push({delay_minutes:st.delay_minutes??0,subject:st.subject||'',html_body:st.html_body||'',
+      
+      const rawMin = parseInt(st.delay_minutes) || 0;
+      let dVal = st.delay_value != null ? parseInt(st.delay_value) : null;
+      let dUnit = st.delay_unit || null;
+      if(dVal == null || !dUnit){
+        if(rawMin > 0 && rawMin % 1440 === 0){ dVal = rawMin / 1440; dUnit = 'days'; }
+        else if(rawMin > 0 && rawMin % 60 === 0){ dVal = rawMin / 60; dUnit = 'hours'; }
+        else { dVal = rawMin; dUnit = 'minutes'; }
+      }
+
+      arSteps.push({
+        delay_value: dVal, delay_unit: dUnit, delay_minutes: rawMin,
+        subject:st.subject||'',html_body:st.html_body||'',
         text_body:st.text_body||'',image_ids:Array.isArray(imgIds)?imgIds:[],
-        img_width:st.img_width||'600',img_align:st.img_align||'center',img_position:st.img_position||'top'});
+        img_width:st.img_width||'600',img_align:st.img_align||'center',img_position:st.img_position||'top'
+      });
     });
   }
   if(!arSteps.length)arAddStep();
@@ -6536,8 +6549,19 @@ function arSaveCurrentSteps(){
       htmlVal = textarea.value || '';
     }
 
-    const delayEl=isSeqNow?document.getElementById('ars-sdelay-'+i):document.getElementById('ars-delay-'+i);
-    st.delay_minutes=parseInt(delayEl?.value||'0')||0;
+    const valEl = document.getElementById('ars-delay-val-'+i);
+    const unitEl = document.getElementById('ars-delay-unit-'+i);
+    const legacyDelayEl = isSeqNow ? document.getElementById('ars-sdelay-'+i) : document.getElementById('ars-delay-'+i);
+    
+    if (valEl && unitEl) {
+      st.delay_value = parseInt(valEl.value) || 0;
+      st.delay_unit = unitEl.value || 'minutes';
+      st.delay_minutes = st.delay_unit === 'days' ? st.delay_value * 1440 : (st.delay_unit === 'hours' ? st.delay_value * 60 : st.delay_value);
+    } else if (legacyDelayEl) {
+      st.delay_minutes = parseInt(legacyDelayEl.value || '0') || 0;
+      st.delay_value = st.delay_minutes;
+      st.delay_unit = 'minutes';
+    }
     st.subject=document.getElementById('ars-sub-'+i)?.value||'';
     st.html_body=htmlVal;
     st.text_body=document.getElementById('ars-txt-'+i)?.value||'';
@@ -6902,35 +6926,22 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
       <input class="fi" id="${pid}-sub-${i}" value="${esc(st.subject||'')}" placeholder="Subject line (optional — leave blank to keep original thread subject)…" oninput="if('${prefix}'==='fu')renderFuTimeline()">
     </div>
     
-    <!-- Sequential Delay Row -->
-    ${prefix==='fu'?`
+    <!-- Sequential Delay Row (Unified for AR and FU) -->
     <div style="background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.15);border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="font-size:11px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px">
         <span>⏱️</span>
-        <span>${i===0 ? 'Step 1 Read Delay:' : 'Step '+(i+1)+' Delay after Step '+i+' sent:'}</span>
+        <span>Delay Time:</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
-        <input class="fi" id="${pid}-delay-val-${i}" type="number" min="1" value="${dVal}" style="width:80px;padding:5px 8px;font-size:12px" onchange="renderFuTimeline()">
-        <select class="fsel" id="${pid}-delay-unit-${i}" style="width:110px;padding:5px 8px;font-size:12px" onchange="renderFuTimeline()">
+        <input class="fi" id="${pid}-delay-val-${i}" type="number" min="0" value="${dVal}" style="width:80px;padding:5px 8px;font-size:12px" onchange="if('${prefix}'==='fu')renderFuTimeline()">
+        <select class="fsel" id="${pid}-delay-unit-${i}" style="width:110px;padding:5px 8px;font-size:12px" onchange="if('${prefix}'==='fu')renderFuTimeline()">
           <option value="minutes" ${dUnit==='minutes'?'selected':''}>Minutes</option>
           <option value="hours" ${dUnit==='hours'?'selected':''}>Hours</option>
           <option value="days" ${dUnit==='days'?'selected':''}>Days</option>
         </select>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-left:auto">${i===0 ? 'Calculated from recipient open time' : 'Calculated sequentially from previous step sent time'}</div>
-    </div>`:`
-    <div class="${prefix==='ar'?'ar-delay-row':''}" style="margin-bottom:10px;${prefix==='ar'?'display:flex;':'display:flex;'}gap:10px">
-      <div class="fg" style="margin:0">
-        <label class="fl" style="font-size:10px">Delay (minutes) ${i===0&&prefix==='ar'?'<span class="flh">— wait before sending after email arrives</span>':'<span class="flh">— minutes after previous step</span>'}</label>
-        <input class="fi" id="${pid}-delay-${i}" type="number" min="0" value="${st.delay_minutes||(prefix==='ar'?1:60)}" style="padding:6px 10px">
-      </div>
+      <div style="font-size:10px;color:var(--text3);margin-left:auto">${prefix==='ar' ? (i===0 ? 'Time to wait after receiving the trigger email' : 'Time to wait before sending this step') : (i===0 ? 'Calculated from recipient open time' : 'Calculated sequentially from previous step sent time')}</div>
     </div>
-    ${prefix==='ar'?`<div class="ar-seq-delay-row" style="display:none;margin-bottom:10px">
-      <div class="fg" style="margin:0">
-        <label class="fl" style="font-size:10px">Send after (minutes) <span class="flh">— delay after user's message triggers this reply (0 = send immediately)</span></label>
-        <input class="fi" id="${pid}-sdelay-${i}" type="number" min="0" value="${st.delay_minutes||0}" style="padding:6px 10px">
-      </div>
-    </div>`:''}`}
 
     <div class="fg" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
@@ -7084,7 +7095,18 @@ async function saveAr(){
     enable_reply_to_switch: replyToSwitch,
     enable_always_send_followup: alwaysFu,
     enable_gmail_priority: gmailPriority,
-    steps: arSteps.map(st=>({...st,image_ids:st.image_ids||[]}))
+    steps: arSteps.map(st => {
+      const v = st.delay_value != null ? st.delay_value : (st.delay_minutes || 1);
+      const u = st.delay_unit || 'minutes';
+      const m = u === 'days' ? v * 1440 : (u === 'hours' ? v * 60 : v);
+      return {
+        ...st,
+        delay_value: v,
+        delay_unit: u,
+        delay_minutes: m,
+        image_ids: st.image_ids || []
+      };
+    })
   };
 
   if (S.isAdmin) {
