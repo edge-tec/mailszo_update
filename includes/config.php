@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '12'; // bump this when adding new migrations
+    $migrationVersion = '13'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
