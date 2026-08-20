@@ -7234,6 +7234,7 @@ async function applyFuSmtpImapMode(){
 async function openFuModal(){
   if(!allImages.length) await loadImages();
   if(!allImaps.length) await loadImap();
+  if(!allSmtps.length) await loadSmtps();
   fuEid=null; fuSteps=[];
   $('fu-modal-title').textContent='📬 New Follow-Up Rule';
   al2('fu-al'); sv('fu-name',''); $('fu-status').value='active';
@@ -7259,6 +7260,7 @@ async function openFuModal(){
 async function editFu(id){
   if(!allImages.length) await loadImages();
   if(!allImaps.length) await loadImap();
+  if(!allSmtps.length) await loadSmtps();
   const r=await get('followup/'+id); if(!r?.id){alert('Load error');return;}
   fuEid=id; fuSteps=[];
   $('fu-modal-title').textContent='✏️ Edit Follow-Up Rule';
@@ -7316,7 +7318,7 @@ function renderFuSmtpPool(sel){
   if(!uniqueSmtps.length){wrap.innerHTML='<div style="color:var(--text3);font-size:12px;padding:6px">No SMTP servers.</div>';return;}
   wrap.innerHTML=uniqueSmtps.map(s=>{
     const chk=sel.map(String).includes(String(s.id));
-    return `<label class="spl ${chk?'ck':''}" ><strong>${esc(s.name)}</strong> <span style="color:var(--text3);font-size:10px">${esc(s.from_email)} · ${esc(s.host)}</span></label>`;
+    return `<label class="spl ${chk?'ck':''}"><input type="checkbox" value="${s.id}" ${chk?'checked':''} onchange="this.closest('label').classList.toggle('ck',this.checked)"><strong>${esc(s.name)}</strong> <span style="color:var(--text3);font-size:10px">${esc(s.from_email)} · ${esc(s.host)}</span></label>`;
   }).join('');
 }
 function clearFuFromTags(){$('fu-from-wrap').querySelectorAll('.tag').forEach(t=>t.remove());}
