@@ -5419,7 +5419,7 @@ function previewEmailStep(stepIndex, prefix) {
   }
   
   const subEl = document.getElementById(`${pid}-sub-${stepIndex}`);
-  const rawSub = subEl ? subEl.value : 'Preview Email';
+  const rawSub = (subEl && subEl.value.trim()) ? subEl.value : 'Re: Inquiry Regarding Services';
 
   // Dynamic variable replacement simulation
   let resolvedSub = rawSub.replace(/\{\{NAME\}\}/gi, 'John Smith')
@@ -6721,8 +6721,8 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
       </div>
     </div>
     <div class="fg" style="margin:0 0 10px">
-      <label class="fl" style="font-size:10px">Subject * <span class="flh">— spintax {a|b} supported</span></label>
-      <input class="fi" id="${pid}-sub-${i}" value="${esc(st.subject||'')}" placeholder="Subject line…" oninput="if('${prefix}'==='fu')renderFuTimeline()">
+      <label class="fl" style="font-size:10px">Subject <span class="flh">(optional — defaults to "Re: [Incoming Subject]" if blank)</span></label>
+      <input class="fi" id="${pid}-sub-${i}" value="${esc(st.subject||'')}" placeholder="Subject line (optional — leave blank to keep original thread subject)…" oninput="if('${prefix}'==='fu')renderFuTimeline()">
     </div>
     
     <!-- Sequential Delay Row -->
@@ -6845,11 +6845,6 @@ async function saveAr(){
   // Validate each step
   for(let i=0; i<arSteps.length; i++){
     const st = arSteps[i];
-    if(!st.subject || !st.subject.trim()){
-      al('ar-al',`Subject line is required for Reply #${i+1}`,'err');
-      document.getElementById(`ars-sub-${i}`)?.focus();
-      return;
-    }
     const cleanHtml = (st.html_body||'').replace(/<[^>]*>/g, '').trim();
     if(!cleanHtml && !(st.html_body||'').includes('<img') && !(st.html_body||'').includes('{{IMAGE}}') && !(st.image_ids||[]).length){
       al('ar-al',`HTML Body cannot be empty for Reply #${i+1}`,'err');
