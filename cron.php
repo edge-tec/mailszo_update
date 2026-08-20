@@ -1219,6 +1219,7 @@ try {
             }
         } // End of foreach newMsgs
 
+        $sent=0; $failed=0; $deletedTotal=0; $movedTotal=0;
         $results[]=['status'=>'autoreply','rule'=>$rule['name'],
             'imap_msgs'=>count($newMsgs),'new_enrolled'=>$enrolledAR,
             'sent'=>$sent,'failed'=>$failed,
