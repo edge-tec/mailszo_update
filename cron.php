@@ -1197,6 +1197,13 @@ try {
                 $enrolledAR++;
             } else {
                 // ── USER REPLIED (Check for Mailbox Migration to Secondary) ──
+                $isSameMsgId = ($inMsgId && !empty($thread['last_msg_id']) && strtolower(trim($thread['last_msg_id'])) === strtolower(trim($inMsgId)));
+                $isSameUid = ($uid > 0 && $srcId > 0 && !empty($thread['last_trigger_uid']) && $thread['last_trigger_uid'] == $uid && $thread['last_trigger_imap_id'] == $srcId);
+                
+                if ($isSameMsgId || $isSameUid) {
+                    continue; // Skip duplicate IMAP sync of the same reply
+                }
+
                 $isReplyToSecondary = ($secondaryImapId > 0 && $srcId === $secondaryImapId) || (!empty($thread['first_reply_sent']));
                 $targetMailbox = $isReplyToSecondary ? 'secondary' : ($thread['active_mailbox'] ?? 'primary');
                 $targetStage = $isReplyToSecondary ? 'MOVED_TO_SECONDARY' : ($thread['conversation_stage'] ?? 'FIRST_REPLY_SENT');
