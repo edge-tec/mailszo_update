@@ -34,7 +34,7 @@ if (php_sapi_name() !== 'cli') {
 if (!isInstalled()) die("Not installed\n");
 
 $lock = sys_get_temp_dir() . '/mailszo_v4.lock';
-if (file_exists($lock) && (time() - filemtime($lock)) < 110) {
+if (file_exists($lock) && (time() - filemtime($lock)) < 55) {
     if (!empty($_GET['json'])) {
         if (php_sapi_name() !== 'cli') header('Content-Type: application/json');
         echo json_encode(['ok'=>false,'error'=>'Already running','results'=>[]]);
