@@ -2914,19 +2914,22 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
           </div>
         </div>
         <div style="font-size:12px;color:var(--text2);line-height:2">
-          The following will be <strong style="color:var(--text)">permanently wiped for today</strong>:
+          The following will be <strong style="color:var(--text)">completely wiped &amp; reset to 0</strong>:
           <div style="margin-top:10px;display:grid;gap:7px">
             <div style="display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.25);border-radius:6px;padding:8px 12px">
-              <span>📊</span><span>Campaign <strong>send logs</strong> (today) — Sent &amp; Failed counters → 0</span>
+              <span>👥</span><span><strong>Total Leads &amp; Subscribers in lists</strong> — Wiped to 0</span>
             </div>
             <div style="display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.25);border-radius:6px;padding:8px 12px">
-              <span>🔁</span><span><strong>Auto-reply logs</strong> (today) — completed threads reset to active</span>
+              <span>📊</span><span>Campaign <strong>send logs</strong> — Sent &amp; Failed counters → 0</span>
             </div>
             <div style="display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.25);border-radius:6px;padding:8px 12px">
-              <span>📬</span><span><strong>Follow-up logs</strong> (today) — completed contacts reset to active</span>
+              <span>🔁</span><span><strong>Auto-reply threads &amp; logs</strong> — Cleared to 0</span>
             </div>
             <div style="display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.25);border-radius:6px;padding:8px 12px">
-              <span>📨</span><span><strong>IMAP read counters</strong> reset to zero</span>
+              <span>📬</span><span><strong>Follow-up contacts &amp; queue</strong> — Cleared to 0</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.25);border-radius:6px;padding:8px 12px">
+              <span>📨</span><span><strong>IMAP read counters &amp; inbound leads</strong> — Reset to 0</span>
             </div>
           </div>
         </div>
@@ -2934,7 +2937,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 
       <!-- Safe zone note -->
       <div style="background:rgba(74,222,128,.05);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:16px">
-        ✅ <strong style="color:var(--accent)">Not affected:</strong> Campaigns, SMTP servers, email lists, users, IMAP accounts, rules and templates are <strong>kept intact</strong>.
+        ✅ <strong style="color:var(--accent)">Configurations kept:</strong> Campaigns, SMTP servers, IMAP accounts, auto-reply rules, and templates remain <strong>intact</strong> for future runs.
       </div>
 
       <!-- Typed confirmation -->

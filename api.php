@@ -505,57 +505,69 @@ if ($res==='dashboard' && $id==='clear' && $method==='POST') {
     try {
         if ($targetUid > 0) {
             // User-wise clear
-            $pdo->prepare("DELETE FROM send_logs WHERE (user_id=? OR campaign_id IN (SELECT id FROM campaigns WHERE user_id=?)) AND DATE(sent_at)=?")
-                ->execute([$targetUid, $targetUid, $today]);
-
-            $pdo->prepare("DELETE FROM autoreply_logs WHERE rule_id IN (SELECT id FROM autoreply_rules WHERE user_id=?) AND DATE(sent_at)=?")
-                ->execute([$targetUid, $today]);
-
-            $pdo->prepare("DELETE FROM followup_logs WHERE rule_id IN (SELECT id FROM followup_rules WHERE user_id=?) AND DATE(sent_at)=?")
-                ->execute([$targetUid, $today]);
-
-            $pdo->prepare("DELETE FROM inbound_emails WHERE imap_account_id IN (SELECT id FROM imap_accounts WHERE user_id=?) AND DATE(received_at)=?")
-                ->execute([$targetUid, $today]);
-
-            $pdo->prepare("UPDATE autoreply_threads SET status='active', current_step=1, reply_count=0, messages_received=0, next_send_at=NULL, last_sent_at=NULL, awaiting_reply=0 WHERE rule_id IN (SELECT id FROM autoreply_rules WHERE user_id=?)")
+            $pdo->prepare("DELETE FROM emails WHERE list_id IN (SELECT id FROM email_lists WHERE user_id=?)")
                 ->execute([$targetUid]);
 
-            $pdo->prepare("UPDATE followup_contacts SET status='active', current_step=1, next_send_at=NULL, last_sent_at=NULL WHERE rule_id IN (SELECT id FROM followup_rules WHERE user_id=?)")
+            $pdo->prepare("UPDATE email_lists SET count=0 WHERE user_id=?")
                 ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM send_logs WHERE (user_id=? OR campaign_id IN (SELECT id FROM campaigns WHERE user_id=?))")
+                ->execute([$targetUid, $targetUid]);
+
+            $pdo->prepare("DELETE FROM autoreply_logs WHERE rule_id IN (SELECT id FROM autoreply_rules WHERE user_id=?)")
+                ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM followup_logs WHERE rule_id IN (SELECT id FROM followup_rules WHERE user_id=?)")
+                ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM inbound_emails WHERE imap_account_id IN (SELECT id FROM imap_accounts WHERE user_id=?)")
+                ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM autoreply_threads WHERE rule_id IN (SELECT id FROM autoreply_rules WHERE user_id=?)")
+                ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM followup_contacts WHERE rule_id IN (SELECT id FROM followup_rules WHERE user_id=?)")
+                ->execute([$targetUid]);
+
+            $pdo->prepare("DELETE FROM email_followup_queue WHERE user_id=?")
+                ->execute([$targetUid]);
+
+            try {
+                $pdo->prepare("DELETE FROM mail_routing_logs WHERE user_id=?")->execute([$targetUid]);
+            } catch (Exception $_mrlE) {}
 
             $pdo->prepare("UPDATE imap_accounts SET emails_read=0, last_uid=0, last_uid_validity=0 WHERE user_id=?")
                 ->execute([$targetUid]);
 
             try {
-                $pdo->prepare("DELETE FROM imap_read_log WHERE (owner_user_id=? OR processing_user_id=?) AND DATE(started_at)=?")
-                    ->execute([$targetUid, $targetUid, $today]);
+                $pdo->prepare("DELETE FROM imap_read_log WHERE (owner_user_id=? OR processing_user_id=?)")
+                    ->execute([$targetUid, $targetUid]);
             } catch (Exception $_e) {}
 
-            $pdo->prepare("UPDATE campaigns SET sent_count=0, failed_count=0 WHERE user_id=? AND DATE(created_at) <= CURDATE()")
+            $pdo->prepare("UPDATE campaigns SET sent_count=0, failed_count=0 WHERE user_id=?")
                 ->execute([$targetUid]);
         } else {
             // System-wide clear (all users)
-            $pdo->prepare("DELETE FROM send_logs WHERE DATE(sent_at)=?")->execute([$today]);
-            $pdo->prepare("DELETE FROM autoreply_logs WHERE DATE(sent_at)=?")->execute([$today]);
-            $pdo->prepare("DELETE FROM followup_logs WHERE DATE(sent_at)=?")->execute([$today]);
-            $pdo->prepare("DELETE FROM inbound_emails WHERE DATE(received_at)=?")->execute([$today]);
+            $pdo->exec("DELETE FROM emails");
+            $pdo->exec("UPDATE email_lists SET count=0");
+            $pdo->exec("DELETE FROM send_logs");
+            $pdo->exec("DELETE FROM autoreply_logs");
+            $pdo->exec("DELETE FROM followup_logs");
+            $pdo->exec("DELETE FROM inbound_emails");
+            $pdo->exec("DELETE FROM autoreply_threads");
+            $pdo->exec("DELETE FROM followup_contacts");
+            $pdo->exec("DELETE FROM email_followup_queue");
 
-            $pdo->exec(
-                "UPDATE autoreply_threads
-                 SET status='active', current_step=1, reply_count=0, messages_received=0, next_send_at=NULL, last_sent_at=NULL, awaiting_reply=0
-                 WHERE 1=1"
-            );
-            $pdo->exec(
-                "UPDATE followup_contacts
-                 SET status='active', current_step=1, next_send_at=NULL, last_sent_at=NULL
-                 WHERE 1=1"
-            );
+            try {
+                $pdo->exec("DELETE FROM mail_routing_logs");
+            } catch (Exception $_mrlE) {}
+
             $pdo->exec("UPDATE imap_accounts SET emails_read=0, last_uid=0, last_uid_validity=0");
             try {
-                $pdo->prepare("DELETE FROM imap_read_log WHERE DATE(started_at)=?")->execute([$today]);
+                $pdo->exec("DELETE FROM imap_read_log");
             } catch (Exception $_e) {}
 
-            $pdo->exec("UPDATE campaigns SET sent_count=0, failed_count=0 WHERE DATE(created_at) <= CURDATE()");
+            $pdo->exec("UPDATE campaigns SET sent_count=0, failed_count=0");
         }
 
         $pdo->commit();
