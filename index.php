@@ -681,12 +681,117 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .sys-badge-retry{background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3);}
 .sys-badge-failed{background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3);}
 .sys-badge-unsubscribed{background:rgba(148,163,184,0.15);color:#94a3b8;border:1px solid rgba(148,163,184,0.3);}
+
+/* ══ CKEditor 5 Dark Theme Styling ══ */
+:root {
+  --ck-color-base-background: #0f172a;
+  --ck-color-base-border: #1e293b;
+  --ck-color-base-action: #10b981;
+  --ck-color-base-focus: #10b981;
+  --ck-color-base-text: #f1f5f9;
+  --ck-color-toolbar-background: #111c2e;
+  --ck-color-toolbar-border: #1e293b;
+  --ck-color-button-default-hover-background: #1e293b;
+  --ck-color-button-default-active-background: #334155;
+  --ck-color-button-on-background: #1e293b;
+  --ck-color-button-on-hover-background: #334155;
+  --ck-color-list-background: #0f172a;
+  --ck-color-list-button-hover-background: #1e293b;
+  --ck-color-panel-background: #0f172a;
+  --ck-color-panel-border: #1e293b;
+  --ck-color-input-background: #0b1120;
+  --ck-color-input-border: #1e293b;
+  --ck-color-input-text: #f1f5f9;
+  --ck-color-dropdown-panel-background: #0f172a;
+  --ck-color-dropdown-panel-border: #1e293b;
+  --ck-border-radius: 8px;
+}
+
+.ck.ck-editor {
+  width: 100% !important;
+  margin-top: 4px;
+}
+
+.ck.ck-editor__main > .ck-editor__editable {
+  background: #0b1322 !important;
+  color: #f1f5f9 !important;
+  border-color: #1e293b !important;
+  border-bottom-left-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  min-height: 180px;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 14px 16px !important;
+}
+
+.ck.ck-editor__main > .ck-editor__editable:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25) !important;
+}
+
+.ck.ck-toolbar {
+  background: #111c2e !important;
+  border-color: #1e293b !important;
+  border-top-left-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+  padding: 4px 6px !important;
+}
+
+.ck.ck-button {
+  color: #cbd5e1 !important;
+  cursor: pointer;
+}
+
+.ck.ck-button:hover {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.ck.ck-button.ck-on {
+  background: #1e293b !important;
+  color: #10b981 !important;
+}
+
+.ck.ck-dropdown__panel {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+.ck.ck-list {
+  background: #0f172a !important;
+}
+
+.ck.ck-list__item .ck-button {
+  color: #cbd5e1 !important;
+}
+
+.ck.ck-list__item .ck-button:hover {
+  background: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.ck.ck-source-editing-area textarea {
+  background: #0b1322 !important;
+  color: #34d399 !important;
+  font-family: var(--mono) !important;
+  font-size: 12px !important;
+  padding: 14px 16px !important;
+}
+
+.ck.ck-balloon-panel {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+.ck.ck-labeled-field-view > .ck-labeled-field-view__input-wrapper > .ck-label {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+}
 </style>
-<!-- Chart.js — required by all canvases on the unified Live Reporting
-     Dashboard (hourly chart, 14-day bars, step-wise stacked bar). Was
-     previously loaded only inside the standalone dashboard.php; when
-     the dashboard was inlined into index.php this include moved here. -->
+<!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- CKEditor 5 SuperBuild — Full WYSIWYG Rich Text Editor for Emails -->
+<script src="https://cdn.ckeditor.com/ckeditor5/41.4.2/super-build/ckeditor.js"></script>
 </head>
 <body>
 
@@ -2147,6 +2252,8 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     <div class="modal-hd"><h3 id="ar-modal-title">🔁 New Auto-Reply Rule</h3><span class="modal-x" onclick="closeModal('ar-modal')">✕</span></div>
     <div class="modal-body">
       <div id="ar-al" class="al"></div>
+      <!-- Autosave Draft Banner -->
+      <div id="ar-draft-banner" class="al a-inf" style="display:none;margin-bottom:12px;align-items:center;justify-content:space-between;border-radius:8px"></div>
       <div class="stitle">Rule Settings</div>
       <div class="frow fc2" style="margin-bottom:12px">
         <div class="fg" style="margin:0"><label class="fl">Rule Name *</label><input class="fi" id="ar-name" placeholder="e.g. Sales Reply Chain"></div>
@@ -5040,10 +5147,89 @@ function sv(id,val){const e=$(id);if(e)e.value=val;}
 function set(id,val){const e=$(id);if(e)e.textContent=val;}
 function esc(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function insertToken(elId, token){
+  insertVariableToEditor(elId, token);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   WYSIWYG RICH TEXT EDITOR ENGINE (CKEditor 5 SuperBuild)
+   ══════════════════════════════════════════════════════════════════ */
+window._activeEditors = window._activeEditors || {};
+
+/* Custom Upload Adapter for Image Paste, Drag & Drop, and Upload */
+class MailszoUploadAdapter {
+  constructor(loader) {
+    this.loader = loader;
+  }
+  upload() {
+    return this.loader.file.then(file => new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      const token = (typeof S !== 'undefined' && S?.token) ? S.token : (localStorage.getItem('token') || '');
+      fetch(API('images'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res && res.ok && res.url) {
+          if (Array.isArray(window.allImages) && res.id) {
+            window.allImages.push({ id: res.id, url: res.url, name: file.name });
+          }
+          resolve({ default: res.url });
+        } else {
+          reject(res?.error || res?.message || 'Upload failed');
+        }
+      })
+      .catch(err => {
+        reject(err.message || 'Image upload error');
+      });
+    }));
+  }
+  abort() {}
+}
+
+function MailszoUploadAdapterPlugin(editor) {
+  if (editor.plugins.has('FileRepository')) {
+    editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
+      return new MailszoUploadAdapter(loader);
+    };
+  }
+}
+
+/* Plain text synchronizer */
+function htmlToPlainText(html) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || '').trim();
+}
+
+function syncPlainTextFromHtml(pid, i, html) {
+  const txtEl = document.getElementById(`${pid}-txt-${i}`);
+  if (!txtEl) return;
+  if (!txtEl.dataset.customEdited || txtEl.value.trim() === '') {
+    txtEl.value = htmlToPlainText(html);
+  }
+}
+
+/* Insert Variable at Cursor inside Editor or Textarea */
+function insertVariableToEditor(elId, token) {
+  const editor = window._activeEditors ? window._activeEditors[elId] : null;
+  if (editor) {
+    editor.model.change(writer => {
+      const insertPosition = editor.model.document.selection.getFirstPosition();
+      writer.insertText(token, insertPosition);
+    });
+    editor.editing.view.focus();
+    return;
+  }
   const el = document.getElementById(elId);
-  if(!el) return;
+  if (!el) return;
   el.focus();
-  if(typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number'){
+  if (typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number') {
     const start = el.selectionStart;
     const end = el.selectionEnd;
     el.value = el.value.substring(0, start) + token + el.value.substring(end);
@@ -5052,6 +5238,318 @@ function insertToken(elId, token){
     el.value += token;
   }
 }
+
+/* Multi-file Image Upload Button Handler */
+async function handleStepMultiImageUpload(event, pid, stepIndex) {
+  const files = event.target.files;
+  if (!files || !files.length) return;
+  
+  const elId = `${pid}-body-${stepIndex}`;
+  const editor = window._activeEditors ? window._activeEditors[elId] : null;
+  const token = (typeof S !== 'undefined' && S?.token) ? S.token : (localStorage.getItem('token') || '');
+
+  for (let idx = 0; idx < files.length; idx++) {
+    const file = files[idx];
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await fetch(API('images'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData
+      }).then(r => r.json());
+
+      if (res && res.ok && res.url) {
+        if (Array.isArray(window.allImages) && res.id) {
+          window.allImages.push({ id: res.id, url: res.url, name: file.name });
+        }
+        if (editor) {
+          editor.model.change(writer => {
+            const imageElement = writer.createElement('imageBlock', {
+              src: res.url,
+              alt: file.name
+            });
+            editor.model.insertContent(imageElement, editor.model.document.selection);
+          });
+        } else {
+          insertToken(elId, `<img src="${res.url}" alt="${file.name}" style="max-width:100%;height:auto" />\n`);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to upload image:', file.name, e);
+    }
+  }
+  event.target.value = '';
+}
+
+/* Destroy Step Editors */
+async function destroyStepEditors(prefix) {
+  if (!window._activeEditors) return;
+  const keys = Object.keys(window._activeEditors);
+  for (const k of keys) {
+    if (!prefix || k.startsWith(prefix === 'ar' ? 'ars' : 'fus')) {
+      try {
+        await window._activeEditors[k].destroy();
+      } catch (_e) {}
+      delete window._activeEditors[k];
+    }
+  }
+}
+
+/* Initialize CKEditor 5 instances on all step cards */
+async function initStepEditors(prefix) {
+  if (typeof CKSource === 'undefined' && typeof CKEDITOR === 'undefined' && typeof ClassicEditor === 'undefined') {
+    setTimeout(() => initStepEditors(prefix), 250);
+    return;
+  }
+
+  const pid = prefix === 'ar' ? 'ars' : 'fus';
+  const stepsArr = prefix === 'ar' ? arSteps : fuSteps;
+
+  for (let i = 0; i < stepsArr.length; i++) {
+    const elId = `${pid}-body-${i}`;
+    const textarea = document.getElementById(elId);
+    if (!textarea) continue;
+
+    if (window._activeEditors[elId]) {
+      try { await window._activeEditors[elId].destroy(); } catch (_e) {}
+      delete window._activeEditors[elId];
+    }
+
+    try {
+      const EditorConstructor = (typeof CKSource !== 'undefined' && CKSource.Editor)
+        ? CKSource.Editor
+        : (window.CKEDITOR && window.CKEDITOR.ClassicEditor ? window.CKEDITOR.ClassicEditor : window.ClassicEditor);
+
+      if (!EditorConstructor) continue;
+
+      const editor = await EditorConstructor.create(textarea, {
+        toolbar: {
+          items: [
+            'heading', '|',
+            'fontSize', 'fontFamily', 'fontColor', 'fontBackgroundColor', '|',
+            'bold', 'italic', 'underline', 'strikethrough', 'removeFormat', '|',
+            'alignment', '|',
+            'bulletedList', 'numberedList', 'todoList', 'outdent', 'indent', '|',
+            'link', 'imageInsert', 'insertTable', 'horizontalLine', 'specialCharacters', 'blockQuote', 'codeBlock', '|',
+            'sourceEditing', 'undo', 'redo'
+          ],
+          shouldNotGroupWhenFull: false
+        },
+        extraPlugins: [MailszoUploadAdapterPlugin],
+        htmlSupport: {
+          allow: [
+            {
+              name: /.*/,
+              attributes: true,
+              classes: true,
+              styles: true
+            }
+          ]
+        },
+        heading: {
+          options: [
+            { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
+            { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
+            { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
+            { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
+            { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' },
+            { model: 'heading5', view: 'h5', title: 'Heading 5', class: 'ck-heading_heading5' },
+            { model: 'heading6', view: 'h6', title: 'Heading 6', class: 'ck-heading_heading6' }
+          ]
+        },
+        fontSize: {
+          options: [ 9, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36 ]
+        },
+        fontFamily: {
+          options: [
+            'default',
+            'Arial, Helvetica, sans-serif',
+            'Courier New, Courier, monospace',
+            'Georgia, serif',
+            'Lucida Sans Unicode, Lucida Grande, sans-serif',
+            'Tahoma, Geneva, sans-serif',
+            'Times New Roman, Times, serif',
+            'Trebuchet MS, Helvetica, sans-serif',
+            'Verdana, Geneva, sans-serif'
+          ]
+        },
+        image: {
+          toolbar: [
+            'imageTextAlternative', 'toggleImageCaption', '|',
+            'imageStyle:inline', 'imageStyle:block', 'imageStyle:side', '|',
+            'resizeImage'
+          ]
+        },
+        table: {
+          contentToolbar: [
+            'tableColumn', 'tableRow', 'mergeTableCells',
+            'tableCellProperties', 'tableProperties'
+          ]
+        }
+      });
+
+      window._activeEditors[elId] = editor;
+
+      // Sync data changes
+      editor.model.document.on('change:data', () => {
+        const html = editor.getData();
+        textarea.value = html;
+        syncPlainTextFromHtml(pid, i, html);
+      });
+
+    } catch (err) {
+      console.warn('CKEditor init fallback for ' + elId, err);
+    }
+  }
+}
+
+/* ── Live Email Step Preview with Variable Replacements ── */
+function previewEmailStep(stepIndex, prefix) {
+  const pid = prefix === 'ar' ? 'ars' : 'fus';
+  const elId = `${pid}-body-${stepIndex}`;
+  let html = '';
+  if (window._activeEditors && window._activeEditors[elId]) {
+    try { html = window._activeEditors[elId].getData(); } catch(_e) { html = document.getElementById(elId)?.value || ''; }
+  } else {
+    html = document.getElementById(elId)?.value || '';
+  }
+  
+  const subEl = document.getElementById(`${pid}-sub-${stepIndex}`);
+  const rawSub = subEl ? subEl.value : 'Preview Email';
+
+  // Dynamic variable replacement simulation
+  let resolvedSub = rawSub.replace(/\{\{NAME\}\}/gi, 'John Smith')
+                          .replace(/\{\{EMAIL\}\}/gi, 'john.smith@example.com')
+                          .replace(/\{([^{}]+)\}/g, (match, p1) => {
+                            const parts = p1.split('|');
+                            return parts[Math.floor(Math.random() * parts.length)];
+                          });
+
+  let resolvedHtml = html.replace(/\{\{NAME\}\}/gi, 'John Smith')
+                         .replace(/\{\{EMAIL\}\}/gi, 'john.smith@example.com')
+                         .replace(/\{\{IMAGE\}\}/gi, '<img src="https://images.unsplash.com/photo-1579273166152-d725a4e2b755?w=600&auto=format&fit=crop&q=80" style="max-width:100%;border-radius:6px" alt="Sample Email Image" />')
+                         .replace(/\{([^{}]+)\}/g, (match, p1) => {
+                            const parts = p1.split('|');
+                            return parts[Math.floor(Math.random() * parts.length)];
+                         });
+
+  $('tmpl-prev-title').textContent = `👁️ Preview: ${resolvedSub || 'Email #' + (stepIndex + 1)}`;
+  const ifr = document.getElementById('template-preview-iframe');
+  if (ifr) {
+    ifr.srcdoc = `
+      <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; line-height: 1.6; background: #ffffff; margin: 0; }
+        img { max-width: 100%; height: auto; }
+        .email-meta { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 16px; margin: -20px -20px 20px -20px; font-size: 12px; color: #64748b; font-family: monospace; }
+        .email-meta strong { color: #0f172a; }
+      </style>
+      </head>
+      <body>
+        <div class="email-meta">
+          <div><strong>From:</strong> Support &lt;support@company.com&gt;</div>
+          <div><strong>To:</strong> John Smith &lt;john.smith@example.com&gt;</div>
+          <div><strong>Subject:</strong> ${esc(resolvedSub)}</div>
+        </div>
+        <div class="email-content" style="margin-top:16px">
+          ${resolvedHtml || '<p style="color:#94a3b8;font-style:italic">No message content entered yet.</p>'}
+        </div>
+      </body></html>
+    `;
+  }
+  switchPreviewDevice('desktop');
+  showModal('template-preview-modal');
+}
+
+/* ── Auto-Reply 5-Second Autosave Draft Engine ── */
+let _arAutosaveTimer = null;
+
+function initArAutosave() {
+  if (_arAutosaveTimer) clearInterval(_arAutosaveTimer);
+  _arAutosaveTimer = setInterval(() => {
+    const modal = document.getElementById('ar-modal');
+    if (modal && modal.classList.contains('on')) {
+      saveArDraft();
+    }
+  }, 5000);
+}
+
+function saveArDraft() {
+  arSaveCurrentSteps();
+  const name = v('ar-name');
+  if (!name && (!arSteps.length || !arSteps[0].html_body)) return;
+  
+  const draft = {
+    name,
+    status: $('ar-status')?.value || 'active',
+    mode: document.querySelector('input[name="ar-mode"]:checked')?.value || '0',
+    steps: arSteps,
+    timestamp: Date.now(),
+    arEid
+  };
+  try {
+    localStorage.setItem('mailszo_ar_draft', JSON.stringify(draft));
+  } catch (_e) {}
+}
+
+function checkAndRestoreArDraft() {
+  const raw = localStorage.getItem('mailszo_ar_draft');
+  if (!raw) return false;
+  try {
+    const draft = JSON.parse(raw);
+    if (!draft || !draft.timestamp) return false;
+    if (Date.now() - draft.timestamp > 86400000) {
+      localStorage.removeItem('mailszo_ar_draft');
+      return false;
+    }
+    if (arEid && draft.arEid !== arEid) return false;
+    if (!arEid && draft.arEid) return false;
+
+    const timeAgoMin = Math.max(1, Math.round((Date.now() - draft.timestamp) / 60000));
+    const banner = document.getElementById('ar-draft-banner');
+    if (banner) {
+      banner.style.display = 'flex';
+      banner.innerHTML = `
+        <div style="flex:1">
+          💾 <strong>Autosaved draft restored</strong> (${timeAgoMin} minute${timeAgoMin > 1 ? 's' : ''} ago).
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="discardArDraft()" style="padding:2px 8px;font-size:11px">Discard Draft</button>
+      `;
+    }
+
+    sv('ar-name', draft.name || '');
+    if ($('ar-status') && draft.status) $('ar-status').value = draft.status;
+    const modeRadio = document.querySelector(`input[name="ar-mode"][value="${draft.mode || '0'}"]`);
+    if (modeRadio) modeRadio.checked = true;
+
+    if (Array.isArray(draft.steps) && draft.steps.length) {
+      arSteps = draft.steps;
+      renderArSteps();
+    }
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function discardArDraft() {
+  localStorage.removeItem('mailszo_ar_draft');
+  const banner = document.getElementById('ar-draft-banner');
+  if (banner) banner.style.display = 'none';
+  if (!arEid) {
+    sv('ar-name', '');
+    arSteps = [];
+    arAddStep();
+  } else {
+    editAr(arEid);
+  }
+}
+
+// Auto-start draft timer on boot
+initArAutosave();
 function fmt(n){if(n==null||n==='')return'—';return Number(n).toLocaleString();}
 function vc(c){try{const v=JSON.parse(c.variants||'[]');return Array.isArray(v)&&v.length?v.length:1;}catch(e){return 1;}}
 function sids(c){try{if(c.smtp_ids){const v=JSON.parse(c.smtp_ids);if(Array.isArray(v))return v;}}catch(e){}return c.smtp_id?[c.smtp_id]:[];}
@@ -5619,9 +6117,12 @@ async function openArModal(){
   if(!allImages.length) await loadImages();
   if(!allImaps.length) await loadImap();
   if(!allSmtps.length) await loadSmtps();
+  await destroyStepEditors('ar');
   arEid=null; arSteps=[];
   $('ar-modal-title').textContent='🔁 New Auto-Reply Rule';
   al2('ar-al'); sv('ar-name',''); $('ar-status').value='active';
+  const banner = document.getElementById('ar-draft-banner');
+  if (banner) banner.style.display = 'none';
   document.querySelector('input[name="ar-mode"][value="0"]').checked=true;
   updateArModeHint();
   renderArSmtpPool([]); clearArFromTags();
@@ -5647,7 +6148,11 @@ async function openArModal(){
   arSteps=[];
   await applyArSmtpImapMode();
   await refreshArQuota();
-  arAddStep();
+
+  const draftRestored = checkAndRestoreArDraft();
+  if (!draftRestored) {
+    arAddStep();
+  }
   showModal('ar-modal');
 }
 
@@ -5655,10 +6160,13 @@ async function editAr(id){
   if(!allImages.length) await loadImages();
   if(!allImaps.length) await loadImap();
   if(!allSmtps.length) await loadSmtps();
+  await destroyStepEditors('ar');
   const r=await get('autoreply/'+id); if(!r?.id){alert('Load error');return;}
   arEid=id; arSteps=[];
   $('ar-modal-title').textContent='✏️ Edit Auto-Reply Rule';
   al2('ar-al'); sv('ar-name',r.name||''); $('ar-status').value=r.status||'active';
+  const banner = document.getElementById('ar-draft-banner');
+  if (banner) banner.style.display = 'none';
 
   // Smart Routing Data
   if($('ar-enable-smart')) $('ar-enable-smart').checked = (r.enable_smart_routing == 1);
@@ -5835,10 +6343,21 @@ function arRemoveStep(i){
 function arSaveCurrentSteps(){
   const isSeqNow=document.querySelector('input[name="ar-mode"]:checked')?.value==='1';
   arSteps.forEach((st,i)=>{
+    const elId = `ars-body-${i}`;
+    let htmlVal = '';
+    if(window._activeEditors && window._activeEditors[elId]){
+      try {
+        htmlVal = window._activeEditors[elId].getData();
+      } catch(_e) {
+        htmlVal = document.getElementById(elId)?.value || '';
+      }
+    } else {
+      htmlVal = document.getElementById(elId)?.value || '';
+    }
     const delayEl=isSeqNow?document.getElementById('ars-sdelay-'+i):document.getElementById('ars-delay-'+i);
     st.delay_minutes=parseInt(delayEl?.value||'0')||0;
     st.subject=document.getElementById('ars-sub-'+i)?.value||'';
-    st.html_body=document.getElementById('ars-body-'+i)?.value||'';
+    st.html_body=htmlVal;
     st.text_body=document.getElementById('ars-txt-'+i)?.value||'';
     st.img_width=document.getElementById('ars-imgw-'+i)?.value||'600';
     st.img_align=document.getElementById('ars-imga-'+i)?.value||'center';
@@ -5858,6 +6377,8 @@ function renderArSteps(){
   document.querySelectorAll('.ar-seq-delay-row').forEach(el=>el.style.display=isSeq?'block':'none');
   // Inject dedicated SMTP pool selector into Auto Reply 1 card
   injectStep1SmtpPool();
+  // Initialize Rich Text Editor instances
+  initStepEditors('ar');
 }
 
 /* ── Auto Reply 1: Dedicated SMTP Pool ── */
@@ -6009,6 +6530,17 @@ function fuRemoveStep(i){
 
 function fuSaveCurrentSteps(){
   fuSteps.forEach((st,i)=>{
+    const elId = `fus-body-${i}`;
+    let htmlVal = '';
+    if(window._activeEditors && window._activeEditors[elId]){
+      try {
+        htmlVal = window._activeEditors[elId].getData();
+      } catch(_e) {
+        htmlVal = document.getElementById(elId)?.value || '';
+      }
+    } else {
+      htmlVal = document.getElementById(elId)?.value || '';
+    }
     const valEl = document.getElementById('fus-delay-val-'+i);
     const unitEl = document.getElementById('fus-delay-unit-'+i);
     const legacyEl = document.getElementById('fus-delay-'+i);
@@ -6023,7 +6555,7 @@ function fuSaveCurrentSteps(){
       st.delay_unit = 'minutes';
     }
     st.subject = document.getElementById('fus-sub-'+i)?.value || '';
-    st.html_body = document.getElementById('fus-body-'+i)?.value || '';
+    st.html_body = htmlVal;
     st.text_body = document.getElementById('fus-txt-'+i)?.value || '';
     st.img_width = document.getElementById('fus-imgw-'+i)?.value || '600';
     st.img_align = document.getElementById('fus-imga-'+i)?.value || 'center';
@@ -6038,6 +6570,7 @@ function renderFuSteps(){
     i === 0 ? 'Follow-up #1 — Triggered after read delay' : 'Follow-up #' + (i+1) + ' — Sent after delay from previous follow-up'
   )).join('');
   renderFuTimeline();
+  initStepEditors('fu');
 }
 
 /* ── Live Visual Sequence Timeline Renderer ── */
@@ -6213,20 +6746,30 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
       </div>
     </div>`:''}`}
 
-    <div class="fg">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-        <label class="fl" style="font-size:10px;margin:0">HTML Body</label>
-        <div style="display:flex;gap:4px">
-          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{NAME}}')"><code>{{NAME}}</code></span>
-          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{EMAIL}}')"><code>{{EMAIL}}</code></span>
-          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{{IMAGE}}')"><code>{{IMAGE}}</code></span>
-          <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:4px" onclick="insertToken('${pid}-body-${i}','{SPIN|TAX}')"><code>{SPIN|TAX}</code></span>
+    <div class="fg" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label class="fl" style="font-size:11px;font-weight:700;margin:0">HTML Body (WYSIWYG Rich Editor)</label>
+          <span class="badge b-purple" style="font-size:9px">CKEditor 5</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <!-- Variable Tags -->
+          <div style="display:flex;gap:4px;align-items:center">
+            <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:4px" onclick="insertVariableToEditor('${pid}-body-${i}','{{NAME}}')" title="Insert {{NAME}} at cursor"><code>{{NAME}}</code></span>
+            <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:4px" onclick="insertVariableToEditor('${pid}-body-${i}','{{EMAIL}}')" title="Insert {{EMAIL}} at cursor"><code>{{EMAIL}}</code></span>
+            <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:4px" onclick="insertVariableToEditor('${pid}-body-${i}','{{IMAGE}}')" title="Insert {{IMAGE}} at cursor"><code>{{IMAGE}}</code></span>
+            <span class="tok-btn" style="cursor:pointer;font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:4px" onclick="insertVariableToEditor('${pid}-body-${i}','{Option 1|Option 2|Option 3}')" title="Insert Spintax at cursor"><code>{SPIN|TAX}</code></span>
+          </div>
+          <!-- Action Buttons -->
+          <input type="file" id="${pid}-multi-img-${i}" multiple accept="image/*" style="display:none" onchange="handleStepMultiImageUpload(event, '${pid}', ${i})">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('${pid}-multi-img-${i}').click()" style="padding:2px 8px;font-size:11px" title="Upload multiple images directly into editor">📤 Upload Images</button>
+          <button type="button" class="btn btn-blue btn-sm" onclick="previewEmailStep(${i}, '${prefix}')" style="padding:2px 8px;font-size:11px" title="Preview live email with sample recipient">👁️ Preview Email</button>
         </div>
       </div>
-      <textarea class="fta" id="${pid}-body-${i}" style="min-height:130px" placeholder="<p>Hi {{NAME}},</p>&#10;<p>Message body here...</p>">${esc(st.html_body||'')}</textarea>
+      <textarea class="fta" id="${pid}-body-${i}" style="min-height:160px;width:100%">${esc(st.html_body||'')}</textarea>
     </div>
-    <div class="fg"><label class="fl" style="font-size:10px">Plain Text <span class="flh">(auto from HTML if blank)</span></label>
-      <textarea class="fta" id="${pid}-txt-${i}" style="min-height:44px">${esc(st.text_body||'')}</textarea>
+    <div class="fg"><label class="fl" style="font-size:10px">Plain Text <span class="flh">(auto-synchronized from HTML if left blank)</span></label>
+      <textarea class="fta" id="${pid}-txt-${i}" style="min-height:44px" placeholder="Plain text version for non-HTML mail clients...">${esc(st.text_body||'')}</textarea>
     </div>
     <div style="background:rgba(34,211,238,.04);border:1px solid rgba(34,211,238,.1);border-radius:8px;padding:12px;margin-top:4px">
       <label class="fl" style="font-size:10px;margin-bottom:8px">🖼️ Image <span class="flh">(one picked randomly per email)</span></label>
@@ -6283,8 +6826,23 @@ window.confirmPick=function(){
 /* Save AR */
 async function saveAr(){
   arSaveCurrentSteps();
-  const name=v('ar-name'); if(!name){al('ar-al','Name required','err');return;}
+  const name=v('ar-name'); if(!name){al('ar-al','Rule Name is required','err');return;}
   if(!arSteps.length){al('ar-al','Add at least one reply message','err');return;}
+
+  // Validate each step
+  for(let i=0; i<arSteps.length; i++){
+    const st = arSteps[i];
+    if(!st.subject || !st.subject.trim()){
+      al('ar-al',`Subject line is required for Reply #${i+1}`,'err');
+      document.getElementById(`ars-sub-${i}`)?.focus();
+      return;
+    }
+    const cleanHtml = (st.html_body||'').replace(/<[^>]*>/g, '').trim();
+    if(!cleanHtml && !(st.html_body||'').includes('<img') && !(st.html_body||'').includes('{{IMAGE}}') && !(st.image_ids||[]).length){
+      al('ar-al',`HTML Body cannot be empty for Reply #${i+1}`,'err');
+      return;
+    }
+  }
 
   let imapId, imap2Id, smtpIds, step1SmtpIds;
 
@@ -6351,7 +6909,12 @@ async function saveAr(){
   const btn=$('ar-save-btn');btn.disabled=true;btn.innerHTML='<span class="spin-ic"></span> Saving…';
   const r=arEid?await put('autoreply/'+arEid,payload):await post('autoreply',payload);
   btn.disabled=false;btn.textContent='💾 Save Rule';
-  if(r?.ok){al('ar-al','✅ Saved!','ok');loadAutoreply();setTimeout(()=>closeModal('ar-modal'),1000);}
+  if(r?.ok){
+    localStorage.removeItem('mailszo_ar_draft');
+    al('ar-al','✅ Saved!','ok');
+    loadAutoreply();
+    setTimeout(()=>closeModal('ar-modal'),1000);
+  }
   else al('ar-al',r?.message||r?.error||'Error','err');
 }
 
@@ -7094,12 +7657,20 @@ async function applyTemplateToStep(tmplId){
   if(!t) return;
   const pid = _targetStepPrefix === 'ar' ? 'ars' : 'fus';
   const subEl = document.getElementById(pid + '-sub-' + _targetStepIndex);
-  const bodyEl = document.getElementById(pid + '-body-' + _targetStepIndex);
+  const bodyElId = pid + '-body-' + _targetStepIndex;
+  const bodyEl = document.getElementById(bodyElId);
   const txtEl = document.getElementById(pid + '-txt-' + _targetStepIndex);
 
   if(subEl && t.subject) subEl.value = t.subject;
-  if(bodyEl && t.html_body) bodyEl.value = t.html_body;
+  if(t.html_body){
+    if(window._activeEditors && window._activeEditors[bodyElId]){
+      try { window._activeEditors[bodyElId].setData(t.html_body); } catch(_e) { if(bodyEl) bodyEl.value = t.html_body; }
+    } else if(bodyEl){
+      bodyEl.value = t.html_body;
+    }
+  }
   if(txtEl && t.text_body) txtEl.value = t.text_body;
+  else if(txtEl && t.html_body) txtEl.value = htmlToPlainText(t.html_body);
 
   if(_targetStepPrefix === 'fu'){
     renderFuTimeline();
