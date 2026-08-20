@@ -508,7 +508,7 @@ if ($res==='dashboard' && $id==='clear' && $method==='POST') {
             $pdo->prepare("DELETE FROM emails WHERE list_id IN (SELECT id FROM email_lists WHERE user_id=?)")
                 ->execute([$targetUid]);
 
-            $pdo->prepare("UPDATE email_lists SET count=0 WHERE user_id=?")
+            $pdo->prepare("UPDATE email_lists SET total_count=0 WHERE user_id=?")
                 ->execute([$targetUid]);
 
             $pdo->prepare("DELETE FROM send_logs WHERE (user_id=? OR campaign_id IN (SELECT id FROM campaigns WHERE user_id=?))")
@@ -549,7 +549,7 @@ if ($res==='dashboard' && $id==='clear' && $method==='POST') {
         } else {
             // System-wide clear (all users)
             $pdo->exec("DELETE FROM emails");
-            $pdo->exec("UPDATE email_lists SET count=0");
+            $pdo->exec("UPDATE email_lists SET total_count=0");
             $pdo->exec("DELETE FROM send_logs");
             $pdo->exec("DELETE FROM autoreply_logs");
             $pdo->exec("DELETE FROM followup_logs");
