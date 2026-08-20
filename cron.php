@@ -1324,6 +1324,8 @@ try {
                 $secReplyTo = $secondarySmtpCfg['from_email'];
             } elseif ($secondarySmtpCfg && !empty($secondarySmtpCfg['username']) && filter_var($secondarySmtpCfg['username'], FILTER_VALIDATE_EMAIL)) {
                 $secReplyTo = $secondarySmtpCfg['username'];
+            } elseif ($secondaryImapId > 0 && !empty($imapCfgById[$secondaryImapId]['username']) && filter_var($imapCfgById[$secondaryImapId]['username'], FILTER_VALIDATE_EMAIL)) {
+                $secReplyTo = $imapCfgById[$secondaryImapId]['username'];
             }
 
             try{
@@ -1343,12 +1345,12 @@ try {
                     $arOpts['sender']      = $fromEmailUsed;
                 }
 
-                (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages'], $arOpts);
+                $sentMsgId = (new Mailer($mc))->send($thread['from_email'],$thread['from_name']??'',$msg['subject'],$msg['html'],$msg['text'],$msg['inlineImages'], $arOpts);
 
-                // Update Thread Stage & Status
+                // Update Thread Stage & Status with sent Message-ID for In-Reply-To matching
                 $newStage = $isFirstReply ? 'FIRST_REPLY_SENT' : ($thread['conversation_stage'] ?? 'MOVED_TO_SECONDARY');
-                db()->prepare("UPDATE autoreply_threads SET first_reply_sent = 1, smtp_used = ?, conversation_stage = ? WHERE id = ?")
-                    ->execute([$mc['id'] ?? null, $newStage, $thread['id']]);
+                db()->prepare("UPDATE autoreply_threads SET first_reply_sent = 1, smtp_used = ?, conversation_stage = ?, last_message_id = COALESCE(?, last_message_id), reply_to_mailbox = ? WHERE id = ?")
+                    ->execute([$mc['id'] ?? null, $newStage, $sentMsgId, $secReplyTo ?: $fromEmailUsed, $thread['id']]);
 
                 // Log to autoreply_logs and send_logs
                 db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
@@ -1601,8 +1603,32 @@ try {
             $fuFromEmail = $mc['from_email'] ?? '';
 
             try {
+                $fuInReplyTo = '';
+                $fuReferences = '';
+                $fuReplyTo = '';
+
+                try {
+                    $thStmt = db()->prepare("SELECT original_message_id, last_message_id, references_header, reply_to_mailbox FROM autoreply_threads WHERE from_email = ? AND (rule_id IN (SELECT id FROM autoreply_rules WHERE followup_rule_id = ?) OR user_id = ?) ORDER BY id DESC LIMIT 1");
+                    $thStmt->execute([$qEmail, $ruleId, $qUserId]);
+                    $thRow = $thStmt->fetch();
+                    if ($thRow) {
+                        $fuInReplyTo = $thRow['last_message_id'] ?: ($thRow['original_message_id'] ?: '');
+                        $fuReferences = $thRow['references_header'] ?: ($thRow['original_message_id'] ?: '');
+                        if (!empty($thRow['reply_to_mailbox'])) {
+                            $fuReplyTo = $thRow['reply_to_mailbox'];
+                        }
+                    }
+                } catch (Throwable $_thEx) {}
+
+                if (!$fuReplyTo && !empty($qItem['imap_id'])) {
+                    $fuImapRow = db()->query("SELECT username FROM imap_accounts WHERE id = " . (int)$qItem['imap_id'])->fetch();
+                    if ($fuImapRow && filter_var($fuImapRow['username'], FILTER_VALIDATE_EMAIL)) {
+                        $fuReplyTo = $fuImapRow['username'];
+                    }
+                }
+
                 $mailer = new Mailer($mc);
-                $mailer->send(
+                $sentFuMsgId = $mailer->send(
                     $qEmail,
                     $qItem['recipient_name'] ?? '',
                     $msg['subject'],
@@ -1612,6 +1638,9 @@ try {
                     [
                         'tracking_token' => $qItem['tracking_token'],
                         'track_clicks'   => true,
+                        'in_reply_to'    => $fuInReplyTo,
+                        'references'     => $fuReferences,
+                        'reply_to'       => $fuReplyTo ?: $fuFromEmail,
                     ]
                 );
 

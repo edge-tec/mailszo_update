@@ -239,7 +239,19 @@ class Mailer {
         $references  = trim($options['references'] ?? '');
         $replyToVal  = trim($options['reply_to'] ?? '');
 
-        $replyToHdr = $replyToVal ? "Reply-To: <{$replyToVal}>\r\n" : "Reply-To: {$fd}\r\n";
+        $replyToHdr = '';
+        if ($replyToVal) {
+            if (preg_match('/^(.*?)\s*<([^>]+)>$/', $replyToVal, $m)) {
+                $rName  = trim($m[1]);
+                $rEmail = trim($m[2]);
+                $replyToHdr = $rName ? "Reply-To: =?UTF-8?B?" . base64_encode($rName) . "?= <{$rEmail}>\r\n" : "Reply-To: <{$rEmail}>\r\n";
+            } else {
+                $cleanEmail = trim($replyToVal, '<>');
+                $replyToHdr = "Reply-To: <{$cleanEmail}>\r\n";
+            }
+        } else {
+            $replyToHdr = "Reply-To: {$fd}\r\n";
+        }
 
         // Sender header: RFC 5322 §3.6.2 specifies Sender SHOULD NOT be present when From == Sender
         $senderHdr = '';
@@ -419,6 +431,7 @@ class Mailer {
             $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $r));
             throw new Exception("Send failed: {$clean}");
         }
+        return $mid;
     }
 
     /**
