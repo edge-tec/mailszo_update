@@ -136,7 +136,15 @@ function embedImage(string $html,array $ids,array &$inline,
 }
 
 function buildMessage(array $step,string $name,string $email,string $defSubj='',string $senderName='',string $todayDate=''): array {
-    $subj=spin(!empty($step['subject'])?$step['subject']:$defSubj);
+    $rawSubj = !empty($step['subject']) ? trim($step['subject']) : trim($defSubj);
+    $bannedSubjects = ['follow', 'follow-up', 'followup', 'follow up', 'autoreply', 'auto-reply', 'auto reply', 'new follow-up rule', 'new auto-reply rule'];
+    if (in_array(strtolower($rawSubj), $bannedSubjects, true) || $rawSubj === '') {
+        $cleanDef = trim($defSubj);
+        $rawSubj = (!empty($cleanDef) && !in_array(strtolower($cleanDef), $bannedSubjects, true))
+            ? $cleanDef
+            : 'Re: Regarding your inquiry';
+    }
+    $subj=spin($rawSubj);
     $html=spin($step['html_body']??'');
     $text=spin($step['text_body']??'')?:strip_tags($html);
     $todayDate = $todayDate ?: date('F j, Y g:i A');
