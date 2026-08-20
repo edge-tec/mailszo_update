@@ -670,128 +670,156 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .device-frame-desktop{width:100%;height:400px;border:none;background:#fff;border-radius:8px;}
 .device-frame-mobile{width:375px;height:520px;border:12px solid #1e293b;border-radius:36px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,0.8);}
 
-/* System Logs Event Badges */
-.sys-badge{
-  font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;display:inline-flex;align-items:center;gap:3px;
-}
-.sys-badge-sent{background:rgba(74,222,128,0.15);color:var(--accent);border:1px solid rgba(74,222,128,0.3);}
-.sys-badge-opened{background:rgba(34,211,238,0.15);color:var(--accent2);border:1px solid rgba(34,211,238,0.3);box-shadow:0 0 8px rgba(34,211,238,0.2);}
-.sys-badge-clicked{background:rgba(167,139,250,0.15);color:var(--purple);border:1px solid rgba(167,139,250,0.3);box-shadow:0 0 8px rgba(167,139,250,0.2);}
-.sys-badge-queued{background:rgba(245,158,11,0.15);color:var(--accent3);border:1px solid rgba(245,158,11,0.3);}
-.sys-badge-retry{background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3);}
-.sys-badge-failed{background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3);}
-.sys-badge-unsubscribed{background:rgba(148,163,184,0.15);color:#94a3b8;border:1px solid rgba(148,163,184,0.3);}
-
-/* ══ CKEditor 5 Dark Theme Styling ══ */
-:root {
-  --ck-color-base-background: #0f172a;
-  --ck-color-base-border: #1e293b;
-  --ck-color-base-action: #10b981;
-  --ck-color-base-focus: #10b981;
-  --ck-color-base-text: #f1f5f9;
-  --ck-color-toolbar-background: #111c2e;
-  --ck-color-toolbar-border: #1e293b;
-  --ck-color-button-default-hover-background: #1e293b;
-  --ck-color-button-default-active-background: #334155;
-  --ck-color-button-on-background: #1e293b;
-  --ck-color-button-on-hover-background: #334155;
-  --ck-color-list-background: #0f172a;
-  --ck-color-list-button-hover-background: #1e293b;
-  --ck-color-panel-background: #0f172a;
-  --ck-color-panel-border: #1e293b;
-  --ck-color-input-background: #0b1120;
-  --ck-color-input-border: #1e293b;
-  --ck-color-input-text: #f1f5f9;
-  --ck-color-dropdown-panel-background: #0f172a;
-  --ck-color-dropdown-panel-border: #1e293b;
-  --ck-border-radius: 8px;
-}
-
-.ck.ck-editor {
-  width: 100% !important;
+/* ══ Quill Snow Dark Theme Styling ══ */
+.mailszo-editor-wrapper {
+  width: 100%;
   margin-top: 4px;
 }
 
-.ck.ck-editor__main > .ck-editor__editable {
-  background: #0b1322 !important;
-  color: #f1f5f9 !important;
-  border-color: #1e293b !important;
-  border-bottom-left-radius: 8px !important;
-  border-bottom-right-radius: 8px !important;
-  min-height: 180px;
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 14px 16px !important;
-}
-
-.ck.ck-editor__main > .ck-editor__editable:focus {
-  border-color: #10b981 !important;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25) !important;
-}
-
-.ck.ck-toolbar {
+.ql-toolbar.ql-snow {
   background: #111c2e !important;
-  border-color: #1e293b !important;
+  border: 1px solid #1e293b !important;
   border-top-left-radius: 8px !important;
   border-top-right-radius: 8px !important;
-  padding: 4px 6px !important;
+  padding: 6px 8px !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 2px !important;
 }
 
-.ck.ck-button {
+.ql-container.ql-snow {
+  background: #0b1322 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #1e293b !important;
+  border-top: none !important;
+  border-bottom-left-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 13.5px !important;
+  min-height: 180px !important;
+}
+
+.ql-snow .ql-editor {
+  min-height: 180px !important;
+  line-height: 1.6 !important;
+  padding: 12px 14px !important;
+  color: #f1f5f9 !important;
+}
+
+.ql-snow .ql-editor.ql-blank::before {
+  color: #64748b !important;
+  font-style: italic !important;
+}
+
+.ql-snow .ql-stroke {
+  stroke: #cbd5e1 !important;
+}
+
+.ql-snow .ql-fill {
+  fill: #cbd5e1 !important;
+}
+
+.ql-snow .ql-picker {
   color: #cbd5e1 !important;
-  cursor: pointer;
+  font-size: 12px !important;
 }
 
-.ck.ck-button:hover {
-  background: #1e293b !important;
-  color: #ffffff !important;
+.ql-snow .ql-picker-label:hover,
+.ql-snow .ql-picker-label.ql-active,
+.ql-snow button:hover,
+.ql-snow button.ql-active,
+.ql-snow button:focus {
+  color: #10b981 !important;
 }
 
-.ck.ck-button.ck-on {
+.ql-snow .ql-picker-label:hover .ql-stroke,
+.ql-snow .ql-picker-label.ql-active .ql-stroke,
+.ql-snow button:hover .ql-stroke,
+.ql-snow button.ql-active .ql-stroke,
+.ql-snow button:focus .ql-stroke {
+  stroke: #10b981 !important;
+}
+
+.ql-snow .ql-picker-label:hover .ql-fill,
+.ql-snow .ql-picker-label.ql-active .ql-fill,
+.ql-snow button:hover .ql-fill,
+.ql-snow button.ql-active .ql-fill,
+.ql-snow button:focus .ql-fill {
+  fill: #10b981 !important;
+}
+
+.ql-snow .ql-picker-options {
+  background: #0f172a !important;
+  border: 1px solid #1e293b !important;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6) !important;
+  border-radius: 6px !important;
+  padding: 6px !important;
+  z-index: 1000 !important;
+}
+
+.ql-snow .ql-picker-item {
+  color: #cbd5e1 !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+}
+
+.ql-snow .ql-picker-item:hover,
+.ql-snow .ql-picker-item.ql-selected {
   background: #1e293b !important;
   color: #10b981 !important;
 }
 
-.ck.ck-dropdown__panel {
+/* Custom Size Picker Labels */
+.ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item::before {
+  content: 'Normal (14px)';
+}
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="small"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="small"]::before {
+  content: 'Small (11px)';
+}
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="large"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="large"]::before {
+  content: 'Large (18px)';
+}
+.ql-snow .ql-picker.ql-size .ql-picker-label[data-value="huge"]::before,
+.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="huge"]::before {
+  content: 'Huge (26px)';
+}
+
+/* Tooltip / Link popup dialog */
+.ql-snow .ql-tooltip {
   background: #0f172a !important;
-  border-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6) !important;
+  border-radius: 8px !important;
+  color: #f1f5f9 !important;
+  padding: 8px 12px !important;
+  z-index: 1100 !important;
 }
 
-.ck.ck-list {
-  background: #0f172a !important;
-}
-
-.ck.ck-list__item .ck-button {
-  color: #cbd5e1 !important;
-}
-
-.ck.ck-list__item .ck-button:hover {
-  background: #1e293b !important;
-  color: #ffffff !important;
-}
-
-.ck.ck-source-editing-area textarea {
-  background: #0b1322 !important;
-  color: #34d399 !important;
-  font-family: var(--mono) !important;
+.ql-snow .ql-tooltip input[type="text"] {
+  background: #0b1120 !important;
+  border: 1px solid #1e293b !important;
+  color: #f1f5f9 !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
   font-size: 12px !important;
-  padding: 14px 16px !important;
 }
 
-.ck.ck-balloon-panel {
-  background: #0f172a !important;
-  border-color: #1e293b !important;
+.ql-snow .ql-tooltip a.ql-action::after {
+  border-right-color: #10b981 !important;
 }
-
-.ck.ck-labeled-field-view > .ck-labeled-field-view__input-wrapper > .ck-label {
-  background: #0f172a !important;
-  color: #94a3b8 !important;
+.ql-snow .ql-tooltip a.ql-remove::before {
+  color: #f87171 !important;
 }
 </style>
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<!-- CKEditor 5 SuperBuild — Full WYSIWYG Rich Text Editor for Emails -->
-<script src="https://cdn.ckeditor.com/ckeditor5/41.4.2/super-build/ckeditor.js"></script>
+<!-- Quill WYSIWYG Rich Text Editor CSS & JS -->
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
 </head>
 <body>
 
@@ -5151,53 +5179,9 @@ function insertToken(elId, token){
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   WYSIWYG RICH TEXT EDITOR ENGINE (CKEditor 5 SuperBuild)
+   WYSIWYG RICH TEXT EDITOR ENGINE (Quill Rich Text Editor)
    ══════════════════════════════════════════════════════════════════ */
-window._activeEditors = window._activeEditors || {};
-
-/* Custom Upload Adapter for Image Paste, Drag & Drop, and Upload */
-class MailszoUploadAdapter {
-  constructor(loader) {
-    this.loader = loader;
-  }
-  upload() {
-    return this.loader.file.then(file => new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('image', file);
-      
-      const token = (typeof S !== 'undefined' && S?.token) ? S.token : (localStorage.getItem('token') || '');
-      fetch(API('images'), {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Authorization': 'Bearer ' + token },
-        body: formData
-      })
-      .then(res => res.json())
-      .then(res => {
-        if (res && res.ok && res.url) {
-          if (Array.isArray(window.allImages) && res.id) {
-            window.allImages.push({ id: res.id, url: res.url, name: file.name });
-          }
-          resolve({ default: res.url });
-        } else {
-          reject(res?.error || res?.message || 'Upload failed');
-        }
-      })
-      .catch(err => {
-        reject(err.message || 'Image upload error');
-      });
-    }));
-  }
-  abort() {}
-}
-
-function MailszoUploadAdapterPlugin(editor) {
-  if (editor.plugins.has('FileRepository')) {
-    editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
-      return new MailszoUploadAdapter(loader);
-    };
-  }
-}
+window._quillEditors = window._quillEditors || {};
 
 /* Plain text synchronizer */
 function htmlToPlainText(html) {
@@ -5217,25 +5201,72 @@ function syncPlainTextFromHtml(pid, i, html) {
 
 /* Insert Variable at Cursor inside Editor or Textarea */
 function insertVariableToEditor(elId, token) {
-  const editor = window._activeEditors ? window._activeEditors[elId] : null;
-  if (editor) {
-    editor.model.change(writer => {
-      const insertPosition = editor.model.document.selection.getFirstPosition();
-      writer.insertText(token, insertPosition);
-    });
-    editor.editing.view.focus();
+  const quill = window._quillEditors ? window._quillEditors[elId] : null;
+  const textarea = document.getElementById(elId);
+
+  // If in visual Quill mode
+  if (quill && textarea && textarea.style.display === 'none') {
+    const range = quill.getSelection(true);
+    const index = (range && typeof range.index === 'number') ? range.index : (quill.getLength() - 1);
+    quill.insertText(index, token, 'user');
+    quill.setSelection(index + token.length);
+    quill.focus();
+    textarea.value = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
     return;
   }
-  const el = document.getElementById(elId);
-  if (!el) return;
-  el.focus();
-  if (typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number') {
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    el.value = el.value.substring(0, start) + token + el.value.substring(end);
-    el.selectionStart = el.selectionEnd = start + token.length;
+
+  // If in raw HTML textarea mode
+  if (textarea) {
+    textarea.focus();
+    if (typeof textarea.selectionStart === 'number' && typeof textarea.selectionEnd === 'number') {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + token + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    } else {
+      textarea.value += token;
+    }
+    if (quill) {
+      quill.root.innerHTML = textarea.value || '<p><br></p>';
+    }
+  }
+}
+
+/* Toggle HTML Source Code Mode */
+function toggleHtmlSourceMode(textareaId) {
+  const textarea = document.getElementById(textareaId);
+  const quill = window._quillEditors ? window._quillEditors[textareaId] : null;
+  if (!textarea) return;
+
+  const btn = document.querySelector(`button[onclick*="${textareaId}"]`);
+  const editorWrapper = textarea.previousElementSibling;
+
+  if (textarea.style.display === 'none') {
+    // Switch to Raw HTML Code Mode
+    if (quill) {
+      textarea.value = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+    }
+    if (editorWrapper) editorWrapper.style.display = 'none';
+    textarea.style.display = 'block';
+    textarea.focus();
+    if (btn) {
+      btn.textContent = '👁️ Visual Editor';
+      btn.classList.add('btn-primary');
+      btn.classList.remove('btn-secondary');
+    }
   } else {
-    el.value += token;
+    // Switch back to Visual WYSIWYG Mode
+    if (quill) {
+      quill.root.innerHTML = textarea.value || '<p><br></p>';
+    }
+    textarea.style.display = 'none';
+    if (editorWrapper) editorWrapper.style.display = 'block';
+    if (quill) quill.focus();
+    if (btn) {
+      btn.textContent = '<> HTML Source';
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-secondary');
+    }
   }
 }
 
@@ -5245,7 +5276,8 @@ async function handleStepMultiImageUpload(event, pid, stepIndex) {
   if (!files || !files.length) return;
   
   const elId = `${pid}-body-${stepIndex}`;
-  const editor = window._activeEditors ? window._activeEditors[elId] : null;
+  const quill = window._quillEditors ? window._quillEditors[elId] : null;
+  const textarea = document.getElementById(elId);
   const token = (typeof S !== 'undefined' && S?.token) ? S.token : (localStorage.getItem('token') || '');
 
   for (let idx = 0; idx < files.length; idx++) {
@@ -5265,16 +5297,14 @@ async function handleStepMultiImageUpload(event, pid, stepIndex) {
         if (Array.isArray(window.allImages) && res.id) {
           window.allImages.push({ id: res.id, url: res.url, name: file.name });
         }
-        if (editor) {
-          editor.model.change(writer => {
-            const imageElement = writer.createElement('imageBlock', {
-              src: res.url,
-              alt: file.name
-            });
-            editor.model.insertContent(imageElement, editor.model.document.selection);
-          });
-        } else {
-          insertToken(elId, `<img src="${res.url}" alt="${file.name}" style="max-width:100%;height:auto" />\n`);
+        if (quill && textarea && textarea.style.display === 'none') {
+          const range = quill.getSelection(true);
+          const index = (range && typeof range.index === 'number') ? range.index : (quill.getLength() - 1);
+          quill.insertEmbed(index, 'image', res.url, 'user');
+          quill.setSelection(index + 1);
+          textarea.value = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+        } else if (textarea) {
+          insertVariableToEditor(elId, `<img src="${res.url}" alt="${file.name}" style="max-width:100%;height:auto" />\n`);
         }
       }
     } catch (e) {
@@ -5285,125 +5315,91 @@ async function handleStepMultiImageUpload(event, pid, stepIndex) {
 }
 
 /* Destroy Step Editors */
-async function destroyStepEditors(prefix) {
-  if (!window._activeEditors) return;
-  const keys = Object.keys(window._activeEditors);
+function destroyStepEditors(prefix) {
+  if (!window._quillEditors) return;
+  const keys = Object.keys(window._quillEditors);
   for (const k of keys) {
     if (!prefix || k.startsWith(prefix === 'ar' ? 'ars' : 'fus')) {
-      try {
-        await window._activeEditors[k].destroy();
-      } catch (_e) {}
-      delete window._activeEditors[k];
+      delete window._quillEditors[k];
     }
   }
 }
 
-/* Initialize CKEditor 5 instances on all step cards */
-async function initStepEditors(prefix) {
-  if (typeof CKSource === 'undefined' && typeof CKEDITOR === 'undefined' && typeof ClassicEditor === 'undefined') {
-    setTimeout(() => initStepEditors(prefix), 250);
+/* Initialize Quill instances on all step cards */
+function initStepEditors(prefix) {
+  if (typeof Quill === 'undefined') {
+    setTimeout(() => initStepEditors(prefix), 100);
     return;
   }
 
   const pid = prefix === 'ar' ? 'ars' : 'fus';
   const stepsArr = prefix === 'ar' ? arSteps : fuSteps;
 
-  for (let i = 0; i < stepsArr.length; i++) {
-    const elId = `${pid}-body-${i}`;
-    const textarea = document.getElementById(elId);
-    if (!textarea) continue;
+  stepsArr.forEach((st, i) => {
+    const quillElId = `${pid}-quill-${i}`;
+    const textareaId = `${pid}-body-${i}`;
+    const quillDiv = document.getElementById(quillElId);
+    const textarea = document.getElementById(textareaId);
+    if (!quillDiv || !textarea) return;
 
-    if (window._activeEditors[elId]) {
-      try { await window._activeEditors[elId].destroy(); } catch (_e) {}
-      delete window._activeEditors[elId];
+    // Destroy existing toolbar if re-rendering
+    const parent = quillDiv.parentElement;
+    if (parent) {
+      const oldToolbar = parent.querySelector('.ql-toolbar');
+      if (oldToolbar) oldToolbar.remove();
     }
+    delete window._quillEditors[textareaId];
+
+    const toolbarOptions = [
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      [{ 'size': ['small', false, 'large', 'huge'] }],
+      [{ 'font': [] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'align': [] }],
+      [{ 'list': 'ordered'}, { 'list': 'bullet'}, { 'list': 'check' }],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      [{ 'indent': '-1'}, { 'indent': '+1' }],
+      ['blockquote', 'code-block'],
+      ['link', 'image'],
+      ['clean']
+    ];
 
     try {
-      const EditorConstructor = (typeof CKSource !== 'undefined' && CKSource.Editor)
-        ? CKSource.Editor
-        : (window.CKEDITOR && window.CKEDITOR.ClassicEditor ? window.CKEDITOR.ClassicEditor : window.ClassicEditor);
-
-      if (!EditorConstructor) continue;
-
-      const editor = await EditorConstructor.create(textarea, {
-        toolbar: {
-          items: [
-            'heading', '|',
-            'fontSize', 'fontFamily', 'fontColor', 'fontBackgroundColor', '|',
-            'bold', 'italic', 'underline', 'strikethrough', 'removeFormat', '|',
-            'alignment', '|',
-            'bulletedList', 'numberedList', 'todoList', 'outdent', 'indent', '|',
-            'link', 'imageInsert', 'insertTable', 'horizontalLine', 'specialCharacters', 'blockQuote', 'codeBlock', '|',
-            'sourceEditing', 'undo', 'redo'
-          ],
-          shouldNotGroupWhenFull: false
-        },
-        extraPlugins: [MailszoUploadAdapterPlugin],
-        htmlSupport: {
-          allow: [
-            {
-              name: /.*/,
-              attributes: true,
-              classes: true,
-              styles: true
+      const quill = new Quill('#' + quillElId, {
+        theme: 'snow',
+        placeholder: 'Write your email message here... (supports bold, font sizes, links, images, variables)',
+        modules: {
+          toolbar: {
+            container: toolbarOptions,
+            handlers: {
+              image: function() {
+                const fileInput = document.getElementById(`${pid}-multi-img-${i}`);
+                if (fileInput) fileInput.click();
+              }
             }
-          ]
-        },
-        heading: {
-          options: [
-            { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
-            { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
-            { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
-            { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
-            { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' },
-            { model: 'heading5', view: 'h5', title: 'Heading 5', class: 'ck-heading_heading5' },
-            { model: 'heading6', view: 'h6', title: 'Heading 6', class: 'ck-heading_heading6' }
-          ]
-        },
-        fontSize: {
-          options: [ 9, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36 ]
-        },
-        fontFamily: {
-          options: [
-            'default',
-            'Arial, Helvetica, sans-serif',
-            'Courier New, Courier, monospace',
-            'Georgia, serif',
-            'Lucida Sans Unicode, Lucida Grande, sans-serif',
-            'Tahoma, Geneva, sans-serif',
-            'Times New Roman, Times, serif',
-            'Trebuchet MS, Helvetica, sans-serif',
-            'Verdana, Geneva, sans-serif'
-          ]
-        },
-        image: {
-          toolbar: [
-            'imageTextAlternative', 'toggleImageCaption', '|',
-            'imageStyle:inline', 'imageStyle:block', 'imageStyle:side', '|',
-            'resizeImage'
-          ]
-        },
-        table: {
-          contentToolbar: [
-            'tableColumn', 'tableRow', 'mergeTableCells',
-            'tableCellProperties', 'tableProperties'
-          ]
+          }
         }
       });
 
-      window._activeEditors[elId] = editor;
+      if (st.html_body) {
+        quill.root.innerHTML = st.html_body;
+      }
 
-      // Sync data changes
-      editor.model.document.on('change:data', () => {
-        const html = editor.getData();
+      quill.on('text-change', () => {
+        const html = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
         textarea.value = html;
+        st.html_body = html;
         syncPlainTextFromHtml(pid, i, html);
       });
 
+      window._quillEditors[textareaId] = quill;
     } catch (err) {
-      console.warn('CKEditor init fallback for ' + elId, err);
+      console.warn('Quill init fallback for ' + quillElId, err);
+      quillDiv.style.display = 'none';
+      textarea.style.display = 'block';
     }
-  }
+  });
 }
 
 /* ── Live Email Step Preview with Variable Replacements ── */
@@ -5411,10 +5407,15 @@ function previewEmailStep(stepIndex, prefix) {
   const pid = prefix === 'ar' ? 'ars' : 'fus';
   const elId = `${pid}-body-${stepIndex}`;
   let html = '';
-  if (window._activeEditors && window._activeEditors[elId]) {
-    try { html = window._activeEditors[elId].getData(); } catch(_e) { html = document.getElementById(elId)?.value || ''; }
-  } else {
-    html = document.getElementById(elId)?.value || '';
+  const quill = window._quillEditors ? window._quillEditors[elId] : null;
+  const textarea = document.getElementById(elId);
+
+  if (textarea && textarea.style.display !== 'none') {
+    html = textarea.value || '';
+  } else if (quill) {
+    html = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+  } else if (textarea) {
+    html = textarea.value || '';
   }
   
   const subEl = document.getElementById(`${pid}-sub-${stepIndex}`);
@@ -6345,15 +6346,19 @@ function arSaveCurrentSteps(){
   arSteps.forEach((st,i)=>{
     const elId = `ars-body-${i}`;
     let htmlVal = '';
-    if(window._activeEditors && window._activeEditors[elId]){
-      try {
-        htmlVal = window._activeEditors[elId].getData();
-      } catch(_e) {
-        htmlVal = document.getElementById(elId)?.value || '';
-      }
-    } else {
-      htmlVal = document.getElementById(elId)?.value || '';
+    const quill = window._quillEditors ? window._quillEditors[elId] : null;
+    const textarea = document.getElementById(elId);
+
+    if (textarea && textarea.style.display !== 'none') {
+      htmlVal = textarea.value || '';
+      if (quill) quill.root.innerHTML = htmlVal || '<p><br></p>';
+    } else if (quill) {
+      htmlVal = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+      if (textarea) textarea.value = htmlVal;
+    } else if (textarea) {
+      htmlVal = textarea.value || '';
     }
+
     const delayEl=isSeqNow?document.getElementById('ars-sdelay-'+i):document.getElementById('ars-delay-'+i);
     st.delay_minutes=parseInt(delayEl?.value||'0')||0;
     st.subject=document.getElementById('ars-sub-'+i)?.value||'';
@@ -6532,15 +6537,19 @@ function fuSaveCurrentSteps(){
   fuSteps.forEach((st,i)=>{
     const elId = `fus-body-${i}`;
     let htmlVal = '';
-    if(window._activeEditors && window._activeEditors[elId]){
-      try {
-        htmlVal = window._activeEditors[elId].getData();
-      } catch(_e) {
-        htmlVal = document.getElementById(elId)?.value || '';
-      }
-    } else {
-      htmlVal = document.getElementById(elId)?.value || '';
+    const quill = window._quillEditors ? window._quillEditors[elId] : null;
+    const textarea = document.getElementById(elId);
+
+    if (textarea && textarea.style.display !== 'none') {
+      htmlVal = textarea.value || '';
+      if (quill) quill.root.innerHTML = htmlVal || '<p><br></p>';
+    } else if (quill) {
+      htmlVal = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+      if (textarea) textarea.value = htmlVal;
+    } else if (textarea) {
+      htmlVal = textarea.value || '';
     }
+
     const valEl = document.getElementById('fus-delay-val-'+i);
     const unitEl = document.getElementById('fus-delay-unit-'+i);
     const legacyEl = document.getElementById('fus-delay-'+i);
@@ -6750,7 +6759,7 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
         <div style="display:flex;align-items:center;gap:6px">
           <label class="fl" style="font-size:11px;font-weight:700;margin:0">HTML Body (WYSIWYG Rich Editor)</label>
-          <span class="badge b-purple" style="font-size:9px">CKEditor 5</span>
+          <span class="badge b-green" style="font-size:9px">WYSIWYG</span>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <!-- Variable Tags -->
@@ -6763,10 +6772,14 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
           <!-- Action Buttons -->
           <input type="file" id="${pid}-multi-img-${i}" multiple accept="image/*" style="display:none" onchange="handleStepMultiImageUpload(event, '${pid}', ${i})">
           <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('${pid}-multi-img-${i}').click()" style="padding:2px 8px;font-size:11px" title="Upload multiple images directly into editor">📤 Upload Images</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleHtmlSourceMode('${pid}-body-${i}')" id="${pid}-source-btn-${i}" style="padding:2px 8px;font-size:11px" title="Toggle between Visual Editor and raw HTML code">&lt;&gt; HTML Source</button>
           <button type="button" class="btn btn-blue btn-sm" onclick="previewEmailStep(${i}, '${prefix}')" style="padding:2px 8px;font-size:11px" title="Preview live email with sample recipient">👁️ Preview Email</button>
         </div>
       </div>
-      <textarea class="fta" id="${pid}-body-${i}" style="min-height:160px;width:100%">${esc(st.html_body||'')}</textarea>
+      <div id="${pid}-editor-container-${i}" class="mailszo-editor-wrapper">
+        <div id="${pid}-quill-${i}" style="min-height:180px">${st.html_body || '<p><br></p>'}</div>
+      </div>
+      <textarea class="fta" id="${pid}-body-${i}" style="display:none;min-height:180px;width:100%;font-family:var(--mono);font-size:12px">${esc(st.html_body||'')}</textarea>
     </div>
     <div class="fg"><label class="fl" style="font-size:10px">Plain Text <span class="flh">(auto-synchronized from HTML if left blank)</span></label>
       <textarea class="fta" id="${pid}-txt-${i}" style="min-height:44px" placeholder="Plain text version for non-HTML mail clients...">${esc(st.text_body||'')}</textarea>
@@ -7660,12 +7673,14 @@ async function applyTemplateToStep(tmplId){
   const bodyElId = pid + '-body-' + _targetStepIndex;
   const bodyEl = document.getElementById(bodyElId);
   const txtEl = document.getElementById(pid + '-txt-' + _targetStepIndex);
+  const quill = window._quillEditors ? window._quillEditors[bodyElId] : null;
 
   if(subEl && t.subject) subEl.value = t.subject;
   if(t.html_body){
-    if(window._activeEditors && window._activeEditors[bodyElId]){
-      try { window._activeEditors[bodyElId].setData(t.html_body); } catch(_e) { if(bodyEl) bodyEl.value = t.html_body; }
-    } else if(bodyEl){
+    if(quill){
+      quill.root.innerHTML = t.html_body;
+    }
+    if(bodyEl){
       bodyEl.value = t.html_body;
     }
   }
