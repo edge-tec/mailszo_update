@@ -196,7 +196,11 @@ function processAutoReplyQueue(): int {
                 logSystemEvent('failed', $job['from_email'], "Auto Reply #{$stepNum} failed: $errMsg", $userId, null, $ruleId);
             }
         }
-    } catch (Exception $e) { }
+    } catch (Exception $e) {
+        error_log("processAutoReplyQueue ERROR: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+    } catch (Throwable $e) {
+        error_log("processAutoReplyQueue FATAL: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+    }
     return $dispatched;
 }
 
@@ -366,6 +370,11 @@ function saveToBackup(int $uid, string $email, string $name, string $src, int $r
 // This runs BEFORE IMAP polling so scheduled replies are sent immediately
 // without waiting for the potentially slow IMAP processing to complete.
 // ─────────────────────────────────────────────────────────────────
+try {
+    $pendingCount = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads WHERE status = 'scheduled' AND scheduled_send_time <= NOW()")->fetchColumn();
+    $results[] = ['status' => 'ar_queue_check', 'pending_due' => $pendingCount];
+} catch (Throwable $_qcE) {}
+
 $earlyDispatched = processAutoReplyQueue();
 if ($earlyDispatched > 0) {
     $results[] = ['status' => 'ar_early_dispatch', 'sent' => $earlyDispatched];
