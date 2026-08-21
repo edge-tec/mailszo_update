@@ -59,9 +59,10 @@ if ($res==='auth') {
         $_SESSION['uname']=$u['username'];
         $_SESSION['is_admin']=(bool)$u['is_admin'];
         $_SESSION['image_upload']=(bool)($u['image_upload'] ?? 1);
+        $_SESSION['lead_delete']=(bool)($u['lead_delete'] ?? 1);
         setRememberCookie($u['id']);
         try { session_write_close(); } catch (Throwable $e) {}
-        jsonOut(['success'=>true,'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin'],'image_upload'=>(bool)($u['image_upload'] ?? 1)]);
+        jsonOut(['success'=>true,'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin'],'image_upload'=>(bool)($u['image_upload'] ?? 1),'lead_delete'=>(bool)($u['lead_delete'] ?? 1)]);
     }
     if ($method==='POST'&&$id==='logout'){
         try { startSecureSession(); } catch (Throwable $e) {}
@@ -117,6 +118,7 @@ if ($res==='auth') {
             $uname = $_SESSION['uname'] ?? '';
             $isAdmin = (bool)($_SESSION['is_admin'] ?? false);
             $imageUpload = (bool)($_SESSION['image_upload'] ?? true);
+            $leadDelete = (bool)($_SESSION['lead_delete'] ?? true);
             try { session_write_close(); } catch (Throwable $e) {}
             jsonOut([
                 'loggedIn'     => true,
@@ -124,6 +126,7 @@ if ($res==='auth') {
                 'username'     => $uname,
                 'is_admin'     => $isAdmin,
                 'image_upload' => $imageUpload,
+                'lead_delete'  => $leadDelete,
             ]);
         }
         try { session_write_close(); } catch (Throwable $e) {}
@@ -370,11 +373,11 @@ function resolveDateRange(string $preset = '', string $customFrom = '', string $
 if ($res==='users') {
     requireAdmin();
     if ($method==='GET'&&!$id) {
-        $rows=db()->query('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status,created_at FROM users ORDER BY id DESC')->fetchAll();
+        $rows=db()->query('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,lead_delete,expires_at,status,created_at FROM users ORDER BY id DESC')->fetchAll();
         jsonOut($rows);
     }
     if ($method==='GET'&&$id) {
-        $s=db()->prepare('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status,created_at FROM users WHERE id=?');
+        $s=db()->prepare('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,lead_delete,expires_at,status,created_at FROM users WHERE id=?');
         $s->execute([$id]); jsonOut($s->fetch());
     }
     if ($method==='POST') {
@@ -384,7 +387,7 @@ if ($res==='users') {
         $imapLimitVal = (int)($b['daily_send_limit'] ?? 1000);
         $imapReadVal  = (int)($b['imap_read_limit']  ?? 0);
         try {
-            db()->prepare('INSERT INTO users (username,password,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+            db()->prepare('INSERT INTO users (username,password,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,lead_delete,expires_at,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
                 ->execute([
                     $b['username'],$hash,
                     (int)($b['is_admin']??0),
@@ -395,6 +398,7 @@ if ($res==='users') {
                     (int)($b['followup_limit']??5),
                     $imapReadVal,
                     (int)($b['image_upload']??1),
+                    (int)($b['lead_delete']??1),
                     ($b['expires_at']??null)?:null,
                     $b['status']??'active'
                 ]);
@@ -415,16 +419,17 @@ if ($res==='users') {
             'followup_limit'   => (int)($b['followup_limit']??5),
             'imap_read_limit'  => $imapReadVal,
             'image_upload'     => (int)($b['image_upload']??1),
+            'lead_delete'      => (int)($b['lead_delete']??1),
             'expires_at'       => ($b['expires_at']??null)?:null,
             'status'           => $b['status']??'active',
             'is_admin'         => (int)($b['is_admin']??0),
         ];
         if (!empty($b['password'])) {
             $fields['password']=password_hash($b['password'],PASSWORD_BCRYPT);
-            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,expires_at=?,status=?,is_admin=?,password=? WHERE id=?')
+            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,lead_delete=?,expires_at=?,status=?,is_admin=?,password=? WHERE id=?')
                 ->execute(array_merge(array_values($fields),[$id]));
         } else {
-            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,expires_at=?,status=?,is_admin=? WHERE id=?')
+            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,lead_delete=?,expires_at=?,status=?,is_admin=? WHERE id=?')
                 ->execute([...array_values($fields),$id]);
         }
         jsonOut(['ok'=>true]);
@@ -2931,6 +2936,7 @@ if ($res==='leads') {
 
     // DELETE leads/clear — clear leads from a list, autoreply threads, or followup contacts
     if ($method==='DELETE' && $id==='clear') {
+        if (!$IS_ADMIN && !(int)($CUR['lead_delete'] ?? 1)) jsonOut(['ok'=>false,'message'=>'Lead delete/clear is disabled for your account'],403);
         $target   = $_GET['target']    ?? '';  // list | autoreply | followup | all
         $targetId = isset($_GET['target_id']) ? (int)$_GET['target_id'] : 0;
 
@@ -3043,6 +3049,7 @@ if ($res==='leads') {
     // Ownership is verified via the parent (list / rule) — non-admin users
     // can only delete leads attached to their own lists/rules.
     if ($method==='DELETE' && $id==='item') {
+        if (!$IS_ADMIN && !(int)($CUR['lead_delete'] ?? 1)) jsonOut(['ok'=>false,'message'=>'Lead delete is disabled for your account'],403);
         $src   = $_GET['source'] ?? '';
         $rowId = (int)($_GET['row_id'] ?? 0);
         if (!$rowId || !in_array($src, ['email_list','auto_reply','follow_up'], true)) {

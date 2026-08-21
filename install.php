@@ -99,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     `expires_at`       DATETIME DEFAULT NULL,
                     `status`           ENUM('active','suspended') DEFAULT 'active',
                     `image_upload`     TINYINT(1) DEFAULT 1,
+                    `lead_delete`      TINYINT(1) DEFAULT 1,
                     `remember_token`   VARCHAR(64) DEFAULT NULL,
                     `created_at`       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -460,6 +461,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `expires_at` DATETIME DEFAULT NULL",
                 "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `status` ENUM('active','suspended') DEFAULT 'active'",
                 "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `image_upload` TINYINT(1) DEFAULT 1",
+                "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `lead_delete` TINYINT(1) DEFAULT 1",
                 "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `user_id` INT NOT NULL DEFAULT 1",
                 "ALTER TABLE `email_lists` ADD COLUMN IF NOT EXISTS `user_id` INT NOT NULL DEFAULT 1",
                 "ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `user_id` INT NOT NULL DEFAULT 1",

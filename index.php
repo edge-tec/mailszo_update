@@ -2115,7 +2115,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     </div>
   </div>
   <!-- Clear Leads Card -->
-  <div class="card">
+  <div class="card" id="leads-clear-card">
     <div class="card-hd" style="background:rgba(239,68,68,.04)"><h3>🗑️ Clear / Reset Leads</h3></div>
     <div class="card-body">
       <div id="leads-al" class="al" style="margin-bottom:12px"></div>
@@ -3042,6 +3042,14 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
           </select>
           <div class="fhint">Allow this user to upload images (Image Library & Variant Picker)</div>
         </div>
+        <div class="fg">
+          <label class="fl">Lead Delete / Clear</label>
+          <select class="fsel" id="um-leaddelete">
+            <option value="1">✅ Enabled</option>
+            <option value="0">🚫 Disabled</option>
+          </select>
+          <div class="fhint">Allow this user to delete or clear leads</div>
+        </div>
       </div>
 
       <div class="stitle">Account Expiry</div>
@@ -3269,7 +3277,7 @@ function showLoginScreen(){
 }
 
 function enter(r){
-  S={loggedIn:true,uid:r.uid?Number(r.uid):0,username:r.username,isAdmin:(r.is_admin==true||r.is_admin==='1'||r.is_admin===1),imageUpload:(r.image_upload!==false&&r.image_upload!==0&&r.image_upload!=='0')};
+  S={loggedIn:true,uid:r.uid?Number(r.uid):0,username:r.username,isAdmin:(r.is_admin==true||r.is_admin==='1'||r.is_admin===1),imageUpload:(r.image_upload!==false&&r.image_upload!==0&&r.image_upload!=='0'),leadDelete:(r.lead_delete!==false&&r.lead_delete!==0&&r.lead_delete!=='0')};
   document.getElementById('login-wrap').style.display='none';
   const main=document.getElementById('main'); if(main) main.style.display='';
   const sb=document.getElementById('sidebar'); if(sb) sb.style.display='';
@@ -3305,6 +3313,9 @@ function enter(r){
   const canUploadImg = S.isAdmin || S.imageUpload;
   const imgLibBtn=$('img-lib-upload-btn'); if(imgLibBtn) imgLibBtn.style.display=canUploadImg?'':'none';
   const imgPickZone=$('imgpick-upload-zone'); if(imgPickZone) imgPickZone.style.display=canUploadImg?'':'none';
+  // Lead delete guard — hide clear card if user doesn't have permission
+  const canDelLead = S.isAdmin || S.leadDelete;
+  const leadsClearCard=$('leads-clear-card'); if(leadsClearCard) leadsClearCard.style.display=canDelLead?'':'none';
   // Load the inline live reporting dashboard after session is confirmed.
   loadLiveDash();
   // Sync the date-range picker UI to whatever was persisted last session
@@ -4878,6 +4889,7 @@ async function openUserModal(id=null){
     sv('um-arlimit',u.autoreply_limit??5);sv('um-fulimit',u.followup_limit??5);
     sv('um-imap-read-limit',u.imap_read_limit??0);
     $('um-imgupload').value=(u.image_upload!==undefined&&u.image_upload!==null)?String(u.image_upload):'1';
+    $('um-leaddelete').value=(u.lead_delete!==undefined&&u.lead_delete!==null)?String(u.lead_delete):'1';
     sv('um-exp',u.expires_at?u.expires_at.replace(' ','T').slice(0,16):'');
     $('um-role').value=u.is_admin?'1':'0';$('um-status').value=u.status||'active';
     // Show assignment section only for non-admin users being edited
@@ -4888,6 +4900,7 @@ async function openUserModal(id=null){
     sv('um-arlimit',5);sv('um-fulimit',5);
     sv('um-imap-read-limit',0);
     $('um-imgupload').value='1';
+    $('um-leaddelete').value='1';
     sv('um-exp','');
     $('um-role').value='0';$('um-status').value='active';
     if(assignSection) assignSection.style.display='none'; // hide for new user (no ID yet)
@@ -4962,6 +4975,7 @@ async function saveUser(){
     followup_limit:parseInt(v('um-fulimit'))||0,
     imap_read_limit:parseInt(v('um-imap-read-limit'))||0,
     image_upload:parseInt($('um-imgupload').value),
+    lead_delete:parseInt($('um-leaddelete').value),
     expires_at:v('um-exp')||null,
     is_admin:$('um-role').value,status:$('um-status').value
   };
@@ -5879,7 +5893,7 @@ async function loadLeadsTable(page=1){
     tb.innerHTML=r.rows.map(l=>{
       // Per-row Delete button. Disabled if the row didn't carry a primary
       // key (shouldn't happen with the patched SELECT, but be defensive).
-      const canDel = l._id && l.source;
+      const canDel = l._id && l.source && (S.isAdmin || S.leadDelete);
       const delBtn = canDel
         ? `<button class="btn btn-danger btn-sm" onclick="deleteLead(${l._id},'${esc(l.source)}','${esc((l.email||'').replace(/'/g,"&#39;"))}')" title="Delete this lead">🗑 Delete</button>`
         : `<span style="color:var(--text3);font-size:11px">—</span>`;
@@ -5902,6 +5916,7 @@ async function loadLeadsTable(page=1){
 // the api.php endpoint enforces ownership and removes the row from the
 // originating table (emails / autoreply_threads / followup_contacts).
 async function deleteLead(rowId, source, email){
+  if(!S.isAdmin && !S.leadDelete){alert('Lead delete is disabled for your account.');return;}
   if (!rowId || !source) return;
   const label = email ? ('lead '+email) : 'this lead';
   if (!confirm('Delete '+label+'?\n\nThis removes the row from its source list/rule. The contact can be re-enrolled later if a matching email arrives again.')) return;
@@ -5956,6 +5971,7 @@ function exportLeadsFromTable(){
 }
 
 async function clearLeads(target){
+  if(!S.isAdmin && !S.leadDelete){al('leads-al','❌ Lead delete/clear is disabled for your account','err');return;}
   let targetId=0, label='';
   if(target==='list'){
     targetId=parseInt($('cl-list')?.value)||0;
