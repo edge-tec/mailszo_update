@@ -394,7 +394,16 @@ function saveToBackup(int $uid, string $email, string $name, string $src, int $r
 // ─────────────────────────────────────────────────────────────────
 try {
     $pendingCount = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads WHERE status = 'scheduled' AND scheduled_send_time <= NOW()")->fetchColumn();
-    $results[] = ['status' => 'ar_queue_check', 'pending_due' => $pendingCount];
+    $futureCount  = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads WHERE status = 'scheduled' AND scheduled_send_time > NOW()")->fetchColumn();
+    $waitingCount = (int)db()->query("SELECT COUNT(*) FROM autoreply_threads WHERE status = 'pending'")->fetchColumn();
+    $nextSend     = db()->query("SELECT MIN(scheduled_send_time) FROM autoreply_threads WHERE status = 'scheduled' AND scheduled_send_time > NOW()")->fetchColumn();
+    $results[] = [
+        'status'            => 'ar_queue_check',
+        'pending_due'       => $pendingCount,
+        'future_scheduled'  => $futureCount,
+        'waiting_for_reply' => $waitingCount,
+        'next_send_time'    => $nextSend ?: null,
+    ];
 } catch (Throwable $_qcE) {}
 
 $earlyDispatched = processAutoReplyQueue();
