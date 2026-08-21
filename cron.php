@@ -135,7 +135,7 @@ function processAutoReplyQueue(): int {
                 if (!$step1SmtpPool) $step1SmtpPool = [$primarySmtpCfg];
             }
 
-            $isFirstReply = ($stepNum === 1 || empty($job['first_reply_sent']));
+            $isFirstReply = ($stepNum === 1);
             
             // STRICT SMTP ROUTING:
             // Step 1: ONLY Primary SMTP 1
@@ -153,11 +153,13 @@ function processAutoReplyQueue(): int {
             }
 
             $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
-            $fromPool = json_decode((string)($job['from_emails'] ?? ''), true) ?: [];
-            if ($fromPool) {
-                $pk = $fromPool[array_rand($fromPool)];
-                if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
-                else { $mc['from_email'] = $pk; }
+            if ($isFirstReply) {
+                $fromPool = json_decode((string)($job['from_emails'] ?? ''), true) ?: [];
+                if ($fromPool) {
+                    $pk = $fromPool[array_rand($fromPool)];
+                    if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
+                    else { $mc['from_email'] = $pk; }
+                }
             }
 
             $arDefSubj = !empty($job['subject_in']) ? ((stripos(trim($job['subject_in']), 're:') === 0) ? $job['subject_in'] : 'Re: ' . $job['subject_in']) : 'Re: Regarding your inquiry';
