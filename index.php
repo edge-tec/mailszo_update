@@ -893,6 +893,24 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .ql-snow .ql-tooltip a.ql-remove::before {
   color: #f87171 !important;
 }
+
+/* ─── Image Grid ─────────────────────────────── */
+.img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;padding:8px 0;}
+.img-item{position:relative;border-radius:var(--radius-sm);overflow:hidden;border:2px solid var(--border);background:var(--bg2);cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s;}
+.img-item:hover{border-color:var(--accent);box-shadow:0 0 12px var(--accent-glow);transform:translateY(-2px);}
+.img-item img{width:100%;height:120px;object-fit:cover;display:block;}
+.img-item-name{padding:5px 8px;font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bg3);border-top:1px solid var(--border);}
+.img-del{position:absolute;top:4px;right:4px;width:22px;height:22px;background:rgba(239,68,68,.85);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;opacity:0;transition:opacity .2s;z-index:2;line-height:1;}
+.img-item:hover .img-del{opacity:1;}
+.img-del:hover{background:var(--red);transform:scale(1.15);}
+/* Pick grid selection */
+.img-chk{position:absolute;top:4px;left:4px;width:24px;height:24px;background:rgba(0,0,0,.5);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;opacity:0;transition:opacity .2s,background .2s;z-index:2;}
+.img-item:hover .img-chk{opacity:.6;}
+.img-item.sel{border-color:var(--accent);box-shadow:0 0 14px var(--accent-glow);}
+.img-item.sel .img-chk{opacity:1;background:var(--accent);}
+/* Upload zone */
+.upload-zone{display:block;border:2px dashed var(--border2);border-radius:var(--radius-sm);padding:18px;text-align:center;color:var(--text3);font-size:13px;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px;}
+.upload-zone:hover{border-color:var(--accent);background:rgba(34,197,94,.04);color:var(--text2);}
 </style>
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
