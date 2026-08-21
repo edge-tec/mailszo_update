@@ -169,7 +169,7 @@ function processAutoReplyQueue(): int {
                 $referencesHdr = $job['references_header'] ?: ($job['original_message_id'] ?: '');
                 $arOpts = ['is_auto_reply' => true, 'in_reply_to' => $inReplyToHdr, 'references' => $referencesHdr];
 
-                if ($isFirstReply && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
+                if ($secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
                     $arOpts['reply_to'] = $secReplyTo; $arOpts['return_path'] = $secReplyTo; $arOpts['sender'] = $fromEmailUsed;
                 }
 
@@ -1225,7 +1225,12 @@ try {
                     $allowedImapIds[] = $sharedIaId;
                 }
             }
-        } catch (Exception $_shareEx) { /* imap_shared_permissions may not exist yet — silent */ }
+        // Always ensure rule-configured IMAP accounts are included in allowed list
+        if ($imap1Id > 0 && !in_array($imap1Id, $allowedImapIds, true)) $allowedImapIds[] = $imap1Id;
+        if ($imap2Id > 0 && !in_array($imap2Id, $allowedImapIds, true)) $allowedImapIds[] = $imap2Id;
+        if (!empty($rule['primary_imap_id']) && !in_array((int)$rule['primary_imap_id'], $allowedImapIds, true)) $allowedImapIds[] = (int)$rule['primary_imap_id'];
+        if (!empty($rule['secondary_imap_id']) && !in_array((int)$rule['secondary_imap_id'], $allowedImapIds, true)) $allowedImapIds[] = (int)$rule['secondary_imap_id'];
+        if (!empty($rule['backup_imap_id']) && !in_array((int)$rule['backup_imap_id'], $allowedImapIds, true)) $allowedImapIds[] = (int)$rule['backup_imap_id'];
 
         $newMsgs = [];
         foreach ($imapMessages as $iaId => $msgs) {
