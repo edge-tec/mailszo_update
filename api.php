@@ -58,9 +58,10 @@ if ($res==='auth') {
         $_SESSION['uid']=$u['id'];
         $_SESSION['uname']=$u['username'];
         $_SESSION['is_admin']=(bool)$u['is_admin'];
+        $_SESSION['image_upload']=(bool)($u['image_upload'] ?? 1);
         setRememberCookie($u['id']);
         try { session_write_close(); } catch (Throwable $e) {}
-        jsonOut(['success'=>true,'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin']]);
+        jsonOut(['success'=>true,'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin'],'image_upload'=>(bool)($u['image_upload'] ?? 1)]);
     }
     if ($method==='POST'&&$id==='logout'){
         try { startSecureSession(); } catch (Throwable $e) {}
@@ -115,12 +116,14 @@ if ($res==='auth') {
             $uid = (int)$_SESSION['uid'];
             $uname = $_SESSION['uname'] ?? '';
             $isAdmin = (bool)($_SESSION['is_admin'] ?? false);
+            $imageUpload = (bool)($_SESSION['image_upload'] ?? true);
             try { session_write_close(); } catch (Throwable $e) {}
             jsonOut([
-                'loggedIn' => true,
-                'uid'      => $uid,
-                'username' => $uname,
-                'is_admin' => $isAdmin,
+                'loggedIn'     => true,
+                'uid'          => $uid,
+                'username'     => $uname,
+                'is_admin'     => $isAdmin,
+                'image_upload' => $imageUpload,
             ]);
         }
         try { session_write_close(); } catch (Throwable $e) {}
@@ -367,11 +370,11 @@ function resolveDateRange(string $preset = '', string $customFrom = '', string $
 if ($res==='users') {
     requireAdmin();
     if ($method==='GET'&&!$id) {
-        $rows=db()->query('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,expires_at,status,created_at FROM users ORDER BY id DESC')->fetchAll();
+        $rows=db()->query('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status,created_at FROM users ORDER BY id DESC')->fetchAll();
         jsonOut($rows);
     }
     if ($method==='GET'&&$id) {
-        $s=db()->prepare('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,expires_at,status,created_at FROM users WHERE id=?');
+        $s=db()->prepare('SELECT id,username,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status,created_at FROM users WHERE id=?');
         $s->execute([$id]); jsonOut($s->fetch());
     }
     if ($method==='POST') {
@@ -381,7 +384,7 @@ if ($res==='users') {
         $imapLimitVal = (int)($b['daily_send_limit'] ?? 1000);
         $imapReadVal  = (int)($b['imap_read_limit']  ?? 0);
         try {
-            db()->prepare('INSERT INTO users (username,password,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,expires_at,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+            db()->prepare('INSERT INTO users (username,password,is_admin,smtp_limit,campaign_limit,daily_send_limit,autoreply_limit,followup_limit,imap_read_limit,image_upload,expires_at,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
                 ->execute([
                     $b['username'],$hash,
                     (int)($b['is_admin']??0),
@@ -391,6 +394,7 @@ if ($res==='users') {
                     (int)($b['autoreply_limit']??5),
                     (int)($b['followup_limit']??5),
                     $imapReadVal,
+                    (int)($b['image_upload']??1),
                     ($b['expires_at']??null)?:null,
                     $b['status']??'active'
                 ]);
@@ -410,16 +414,17 @@ if ($res==='users') {
             'autoreply_limit'  => (int)($b['autoreply_limit']??5),
             'followup_limit'   => (int)($b['followup_limit']??5),
             'imap_read_limit'  => $imapReadVal,
+            'image_upload'     => (int)($b['image_upload']??1),
             'expires_at'       => ($b['expires_at']??null)?:null,
             'status'           => $b['status']??'active',
             'is_admin'         => (int)($b['is_admin']??0),
         ];
         if (!empty($b['password'])) {
             $fields['password']=password_hash($b['password'],PASSWORD_BCRYPT);
-            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,expires_at=?,status=?,is_admin=?,password=? WHERE id=?')
+            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,expires_at=?,status=?,is_admin=?,password=? WHERE id=?')
                 ->execute(array_merge(array_values($fields),[$id]));
         } else {
-            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,expires_at=?,status=?,is_admin=? WHERE id=?')
+            db()->prepare('UPDATE users SET smtp_limit=?,campaign_limit=?,daily_send_limit=?,autoreply_limit=?,followup_limit=?,imap_read_limit=?,image_upload=?,expires_at=?,status=?,is_admin=? WHERE id=?')
                 ->execute([...array_values($fields),$id]);
         }
         jsonOut(['ok'=>true]);
@@ -716,6 +721,7 @@ if ($res==='images') {
         jsonOut($stmt->fetchAll());
     }
     if ($method==='POST') {
+        if (!$IS_ADMIN && !(int)($CUR['image_upload'] ?? 1)) jsonOut(['ok'=>false,'error'=>'Image upload is disabled for your account'],403);
         if (empty($_FILES['image'])) jsonOut(['ok'=>false,'error'=>'No image uploaded'],400);
         $file=$_FILES['image'];
         $allowed=['image/jpeg','image/png','image/gif','image/webp','image/svg+xml'];

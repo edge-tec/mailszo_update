@@ -1529,7 +1529,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
   <div class="page" id="page-images">
     <div class="card">
       <div class="card-hd"><h3>🖼️ Image Library</h3>
-        <label class="btn btn-primary btn-sm" style="cursor:pointer">📤 Upload<input type="file" accept="image/*" multiple onchange="uploadImgs(this,true)" style="display:none"></label>
+        <label class="btn btn-primary btn-sm" id="img-lib-upload-btn" style="cursor:pointer">📤 Upload<input type="file" accept="image/*" multiple onchange="uploadImgs(this,true)" style="display:none"></label>
       </div>
       <div class="card-body"><div id="img-lib-al" class="al"></div><div id="img-lib" class="img-grid"><div style="color:var(--text3);font-size:12px">Loading…</div></div></div>
     </div>
@@ -3014,6 +3014,18 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
         </div>
       </div>
 
+      <div class="stitle">Feature Access</div>
+      <div class="frow fc2">
+        <div class="fg">
+          <label class="fl">Image Upload</label>
+          <select class="fsel" id="um-imgupload">
+            <option value="1">✅ Enabled</option>
+            <option value="0">🚫 Disabled</option>
+          </select>
+          <div class="fhint">Allow this user to upload images (Image Library & Variant Picker)</div>
+        </div>
+      </div>
+
       <div class="stitle">Account Expiry</div>
       <div class="fg">
         <label class="fl">Expires At <span class="flh">(leave blank = never expires)</span></label>
@@ -3156,7 +3168,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     <div class="modal-hd"><h3>🖼️ Pick Images for Variant</h3><span class="modal-x" onclick="closeModal('imgpick-modal')">✕</span></div>
     <div class="modal-body">
       <div class="info-box" style="margin-bottom:12px">Select one or more images. Each email will receive a <strong>random one</strong> from your selection.</div>
-      <label class="upload-zone">📤 Upload new images (click or drag)<input type="file" accept="image/*" multiple onchange="uploadImgs(this,false)" style="display:none"></label>
+      <label class="upload-zone" id="imgpick-upload-zone">📤 Upload new images (click or drag)<input type="file" accept="image/*" multiple onchange="uploadImgs(this,false)" style="display:none"></label>
       <div id="imgpick-al" class="al"></div>
       <div class="img-grid" id="imgpick-grid"></div>
     </div>
@@ -3239,7 +3251,7 @@ function showLoginScreen(){
 }
 
 function enter(r){
-  S={loggedIn:true,uid:r.uid?Number(r.uid):0,username:r.username,isAdmin:(r.is_admin==true||r.is_admin==='1'||r.is_admin===1)};
+  S={loggedIn:true,uid:r.uid?Number(r.uid):0,username:r.username,isAdmin:(r.is_admin==true||r.is_admin==='1'||r.is_admin===1),imageUpload:(r.image_upload!==false&&r.image_upload!==0&&r.image_upload!=='0')};
   document.getElementById('login-wrap').style.display='none';
   const main=document.getElementById('main'); if(main) main.style.display='';
   const sb=document.getElementById('sidebar'); if(sb) sb.style.display='';
@@ -3271,6 +3283,10 @@ function enter(r){
   // All users can see IMAP nav items and add their own
   const navImap=$('nav-imap'); if(navImap) navImap.style.display='flex';
   const imapAddBtn=$('imap-add-btn'); if(imapAddBtn) imapAddBtn.style.display='';
+  // Image upload guard — hide upload UI if user doesn't have permission
+  const canUploadImg = S.isAdmin || S.imageUpload;
+  const imgLibBtn=$('img-lib-upload-btn'); if(imgLibBtn) imgLibBtn.style.display=canUploadImg?'':'none';
+  const imgPickZone=$('imgpick-upload-zone'); if(imgPickZone) imgPickZone.style.display=canUploadImg?'':'none';
   // Load the inline live reporting dashboard after session is confirmed.
   loadLiveDash();
   // Sync the date-range picker UI to whatever was persisted last session
@@ -4382,6 +4398,7 @@ function renderLibrary(){
   }
 }
 async function uploadImgs(input,refreshLib=true){
+  if(!S.isAdmin && !S.imageUpload){al(refreshLib?'img-lib-al':'imgpick-al','❌ Image upload is disabled for your account','err');input.value='';return;}
   const files=input.files;if(!files.length)return;
   const alId=refreshLib?'img-lib-al':'imgpick-al';
   al(alId,'⏳ Uploading '+files.length+' file(s)…','inf');
@@ -4842,6 +4859,7 @@ async function openUserModal(id=null){
     sv('um-smtp',u.smtp_limit??5);sv('um-camp',u.campaign_limit??10);sv('um-daily',u.daily_send_limit??1000);
     sv('um-arlimit',u.autoreply_limit??5);sv('um-fulimit',u.followup_limit??5);
     sv('um-imap-read-limit',u.imap_read_limit??0);
+    $('um-imgupload').value=(u.image_upload!==undefined&&u.image_upload!==null)?String(u.image_upload):'1';
     sv('um-exp',u.expires_at?u.expires_at.replace(' ','T').slice(0,16):'');
     $('um-role').value=u.is_admin?'1':'0';$('um-status').value=u.status||'active';
     // Show assignment section only for non-admin users being edited
@@ -4851,6 +4869,7 @@ async function openUserModal(id=null){
     sv('um-user','');sv('um-pass','');sv('um-smtp',5);sv('um-camp',10);sv('um-daily',1000);
     sv('um-arlimit',5);sv('um-fulimit',5);
     sv('um-imap-read-limit',0);
+    $('um-imgupload').value='1';
     sv('um-exp','');
     $('um-role').value='0';$('um-status').value='active';
     if(assignSection) assignSection.style.display='none'; // hide for new user (no ID yet)
@@ -4924,6 +4943,7 @@ async function saveUser(){
     autoreply_limit:parseInt(v('um-arlimit'))||0,
     followup_limit:parseInt(v('um-fulimit'))||0,
     imap_read_limit:parseInt(v('um-imap-read-limit'))||0,
+    image_upload:parseInt($('um-imgupload').value),
     expires_at:v('um-exp')||null,
     is_admin:$('um-role').value,status:$('um-status').value
   };

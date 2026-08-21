@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '13'; // bump this when adding new migrations
+    $migrationVersion = '14'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -177,7 +177,8 @@ function db() {
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX `idx_mrq_status_sched` (`status`, `scheduled_at`),
                 INDEX `idx_mrq_user` (`user_id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `image_upload` TINYINT(1) DEFAULT 1"
         ];
         foreach ($migrations as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) { /* ignore */ }
