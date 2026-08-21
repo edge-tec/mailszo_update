@@ -181,13 +181,8 @@ function processAutoReplyQueue(): int {
                 $nextRow = $nr->fetch();
 
                 if ($nextRow) {
-                    // Calculate next step's delay and schedule immediately
-                    $nxDelayVal = max(0, (int)($nextRow['delay_value'] ?? $nextRow['delay_minutes'] ?? 1));
-                    $nxDelayUnit = in_array(strtolower($nextRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($nextRow['delay_unit']) : 'minutes';
-                    $nxDelayMins = delayToMinutes($nxDelayVal, $nxDelayUnit);
-                    $nxSendAt = $nxDelayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$nxDelayMins} minutes")) : date('Y-m-d H:i:s');
-                    db()->prepare("UPDATE autoreply_threads SET current_step=?, status='scheduled', scheduled_send_time=?, first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
-                      ->execute([$nextNum, $nxSendAt, $mc['id'] ?? null, $sentMsgId, $threadId]);
+                    db()->prepare("UPDATE autoreply_threads SET current_step=?, status='pending', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
+                      ->execute([$nextNum, $mc['id'] ?? null, $sentMsgId, $threadId]);
                 } else {
                     db()->prepare("UPDATE autoreply_threads SET status='completed', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
                       ->execute([$mc['id'] ?? null, $sentMsgId, $threadId]);
