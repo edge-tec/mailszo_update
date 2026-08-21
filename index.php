@@ -1132,7 +1132,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
         <div class="sc" style="--sc-c:var(--accent2)">
           <div class="sc-lbl"><span>👥 Total Leads</span><span style="font-size:9px;color:var(--accent2);background:rgba(6,182,212,0.1);padding:1px 5px;border-radius:4px">CRM</span></div>
           <div class="sc-val" id="s-total-leads" style="color:var(--accent2)">—</div>
-          <div class="sc-sub">Subscribers in lists</div>
+          <div class="sc-sub">Unique inbound emails</div>
           <div class="sc-sparkline"><div class="sc-sparkbar" style="height:40%"></div><div class="sc-sparkbar" style="height:60%"></div><div class="sc-sparkbar" style="height:50%"></div><div class="sc-sparkbar" style="height:80%"></div><div class="sc-sparkbar" style="height:95%"></div></div>
         </div>
         <div class="sc" style="--sc-c:var(--accent)">
