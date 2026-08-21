@@ -3061,7 +3061,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 
       <!-- Admin SMTP/IMAP Assignment — only visible when editing existing users -->
       <div id="um-assignment-section" style="display:none">
-        <div class="stitle" style="color:var(--accent);margin-top:18px">🔌 Assign SMTP Servers <span style="font-size:10px;font-weight:400;color:var(--text3)">(from your admin account — shared to user's Auto-Reply &amp; Follow-Up)</span></div>
+        <div class="stitle" style="color:var(--accent);margin-top:18px">🔌 Assign SMTP Servers <span style="font-size:10px;font-weight:400;color:var(--text3)">(all active servers — shared to user's Auto-Reply &amp; Follow-Up)</span></div>
         <div id="um-al-smtp" class="al" style="margin-bottom:8px"></div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;max-height:180px;overflow-y:auto" id="um-smtp-assign-pool">
           <div style="color:var(--text3);font-size:12px">Loading SMTP servers…</div>
@@ -4916,9 +4916,8 @@ async function loadUserAssignmentPickers(userId){
     get('imap'),
     get('user-imap-assignment?user_id='+userId)
   ]);
-  // Admin can only assign their OWN SMTP/IMAP (user manages their own separately)
-  // Filter to items owned by admin (no owner field means admin-level, or owner matches current admin username)
-  const allSmtpList = (Array.isArray(allSmtpR) ? allSmtpR : []).filter(s => !s.owner || s.owner === S.username);
+  // Show ALL active SMTP servers so admin can assign any to this user
+  const allSmtpList = Array.isArray(allSmtpR) ? allSmtpR : [];
   const assignedSmtpIds = (assignSmtpR?.assigned_smtp_ids || []).map(Number);
   const allImapList = (Array.isArray(allImapR) ? allImapR : []).filter(a => !a.owner || a.owner === S.username);
   const assignedImapIds = (assignImapR?.assigned_imap_ids || []).map(Number);
@@ -4926,7 +4925,7 @@ async function loadUserAssignmentPickers(userId){
   const smtpPool = $('um-smtp-assign-pool');
   if(smtpPool){
     if(!allSmtpList.length){
-      smtpPool.innerHTML='<div style="color:var(--text3);font-size:12px">No SMTP servers in your admin account yet. Add some in SMTP Servers first.</div>';
+      smtpPool.innerHTML='<div style="color:var(--text3);font-size:12px">No SMTP servers found. Add some in SMTP Servers first.</div>';
     } else {
       smtpPool.innerHTML=allSmtpList.map(s=>{
         const chk=assignedSmtpIds.includes(Number(s.id));
