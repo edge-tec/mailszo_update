@@ -68,7 +68,7 @@ function processAutoReplyQueue(): int {
         db()->exec("UPDATE autoreply_threads SET status = 'scheduled' WHERE status = 'sending' AND (last_sent_at IS NULL OR last_sent_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))");
 
         $qDue = db()->query(
-            "SELECT t.*, r.smtp_ids, r.from_emails, r.name rule_name, r.sequential_mode, r.primary_smtp_id, r.secondary_smtp_id, r.step1_smtp_ids, r.enable_reply_to_switch, u.status u_status, u.expires_at u_expires, r.user_id as r_user_id
+            "SELECT t.*, r.smtp_ids, r.from_emails, r.name rule_name, r.sequential_mode, r.primary_smtp_id, r.secondary_smtp_id, r.step1_smtp_ids, r.enable_reply_to_switch, r.imap2_id, u.status u_status, u.expires_at u_expires, r.user_id as r_user_id
              FROM autoreply_threads t
              LEFT JOIN autoreply_rules r ON r.id = t.rule_id
              LEFT JOIN users u ON u.id = r.user_id
@@ -154,6 +154,15 @@ function processAutoReplyQueue(): int {
             $smtpNameUsed = $mc['name'] ?? '';
             $fromEmailUsed = $mc['from_email'] ?? '';
             $secReplyTo = ($secondarySmtpCfg && !empty($secondarySmtpCfg['from_email'])) ? $secondarySmtpCfg['from_email'] : '';
+            // Fallback: if no secondary SMTP, use IMAP 2 email as Reply-To
+            if (!$secReplyTo && !empty($job['imap2_id'])) {
+                try {
+                    $i2Stmt = db()->prepare('SELECT username FROM imap_accounts WHERE id = ?');
+                    $i2Stmt->execute([(int)$job['imap2_id']]);
+                    $i2Row = $i2Stmt->fetch();
+                    if ($i2Row && !empty($i2Row['username'])) $secReplyTo = $i2Row['username'];
+                } catch (Exception $_e) {}
+            }
 
             try {
                 $inReplyToHdr = $job['last_received_message_id'] ?: ($job['last_message_id'] ?: ($job['original_message_id'] ?: ''));
