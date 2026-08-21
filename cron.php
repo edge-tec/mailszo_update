@@ -1436,32 +1436,41 @@ try {
 
                     $inbStmt = db()->prepare(
                         "SELECT * FROM inbound_emails 
-                         WHERE from_email = ? 
-                           AND (imap_account_id IN ({$allowedIaPh}) OR imap_account_id IN (SELECT id FROM imap_accounts WHERE user_id = ?))
-                           AND received_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+                         WHERE LOWER(TRIM(from_email)) = LOWER(TRIM(?))
+                           AND received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
                          ORDER BY id DESC LIMIT 1"
                     );
-                    $inbStmt->execute([$pEmail, $userId]);
+                    $inbStmt->execute([$pEmail]);
                     $inbRow = $inbStmt->fetch();
                     if ($inbRow) {
                         $inMsgId = trim($inbRow['message_id'] ?? '');
                         $inUid   = (int)($inbRow['uid'] ?? 0);
                         $inIaId  = (int)($inbRow['imap_account_id'] ?? 0);
                         
-                        $isSameMsgId = ($inMsgId && !empty($pTh['last_received_message_id']) && strtolower(trim($pTh['last_received_message_id'])) === strtolower(trim($inMsgId)));
+                        $cleanInMsgId = trim(str_replace(['<','>'], '', $inMsgId));
+                        $cleanThMsgId = trim(str_replace(['<','>'], '', (string)($pTh['last_received_message_id'] ?? '')));
+                        
+                        $isSameMsgId = ($cleanInMsgId !== '' && $cleanThMsgId !== '' && strtolower($cleanInMsgId) === strtolower($cleanThMsgId));
                         $isOldUid = ($inUid > 0 && $inIaId > 0 && !empty($pTh['last_trigger_uid']) && (int)$pTh['last_trigger_imap_id'] === $inIaId && $inUid <= (int)$pTh['last_trigger_uid']);
                         
-                        if (!$isSameMsgId && !$isOldUid) {
+                        $isNewReply = (!$isSameMsgId && !$isOldUid);
+                        if (!$isNewReply && !empty($pTh['last_sent_at']) && !empty($inbRow['received_at'])) {
+                            if (strtotime($inbRow['received_at']) > strtotime($pTh['last_sent_at'])) {
+                                $isNewReply = true;
+                            }
+                        }
+                        
+                        if ($isNewReply) {
                             $nc = (int)($pTh['messages_received'] ?? 1) + 1;
                             $newRefs = trim(($pTh['references_header'] ?? '') . ' ' . $inMsgId);
                             
-                            $unlockDelayMins = 1;
+                            $unlockDelayMins = 0; // Default: immediate unless step specifies delay
                             try {
                                 $unlockStep = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
                                 $unlockStep->execute([$ruleId, (int)$pTh['current_step']]);
                                 $unlockRow = $unlockStep->fetch();
                                 if ($unlockRow) {
-                                    $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 1));
+                                    $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
                                     $unlockUnit = in_array(strtolower($unlockRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($unlockRow['delay_unit']) : 'minutes';
                                     $unlockDelayMins = delayToMinutes($unlockVal, $unlockUnit);
                                 }
