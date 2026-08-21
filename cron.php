@@ -1225,6 +1225,7 @@ try {
                     $allowedImapIds[] = $sharedIaId;
                 }
             }
+        } catch (Exception $_shareEx) { /* imap_shared_permissions may not exist yet — silent */ }
         // Always ensure rule-configured IMAP accounts are included in allowed list
         if ($imap1Id > 0 && !in_array($imap1Id, $allowedImapIds, true)) $allowedImapIds[] = $imap1Id;
         if ($imap2Id > 0 && !in_array($imap2Id, $allowedImapIds, true)) $allowedImapIds[] = $imap2Id;
