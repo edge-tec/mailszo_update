@@ -131,7 +131,7 @@ function processAutoReplyQueue(): int {
 
             $isFirstReply = ($stepNum === 1 || empty($job['first_reply_sent']));
             $activeSmtpPool = $isFirstReply ? (($step1SmtpPool !== null && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($smtpPool ?: [$primarySmtpCfg]))
-                                            : (($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: $step1SmtpPool));
+                                            : (($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: ($step1SmtpPool ?: [$primarySmtpCfg])));
 
             if (empty($activeSmtpPool) || empty($activeSmtpPool[0])) {
                 db()->prepare("UPDATE autoreply_threads SET status = 'failed' WHERE id = ?")->execute([$threadId]);
