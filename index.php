@@ -911,6 +911,14 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 /* Upload zone */
 .upload-zone{display:block;border:2px dashed var(--border2);border-radius:var(--radius-sm);padding:18px;text-align:center;color:var(--text3);font-size:13px;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px;}
 .upload-zone:hover{border-color:var(--accent);background:rgba(34,197,94,.04);color:var(--text2);}
+/* ─── Step Image Thumbnails (Auto-Reply / Follow-Up) ── */
+.sel-thumbs{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;}
+.sel-th{position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:2px solid var(--border);background:var(--bg2);flex-shrink:0;transition:border-color .2s,box-shadow .2s;}
+.sel-th:hover{border-color:var(--accent);box-shadow:0 0 10px var(--accent-glow);}
+.sel-th img{width:100%;height:100%;object-fit:cover;display:block;}
+.sel-th-rm{position:absolute;top:2px;right:2px;width:18px;height:18px;background:rgba(239,68,68,.85);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;opacity:0;transition:opacity .2s;z-index:2;line-height:1;}
+.sel-th:hover .sel-th-rm{opacity:1;}
+.sel-th-rm:hover{background:var(--red);transform:scale(1.15);}
 </style>
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
