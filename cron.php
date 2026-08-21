@@ -1428,11 +1428,11 @@ try {
                     $inbStmt = db()->prepare(
                         "SELECT * FROM inbound_emails 
                          WHERE from_email = ? 
-                           AND (imap_account_id IN ({$allowedIaPh}))
+                           AND (imap_account_id IN ({$allowedIaPh}) OR imap_account_id IN (SELECT id FROM imap_accounts WHERE user_id = ?))
                            AND received_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
                          ORDER BY id DESC LIMIT 1"
                     );
-                    $inbStmt->execute([$pEmail]);
+                    $inbStmt->execute([$pEmail, $userId]);
                     $inbRow = $inbStmt->fetch();
                     if ($inbRow) {
                         $inMsgId = trim($inbRow['message_id'] ?? '');
