@@ -125,13 +125,26 @@ function processAutoReplyQueue(): int {
                 $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)"); $ss->execute($smtpIds);
                 $smtpPool = $ss->fetchAll();
             }
-            if ($secondarySmtpCfg && empty($smtpPool)) {
-                $smtpPool = [$secondarySmtpCfg];
+
+            // Identify primary (1st) and secondary (2nd) SMTP configs
+            if (!$secondarySmtpCfg && count($smtpPool) > 1) {
+                $secondarySmtpCfg = $smtpPool[1];
+            }
+            if (!$primarySmtpCfg && count($smtpPool) > 0) {
+                $primarySmtpCfg = $smtpPool[0];
+                if (!$step1SmtpPool) $step1SmtpPool = [$primarySmtpCfg];
             }
 
             $isFirstReply = ($stepNum === 1 || empty($job['first_reply_sent']));
-            $activeSmtpPool = $isFirstReply ? (($step1SmtpPool !== null && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($smtpPool ?: [$primarySmtpCfg]))
-                                            : (($secondarySmtpCfg) ? [$secondarySmtpCfg] : ($smtpPool ?: ($step1SmtpPool ?: [$primarySmtpCfg])));
+            
+            // STRICT SMTP ROUTING:
+            // Step 1: ONLY Primary SMTP 1
+            // Step 2, 3, 4, ...: ALWAYS Secondary SMTP 2
+            if ($isFirstReply) {
+                $activeSmtpPool = ($step1SmtpPool && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($primarySmtpCfg ? [$primarySmtpCfg] : $smtpPool);
+            } else {
+                $activeSmtpPool = $secondarySmtpCfg ? [$secondarySmtpCfg] : ($smtpPool ? (array_slice($smtpPool, 1) ?: $smtpPool) : ($primarySmtpCfg ? [$primarySmtpCfg] : []));
+            }
 
             if (empty($activeSmtpPool) || empty($activeSmtpPool[0])) {
                 db()->prepare("UPDATE autoreply_threads SET status = 'failed' WHERE id = ?")->execute([$threadId]);
