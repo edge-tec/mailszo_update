@@ -160,7 +160,7 @@ function processAutoReplyQueue(): int {
                 $referencesHdr = $job['references_header'] ?: ($job['original_message_id'] ?: '');
                 $arOpts = ['is_auto_reply' => true, 'in_reply_to' => $inReplyToHdr, 'references' => $referencesHdr];
 
-                if ($isFirstReply && $job['enable_reply_to_switch'] && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
+                if ($isFirstReply && $secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
                     $arOpts['reply_to'] = $secReplyTo; $arOpts['return_path'] = $secReplyTo; $arOpts['sender'] = $fromEmailUsed;
                 }
 
