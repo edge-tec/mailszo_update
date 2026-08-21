@@ -1399,6 +1399,66 @@ try {
             }
         } // End of foreach newMsgs
 
+        // ── Auto-sync pending threads with recent inbound_emails (safety net) ──
+        try {
+            $pendingThreadsStmt = db()->prepare(
+                "SELECT t.* FROM autoreply_threads t WHERE t.rule_id = ? AND t.status = 'pending'"
+            );
+            $pendingThreadsStmt->execute([$ruleId]);
+            $pendingList = $pendingThreadsStmt->fetchAll();
+            if (!empty($pendingList)) {
+                $allowedIaPh = implode(',', array_map('intval', $allowedImapIds ?: [0]));
+                foreach ($pendingList as $pTh) {
+                    $pEmail = strtolower(trim($pTh['from_email'] ?? ''));
+                    if (!$pEmail) continue;
+
+                    $inbStmt = db()->prepare(
+                        "SELECT * FROM inbound_emails 
+                         WHERE from_email = ? 
+                           AND (imap_account_id IN ({$allowedIaPh}))
+                           AND received_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+                         ORDER BY id DESC LIMIT 1"
+                    );
+                    $inbStmt->execute([$pEmail]);
+                    $inbRow = $inbStmt->fetch();
+                    if ($inbRow) {
+                        $inMsgId = trim($inbRow['message_id'] ?? '');
+                        $inUid   = (int)($inbRow['uid'] ?? 0);
+                        $inIaId  = (int)($inbRow['imap_account_id'] ?? 0);
+                        
+                        $isSameMsgId = ($inMsgId && !empty($pTh['last_received_message_id']) && strtolower(trim($pTh['last_received_message_id'])) === strtolower(trim($inMsgId)));
+                        $isOldUid = ($inUid > 0 && $inIaId > 0 && !empty($pTh['last_trigger_uid']) && (int)$pTh['last_trigger_imap_id'] === $inIaId && $inUid <= (int)$pTh['last_trigger_uid']);
+                        
+                        if (!$isSameMsgId && !$isOldUid) {
+                            $nc = (int)($pTh['messages_received'] ?? 1) + 1;
+                            $newRefs = trim(($pTh['references_header'] ?? '') . ' ' . $inMsgId);
+                            
+                            $unlockDelayMins = 1;
+                            try {
+                                $unlockStep = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+                                $unlockStep->execute([$ruleId, (int)$pTh['current_step']]);
+                                $unlockRow = $unlockStep->fetch();
+                                if ($unlockRow) {
+                                    $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 1));
+                                    $unlockUnit = in_array(strtolower($unlockRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($unlockRow['delay_unit']) : 'minutes';
+                                    $unlockDelayMins = delayToMinutes($unlockVal, $unlockUnit);
+                                }
+                            } catch(Exception $e){}
+                            
+                            $unlockAt = $unlockDelayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelayMins} minutes", $arNowTs)) : $arNow;
+                            
+                            db()->prepare("UPDATE autoreply_threads
+                                SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
+                                    last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
+                                WHERE id=?")
+                                ->execute([$nc, $unlockAt, $inUid>0?$inUid:null, $inIaId>0?$inIaId:null, $inMsgId?:null, $newRefs, $pTh['id']]);
+                            logSystemEvent('queued', $pEmail, "Auto Reply #" . $pTh['current_step'] . " scheduled for {$unlockAt} (via inbound sync)", $userId, null, $ruleId, null, '');
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $_inbSyncEx) {}
+
         $sent=0; $failed=0; $deletedTotal=0; $movedTotal=0;
         $results[]=['status'=>'autoreply','rule'=>$rule['name'],
             'imap_msgs'=>count($newMsgs),'new_enrolled'=>$enrolledAR,
