@@ -3920,136 +3920,128 @@ function lrdRenderDaily(stats){
   `; document.head.appendChild(s);
 })();
 
-function loadFlowChart(){
+async function loadFlowChart(){
   // Fetch AR rules
-  api('autoreply','GET').then(d=>{
-    const arEl=$('fc-ar-timeline'), arTb=$('fc-ar-tbody');
-    if(!d||!d.ok||!d.data||d.data.length===0){
-      arEl.innerHTML='<div class="fc-empty">No Auto Reply rules configured</div>';
-      arTb.innerHTML='<tr class="empty-row"><td colspan="6">No auto reply steps configured</td></tr>';
-      return;
-    }
-    // Use first active rule (or first rule)
-    const rule=d.data.find(r=>r.status==='active')||d.data[0];
-    const steps=rule.steps||[];
-    if(steps.length===0){
-      arEl.innerHTML='<div class="fc-empty">No steps configured in "'+esc(rule.name)+'"</div>';
-      arTb.innerHTML='<tr class="empty-row"><td colspan="6">No steps configured</td></tr>';
-      return;
-    }
+  try {
+    const arRows = await get('autoreply');
+    const arEl = $('fc-ar-timeline'), arTb = $('fc-ar-tbody');
+    if (!arRows || !Array.isArray(arRows) || arRows.length === 0) {
+      if (arEl) arEl.innerHTML = '<div class="fc-empty">No Auto Reply rules configured</div>';
+      if (arTb) arTb.innerHTML = '<tr class="empty-row"><td colspan="6">No auto reply steps configured</td></tr>';
+    } else {
+      const rule = arRows.find(r => r.status === 'active') || arRows[0];
+      const steps = rule.steps || [];
+      if (steps.length === 0) {
+        if (arEl) arEl.innerHTML = '<div class="fc-empty">No steps configured in "' + esc(rule.name) + '"</div>';
+        if (arTb) arTb.innerHTML = '<tr class="empty-row"><td colspan="6">No steps configured</td></tr>';
+      } else {
+        let html = '';
+        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 New Traffic Email Arrives</span><div class="fc-meta"><span>IMAP detects incoming email → triggers sequence</span></div></div></div>';
 
-    // Render timeline
-    let html='';
-    // Start node
-    html+='<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 New Traffic Email Arrives</span><div class="fc-meta"><span>IMAP detects incoming email → triggers sequence</span></div></div></div>';
+        steps.forEach((s, i) => {
+          const n = s.step_number || i + 1;
+          const subj = s.subject || 'Reply Message ' + n;
+          const smtp = n === 1 ? 'SMTP 1 (Primary)' : 'SMTP 2 (Secondary)';
+          const smtpCls = n === 1 ? 'smtp1' : 'smtp2';
+          const trigger = n === 1 ? 'First incoming email' : 'Traffic replies to Reply ' + (n - 1);
+          const delayVal = s.delay_value || s.delay_minutes || 0;
+          const delayUnit = s.delay_unit || 'minutes';
+          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
 
-    steps.forEach((s,i)=>{
-      const n=s.step_number||i+1;
-      const subj=s.subject||'Reply Message '+n;
-      const smtp=n===1?'SMTP 1 (Primary)':'SMTP 2 (Secondary)';
-      const smtpCls=n===1?'smtp1':'smtp2';
-      const trigger=n===1?'First incoming email':'Traffic replies to Reply '+(n-1);
-      const delayVal=s.delay_value||s.delay_minutes||0;
-      const delayUnit=s.delay_unit||'minutes';
-      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+          if (i > 0) {
+            html += '<div class="fc-connector">↕ ⏳ Wait for traffic reply…</div>';
+          }
 
-      // Trigger connector
-      if(i>0){
-        html+='<div class="fc-connector">↕ ⏳ Wait for traffic reply…</div>';
+          html += '<div class="fc-node">';
+          html += '<div class="fc-dot ar"></div>';
+          html += '<div class="fc-card ar-card">';
+          html += '<span class="fc-step-num ar">' + n + '</span>';
+          html += '<span class="fc-label">✉️ ' + esc(subj) + '</span>';
+          html += '<div class="fc-meta">';
+          html += '<span>' + esc(trigger) + '</span>';
+          html += '<span class="fc-tag ' + smtpCls + '">📤 ' + smtp + '</span>';
+          html += '<span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">' + (delayVal > 0 ? '⏰ ' + delayTxt : '⚡ Immediate') + '</span>';
+          html += '</div></div></div>';
+        });
+        html += '<div class="fc-node"><div class="fc-dot ar" style="background:#00bcd4"></div><div class="fc-card ar-card" style="background:rgba(0,188,212,.06)"><span style="font-size:13px;font-weight:600;color:#00bcd4">✅ Auto Reply Sequence Complete</span></div></div>';
+        if (arEl) arEl.innerHTML = html;
+
+        let thtml = '';
+        steps.forEach((s, i) => {
+          const n = s.step_number || i + 1;
+          const subj = s.subject || 'Reply Message ' + n;
+          const smtp = n === 1 ? '<span class="fc-tag smtp1">SMTP 1</span>' : '<span class="fc-tag smtp2">SMTP 2</span>';
+          const trigger = n === 1 ? 'First incoming email' : 'User replies to Reply ' + (n - 1);
+          const delayVal = s.delay_value || s.delay_minutes || 0;
+          const delayUnit = s.delay_unit || 'minutes';
+          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
+          thtml += '<tr><td><span class="fc-step-num ar">' + n + '</span></td><td>' + esc(trigger) + '</td><td>' + (delayVal > 0 ? 'After ' + delayTxt : 'Immediately') + '</td><td>' + esc(subj) + '</td><td>' + smtp + '</td><td><span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">' + delayTxt + '</span></td></tr>';
+        });
+        if (arTb) arTb.innerHTML = thtml;
       }
-
-      html+='<div class="fc-node">';
-      html+='<div class="fc-dot ar"></div>';
-      html+='<div class="fc-card ar-card">';
-      html+='<span class="fc-step-num ar">'+n+'</span>';
-      html+='<span class="fc-label">✉️ '+esc(subj)+'</span>';
-      html+='<div class="fc-meta">';
-      html+='<span>'+esc(trigger)+'</span>';
-      html+='<span class="fc-tag '+smtpCls+'">📤 '+smtp+'</span>';
-      html+='<span class="fc-tag '+(delayVal>0?'delay':'instant')+'">'+(delayVal>0?'⏰ '+delayTxt:'⚡ Immediate')+'</span>';
-      html+='</div></div></div>';
-    });
-    // End node
-    html+='<div class="fc-node"><div class="fc-dot ar" style="background:#00bcd4"></div><div class="fc-card ar-card" style="background:rgba(0,188,212,.06)"><span style="font-size:13px;font-weight:600;color:#00bcd4">✅ Auto Reply Sequence Complete</span></div></div>';
-    arEl.innerHTML=html;
-
-    // Render table
-    let thtml='';
-    steps.forEach((s,i)=>{
-      const n=s.step_number||i+1;
-      const subj=s.subject||'Reply Message '+n;
-      const smtp=n===1?'<span class="fc-tag smtp1">SMTP 1</span>':'<span class="fc-tag smtp2">SMTP 2</span>';
-      const trigger=n===1?'First incoming email':'User replies to Reply '+(n-1);
-      const delayVal=s.delay_value||s.delay_minutes||0;
-      const delayUnit=s.delay_unit||'minutes';
-      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
-      thtml+='<tr><td><span class="fc-step-num ar">'+n+'</span></td><td>'+esc(trigger)+'</td><td>'+(delayVal>0?'After '+delayTxt:'Immediately')+'</td><td>'+esc(subj)+'</td><td>'+smtp+'</td><td><span class="fc-tag '+(delayVal>0?'delay':'instant')+'">'+delayTxt+'</span></td></tr>';
-    });
-    arTb.innerHTML=thtml;
-  }).catch(()=>{
-    $('fc-ar-timeline').innerHTML='<div class="fc-empty">Failed to load Auto Reply data</div>';
-  });
+    }
+  } catch (e) {
+    if ($('fc-ar-timeline')) $('fc-ar-timeline').innerHTML = '<div class="fc-empty">Failed to load Auto Reply data</div>';
+  }
 
   // Fetch FU rules
-  api('followup','GET').then(d=>{
-    const fuEl=$('fc-fu-timeline'), fuTb=$('fc-fu-tbody');
-    if(!d||!d.ok||!d.data||d.data.length===0){
-      fuEl.innerHTML='<div class="fc-empty">No Follow-up rules configured</div>';
-      fuTb.innerHTML='<tr class="empty-row"><td colspan="5">No follow-up steps configured</td></tr>';
-      return;
-    }
-    const rule=d.data.find(r=>r.status==='active')||d.data[0];
-    const steps=rule.steps||[];
-    if(steps.length===0){
-      fuEl.innerHTML='<div class="fc-empty">No steps configured in "'+esc(rule.name)+'"</div>';
-      fuTb.innerHTML='<tr class="empty-row"><td colspan="5">No steps configured</td></tr>';
-      return;
-    }
+  try {
+    const fuRows = await get('followup');
+    const fuEl = $('fc-fu-timeline'), fuTb = $('fc-fu-tbody');
+    if (!fuRows || !Array.isArray(fuRows) || fuRows.length === 0) {
+      if (fuEl) fuEl.innerHTML = '<div class="fc-empty">No Follow-up rules configured</div>';
+      if (fuTb) fuTb.innerHTML = '<tr class="empty-row"><td colspan="5">No follow-up steps configured</td></tr>';
+    } else {
+      const rule = fuRows.find(r => r.status === 'active') || fuRows[0];
+      const steps = rule.steps || [];
+      if (steps.length === 0) {
+        if (fuEl) fuEl.innerHTML = '<div class="fc-empty">No steps configured in "' + esc(rule.name) + '"</div>';
+        if (fuTb) fuTb.innerHTML = '<tr class="empty-row"><td colspan="5">No steps configured</td></tr>';
+      } else {
+        let html = '';
+        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 Lead Enrolled in System</span><div class="fc-meta"><span>Follow-up sequence starts automatically</span></div></div></div>';
 
-    let html='';
-    // Start node
-    html+='<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 Lead Enrolled in System</span><div class="fc-meta"><span>Follow-up sequence starts automatically</span></div></div></div>';
+        steps.forEach((s, i) => {
+          const n = s.step_number || i + 1;
+          const subj = s.subject || 'Follow-up Message ' + n;
+          const trigger = n === 1 ? 'After lead enrollment' : 'After Follow-up ' + (n - 1) + ' sent';
+          const delayVal = s.delay_value || s.delay_minutes || 0;
+          const delayUnit = s.delay_unit || 'minutes';
+          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
 
-    steps.forEach((s,i)=>{
-      const n=s.step_number||i+1;
-      const subj=s.subject||'Follow-up Message '+n;
-      const trigger=n===1?'After lead enrollment':'After Follow-up '+(n-1)+' sent';
-      const delayVal=s.delay_value||s.delay_minutes||0;
-      const delayUnit=s.delay_unit||'minutes';
-      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+          if (i > 0) {
+            html += '<div class="fc-connector">↕ ⏰ ' + delayTxt + ' delay</div>';
+          }
 
-      if(i>0){
-        html+='<div class="fc-connector">↕ ⏰ '+delayTxt+' delay</div>';
+          html += '<div class="fc-node">';
+          html += '<div class="fc-dot fu"></div>';
+          html += '<div class="fc-card fu-card">';
+          html += '<span class="fc-step-num fu">' + n + '</span>';
+          html += '<span class="fc-label">📬 ' + esc(subj) + '</span>';
+          html += '<div class="fc-meta">';
+          html += '<span>' + esc(trigger) + '</span>';
+          html += '<span class="fc-tag delay">⏰ ' + delayTxt + '</span>';
+          html += '</div></div></div>';
+        });
+        html += '<div class="fc-node"><div class="fc-dot fu" style="background:#4caf50"></div><div class="fc-card fu-card" style="background:rgba(76,175,80,.06)"><span style="font-size:13px;font-weight:600;color:#4caf50">✅ Follow-up Sequence Complete</span></div></div>';
+        if (fuEl) fuEl.innerHTML = html;
+
+        let thtml = '';
+        steps.forEach((s, i) => {
+          const n = s.step_number || i + 1;
+          const subj = s.subject || 'Follow-up Message ' + n;
+          const trigger = n === 1 ? 'After lead enrollment' : 'After Follow-up ' + (n - 1);
+          const delayVal = s.delay_value || s.delay_minutes || 0;
+          const delayUnit = s.delay_unit || 'minutes';
+          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
+          thtml += '<tr><td><span class="fc-step-num fu">' + n + '</span></td><td>' + esc(trigger) + '</td><td>At user-defined delay (' + delayTxt + ')</td><td>' + esc(subj) + '</td><td><span class="fc-tag delay">' + delayTxt + '</span></td></tr>';
+        });
+        if (fuTb) fuTb.innerHTML = thtml;
       }
-
-      html+='<div class="fc-node">';
-      html+='<div class="fc-dot fu"></div>';
-      html+='<div class="fc-card fu-card">';
-      html+='<span class="fc-step-num fu">'+n+'</span>';
-      html+='<span class="fc-label">📬 '+esc(subj)+'</span>';
-      html+='<div class="fc-meta">';
-      html+='<span>'+esc(trigger)+'</span>';
-      html+='<span class="fc-tag delay">⏰ '+delayTxt+'</span>';
-      html+='</div></div></div>';
-    });
-    html+='<div class="fc-node"><div class="fc-dot fu" style="background:#4caf50"></div><div class="fc-card fu-card" style="background:rgba(76,175,80,.06)"><span style="font-size:13px;font-weight:600;color:#4caf50">✅ Follow-up Sequence Complete</span></div></div>';
-    fuEl.innerHTML=html;
-
-    // Render table
-    let thtml='';
-    steps.forEach((s,i)=>{
-      const n=s.step_number||i+1;
-      const subj=s.subject||'Follow-up Message '+n;
-      const trigger=n===1?'After lead enrollment':'After Follow-up '+(n-1);
-      const delayVal=s.delay_value||s.delay_minutes||0;
-      const delayUnit=s.delay_unit||'minutes';
-      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
-      thtml+='<tr><td><span class="fc-step-num fu">'+n+'</span></td><td>'+esc(trigger)+'</td><td>At user-defined delay ('+delayTxt+')</td><td>'+esc(subj)+'</td><td><span class="fc-tag delay">'+delayTxt+'</span></td></tr>';
-    });
-    fuTb.innerHTML=thtml;
-  }).catch(()=>{
-    $('fc-fu-timeline').innerHTML='<div class="fc-empty">Failed to load Follow-up data</div>';
-  });
+    }
+  } catch (e) {
+    if ($('fc-fu-timeline')) $('fc-fu-timeline').innerHTML = '<div class="fc-empty">Failed to load Follow-up data</div>';
+  }
 }
 
 /* ─── Step-by-Step Reporting (AR + FU) ───────────────────────────────
