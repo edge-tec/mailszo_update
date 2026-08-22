@@ -3921,6 +3921,15 @@ function lrdRenderDaily(stats){
 })();
 
 async function loadFlowChart(){
+  const getPreview = (s) => {
+    let t = s.text_body || s.html_body || '';
+    if (t) {
+      t = t.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+      if (t.length > 90) t = t.substring(0, 90) + '...';
+    }
+    return t || '(No message preview)';
+  };
+
   // Fetch AR rules
   try {
     const arRows = await get('autoreply');
@@ -3936,20 +3945,21 @@ async function loadFlowChart(){
         if (arTb) arTb.innerHTML = '<tr class="empty-row"><td colspan="6">No steps configured</td></tr>';
       } else {
         let html = '';
-        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 New Traffic Email Arrives</span><div class="fc-meta"><span>IMAP detects incoming email → triggers sequence</span></div></div></div>';
+        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 ১. নতুন ট্রাফিক ইমেইল প্রাপ্তি (New Lead Arrives)</span><div class="fc-meta"><span>IMAP-এ গ্রাহকের ইমেইল আসলে অটো-রিপ্লাই শুরু হবে</span></div></div></div>';
 
         steps.forEach((s, i) => {
           const n = s.step_number || i + 1;
           const subj = s.subject || 'Reply Message ' + n;
-          const smtp = n === 1 ? 'SMTP 1 (Primary)' : 'SMTP 2 (Secondary)';
+          const prev = getPreview(s);
+          const smtp = n === 1 ? '১ম SMTP (Primary)' : '২য় SMTP (Secondary)';
           const smtpCls = n === 1 ? 'smtp1' : 'smtp2';
-          const trigger = n === 1 ? 'First incoming email' : 'Traffic replies to Reply ' + (n - 1);
+          const trigger = n === 1 ? 'প্রথম ইনকামিং ইমেইল আসলে' : 'গ্রাহক ' + (n - 1) + ' নং মেসেজের উত্তর (Reply) দিলে';
           const delayVal = s.delay_value || s.delay_minutes || 0;
           const delayUnit = s.delay_unit || 'minutes';
-          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
+          const sendTimeTxt = delayVal > 0 ? 'রিপ্লাই আসার ' + delayVal + ' ' + delayUnit + ' পর' : 'রিপ্লাই আসা মাত্র সাথে সাথে';
 
           if (i > 0) {
-            html += '<div class="fc-connector">↕ ⏳ Wait for traffic reply…</div>';
+            html += '<div class="fc-connector">↕ ⏳ গ্রাহকের ' + (n - 1) + ' নং রিপ্লাইয়ের অপেক্ষায়…</div>';
           }
 
           html += '<div class="fc-node">';
@@ -3957,10 +3967,11 @@ async function loadFlowChart(){
           html += '<div class="fc-card ar-card">';
           html += '<span class="fc-step-num ar">' + n + '</span>';
           html += '<span class="fc-label">✉️ ' + esc(subj) + '</span>';
+          html += '<div style="font-size:12px;color:var(--text2);margin:4px 0 6px 0;font-style:italic">"' + esc(prev) + '"</div>';
           html += '<div class="fc-meta">';
-          html += '<span>' + esc(trigger) + '</span>';
+          html += '<span>🎯 ' + esc(trigger) + '</span>';
           html += '<span class="fc-tag ' + smtpCls + '">📤 ' + smtp + '</span>';
-          html += '<span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">' + (delayVal > 0 ? '⏰ ' + delayTxt : '⚡ Immediate') + '</span>';
+          html += '<span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">⏱️ ' + sendTimeTxt + '</span>';
           html += '</div></div></div>';
         });
         html += '<div class="fc-node"><div class="fc-dot ar" style="background:#00bcd4"></div><div class="fc-card ar-card" style="background:rgba(0,188,212,.06)"><span style="font-size:13px;font-weight:600;color:#00bcd4">✅ Auto Reply Sequence Complete</span></div></div>';
@@ -3970,12 +3981,13 @@ async function loadFlowChart(){
         steps.forEach((s, i) => {
           const n = s.step_number || i + 1;
           const subj = s.subject || 'Reply Message ' + n;
-          const smtp = n === 1 ? '<span class="fc-tag smtp1">SMTP 1</span>' : '<span class="fc-tag smtp2">SMTP 2</span>';
-          const trigger = n === 1 ? 'First incoming email' : 'User replies to Reply ' + (n - 1);
+          const prev = getPreview(s);
+          const smtp = n === 1 ? '<span class="fc-tag smtp1">📤 ১ম SMTP (Primary)</span>' : '<span class="fc-tag smtp2">📤 ২য় SMTP (Secondary)</span>';
+          const trigger = n === 1 ? '১ম ইনকামিং ইমেইল প্রাপ্তি' : 'গ্রাহক ' + (n - 1) + ' নং মেসেজে রিপ্লাই দিলে';
           const delayVal = s.delay_value || s.delay_minutes || 0;
           const delayUnit = s.delay_unit || 'minutes';
-          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
-          thtml += '<tr><td><span class="fc-step-num ar">' + n + '</span></td><td>' + esc(trigger) + '</td><td>' + (delayVal > 0 ? 'After ' + delayTxt : 'Immediately') + '</td><td>' + esc(subj) + '</td><td>' + smtp + '</td><td><span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">' + delayTxt + '</span></td></tr>';
+          const sendTimeTxt = delayVal > 0 ? 'রিপ্লাই আসার ' + delayVal + ' ' + delayUnit + ' পর' : 'রিপ্লাই আসা মাত্র সাথে সাথে';
+          thtml += '<tr><td><span class="fc-step-num ar">' + n + '</span></td><td><strong style="color:var(--text)">' + esc(trigger) + '</strong></td><td><span class="fc-tag ' + (delayVal > 0 ? 'delay' : 'instant') + '">⏱️ ' + sendTimeTxt + '</span></td><td><strong>' + esc(subj) + '</strong></td><td style="color:var(--text2);font-size:12px"><em>' + esc(prev) + '</em></td><td>' + smtp + '</td></tr>';
         });
         if (arTb) arTb.innerHTML = thtml;
       }
@@ -3999,18 +4011,19 @@ async function loadFlowChart(){
         if (fuTb) fuTb.innerHTML = '<tr class="empty-row"><td colspan="5">No steps configured</td></tr>';
       } else {
         let html = '';
-        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 Lead Enrolled in System</span><div class="fc-meta"><span>Follow-up sequence starts automatically</span></div></div></div>';
+        html += '<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 ১. লিড এনরোলমেন্ট (Lead Enrolled)</span><div class="fc-meta"><span>লিড আসার সাথে সাথে ফলো-আপ টাইমার চালু হবে</span></div></div></div>';
 
         steps.forEach((s, i) => {
           const n = s.step_number || i + 1;
           const subj = s.subject || 'Follow-up Message ' + n;
-          const trigger = n === 1 ? 'After lead enrollment' : 'After Follow-up ' + (n - 1) + ' sent';
+          const prev = getPreview(s);
+          const trigger = n === 1 ? 'লিড এনরোল হওয়ার পর' : (n - 1) + ' নং ফলো-আপ সেন্ড হওয়ার পর';
           const delayVal = s.delay_value || s.delay_minutes || 0;
           const delayUnit = s.delay_unit || 'minutes';
-          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
+          const sendTimeTxt = delayVal > 0 ? delayVal + ' ' + delayUnit + ' পর' : 'তাত্ক্ষণিকভাবে (Immediately)';
 
           if (i > 0) {
-            html += '<div class="fc-connector">↕ ⏰ ' + delayTxt + ' delay</div>';
+            html += '<div class="fc-connector">↕ ⏰ ' + sendTimeTxt + ' শিডিউল ডিলে…</div>';
           }
 
           html += '<div class="fc-node">';
@@ -4018,9 +4031,10 @@ async function loadFlowChart(){
           html += '<div class="fc-card fu-card">';
           html += '<span class="fc-step-num fu">' + n + '</span>';
           html += '<span class="fc-label">📬 ' + esc(subj) + '</span>';
+          html += '<div style="font-size:12px;color:var(--text2);margin:4px 0 6px 0;font-style:italic">"' + esc(prev) + '"</div>';
           html += '<div class="fc-meta">';
-          html += '<span>' + esc(trigger) + '</span>';
-          html += '<span class="fc-tag delay">⏰ ' + delayTxt + '</span>';
+          html += '<span>🎯 ' + esc(trigger) + '</span>';
+          html += '<span class="fc-tag delay">⏰ সেন্ড টাইম: ' + sendTimeTxt + '</span>';
           html += '</div></div></div>';
         });
         html += '<div class="fc-node"><div class="fc-dot fu" style="background:#4caf50"></div><div class="fc-card fu-card" style="background:rgba(76,175,80,.06)"><span style="font-size:13px;font-weight:600;color:#4caf50">✅ Follow-up Sequence Complete</span></div></div>';
@@ -4030,11 +4044,12 @@ async function loadFlowChart(){
         steps.forEach((s, i) => {
           const n = s.step_number || i + 1;
           const subj = s.subject || 'Follow-up Message ' + n;
-          const trigger = n === 1 ? 'After lead enrollment' : 'After Follow-up ' + (n - 1);
+          const prev = getPreview(s);
+          const trigger = n === 1 ? 'লিড এনরোল হওয়ার পর' : (n - 1) + ' নং ফলো-আপ সেন্ড হওয়ার পর';
           const delayVal = s.delay_value || s.delay_minutes || 0;
           const delayUnit = s.delay_unit || 'minutes';
-          const delayTxt = delayVal > 0 ? delayVal + ' ' + delayUnit : 'Immediate';
-          thtml += '<tr><td><span class="fc-step-num fu">' + n + '</span></td><td>' + esc(trigger) + '</td><td>At user-defined delay (' + delayTxt + ')</td><td>' + esc(subj) + '</td><td><span class="fc-tag delay">' + delayTxt + '</span></td></tr>';
+          const sendTimeTxt = delayVal > 0 ? delayVal + ' ' + delayUnit + ' পর' : 'তাত্ক্ষণিকভাবে';
+          thtml += '<tr><td><span class="fc-step-num fu">' + n + '</span></td><td><strong style="color:var(--text)">' + esc(trigger) + '</strong></td><td><span class="fc-tag delay">⏰ ' + sendTimeTxt + '</span></td><td><strong>' + esc(subj) + '</strong></td><td style="color:var(--text2);font-size:12px"><em>' + esc(prev) + '</em></td></tr>';
         });
         if (fuTb) fuTb.innerHTML = thtml;
       }
