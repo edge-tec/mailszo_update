@@ -953,6 +953,7 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
     <span class="nsec">Overview</span>
     <div class="ni active" onclick="nav('dashboard')" id="nav-dashboard"><span class="ni-ic">📊</span>Live Reporting Dashboard</div>
     <div class="ni" onclick="nav('stepreporting')" id="nav-stepreporting"><span class="ni-ic">📑</span>Step-by-Step Reporting</div>
+    <div class="ni" onclick="nav('flowchart')" id="nav-flowchart"><span class="ni-ic">🔀</span>AR & FU Flow Chart</div>
     <span class="nsec">Email</span>
     <div class="ni" onclick="nav('campaigns')" id="nav-campaigns"><span class="ni-ic">📤</span>Campaigns</div>
     <div class="ni" onclick="nav('templates')" id="nav-templates"><span class="ni-ic">📝</span>Templates</div>
@@ -1538,6 +1539,60 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
       </div>
     </div>
 
+  </div>
+
+  <!-- AUTO REPLY & FOLLOW-UP FLOW CHART -->
+  <div class="page" id="page-flowchart">
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-hd"><h3>🔀 Auto Reply & Follow-up Timeline</h3>
+        <span class="live-badge"><span class="live-dot"></span>READ-ONLY</span>
+        <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="loadFlowChart()">↺ Refresh</button>
+      </div>
+      <div class="card-body" style="padding:20px">
+        <!-- Legend -->
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:24px;padding:14px 18px;border-radius:10px;background:rgba(0,188,212,.06);border:1px solid rgba(0,188,212,.15)">
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:50%;background:#00bcd4;display:inline-block"></span><span style="font-size:12px;color:var(--text2)">Auto Reply (Message-Triggered)</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:50%;background:#4caf50;display:inline-block"></span><span style="font-size:12px;color:var(--text2)">Follow-up (Time-Scheduled)</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:50%;background:#ff9800;display:inline-block"></span><span style="font-size:12px;color:var(--text2)">Trigger Event</span></div>
+          <div style="font-size:12px;color:var(--text2);margin-left:auto">📤 SMTP 1 = Primary &nbsp;|&nbsp; 📤 SMTP 2 = Secondary</div>
+        </div>
+
+        <!-- Two-column layout: AR left, FU right -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px" id="fc-grid">
+          <!-- Auto Reply Column -->
+          <div>
+            <div style="text-align:center;margin-bottom:16px">
+              <span style="display:inline-block;padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,rgba(0,188,212,.15),rgba(0,188,212,.05));border:1px solid rgba(0,188,212,.3);font-size:14px;font-weight:700;color:#00bcd4;letter-spacing:.5px">🔵 AUTO REPLY SEQUENCE</span>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">Sequential — Each step waits for traffic reply</div>
+            </div>
+            <div id="fc-ar-timeline" class="fc-timeline"></div>
+          </div>
+          <!-- Follow-up Column -->
+          <div>
+            <div style="text-align:center;margin-bottom:16px">
+              <span style="display:inline-block;padding:8px 20px;border-radius:8px;background:linear-gradient(135deg,rgba(76,175,80,.15),rgba(76,175,80,.05));border:1px solid rgba(76,175,80,.3);font-size:14px;font-weight:700;color:#4caf50;letter-spacing:.5px">🟢 FOLLOW-UP SEQUENCE</span>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">Scheduled — Sends at user-defined delay/time</div>
+            </div>
+            <div id="fc-fu-timeline" class="fc-timeline"></div>
+          </div>
+        </div>
+
+        <!-- Combined Tables -->
+        <div style="margin-top:32px">
+          <h4 style="color:#00bcd4;margin-bottom:12px">↩️ Auto Reply Steps</h4>
+          <div class="tw" style="margin-bottom:24px"><table id="fc-ar-table">
+            <thead><tr><th>Step</th><th>Trigger</th><th>Send Time</th><th>Subject</th><th>SMTP</th><th>Delay</th></tr></thead>
+            <tbody id="fc-ar-tbody"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+          </table></div>
+
+          <h4 style="color:#4caf50;margin-bottom:12px">📬 Follow-up Steps</h4>
+          <div class="tw"><table id="fc-fu-table">
+            <thead><tr><th>Step</th><th>Trigger</th><th>Send Time</th><th>Subject</th><th>Delay</th></tr></thead>
+            <tbody id="fc-fu-tbody"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CAMPAIGNS -->
@@ -3820,6 +3875,182 @@ function lrdRenderDaily(stats){
     }
   });
 }
+/* ─── Auto Reply & Follow-up Flow Chart ─────────────────────────────
+   Read-only visualization of configured AR and FU message sequences.
+   Uses existing GET /autoreply and GET /followup API endpoints. */
+
+// CSS injected once
+(function(){
+  if(document.getElementById('fc-styles')) return;
+  const s=document.createElement('style'); s.id='fc-styles'; s.textContent=`
+  .fc-timeline{position:relative;padding-left:32px}
+  .fc-timeline::before{content:'';position:absolute;left:14px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03))}
+  .fc-node{position:relative;margin-bottom:6px;animation:fcFadeIn .4s ease both}
+  .fc-node:nth-child(1){animation-delay:.05s}
+  .fc-node:nth-child(2){animation-delay:.1s}
+  .fc-node:nth-child(3){animation-delay:.15s}
+  .fc-node:nth-child(4){animation-delay:.2s}
+  .fc-node:nth-child(5){animation-delay:.25s}
+  .fc-node:nth-child(6){animation-delay:.3s}
+  .fc-node:nth-child(7){animation-delay:.35s}
+  .fc-node:nth-child(8){animation-delay:.4s}
+  .fc-dot{position:absolute;left:-25px;top:14px;width:12px;height:12px;border-radius:50%;border:2px solid;z-index:1}
+  .fc-dot.ar{border-color:#00bcd4;background:#0d1b2a;box-shadow:0 0 8px rgba(0,188,212,.4)}
+  .fc-dot.fu{border-color:#4caf50;background:#0d1b2a;box-shadow:0 0 8px rgba(76,175,80,.4)}
+  .fc-dot.trigger{border-color:#ff9800;background:#ff9800;box-shadow:0 0 8px rgba(255,152,0,.5)}
+  .fc-card{padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);transition:all .2s}
+  .fc-card:hover{transform:translateX(4px);border-color:rgba(255,255,255,.15)}
+  .fc-card.ar-card{border-left:3px solid #00bcd4}
+  .fc-card.fu-card{border-left:3px solid #4caf50}
+  .fc-card.trigger-card{border-left:3px solid #ff9800;background:rgba(255,152,0,.05)}
+  .fc-step-num{display:inline-block;min-width:28px;height:28px;line-height:28px;text-align:center;border-radius:6px;font-size:12px;font-weight:700;margin-right:8px}
+  .fc-step-num.ar{background:rgba(0,188,212,.15);color:#00bcd4}
+  .fc-step-num.fu{background:rgba(76,175,80,.15);color:#4caf50}
+  .fc-label{font-size:13px;font-weight:600;color:var(--text)}
+  .fc-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;flex-wrap:wrap;gap:8px}
+  .fc-tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600}
+  .fc-tag.smtp1{background:rgba(0,188,212,.12);color:#00bcd4}
+  .fc-tag.smtp2{background:rgba(156,39,176,.12);color:#ce93d8}
+  .fc-tag.delay{background:rgba(255,152,0,.12);color:#ff9800}
+  .fc-tag.instant{background:rgba(76,175,80,.12);color:#4caf50}
+  .fc-connector{padding:2px 0 2px 6px;font-size:10px;color:var(--text2);opacity:.6}
+  .fc-empty{text-align:center;padding:30px;color:var(--text2);font-size:13px}
+  @keyframes fcFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  @media(max-width:768px){#fc-grid{grid-template-columns:1fr!important}}
+  `; document.head.appendChild(s);
+})();
+
+function loadFlowChart(){
+  // Fetch AR rules
+  api('autoreply','GET').then(d=>{
+    const arEl=$('fc-ar-timeline'), arTb=$('fc-ar-tbody');
+    if(!d||!d.ok||!d.data||d.data.length===0){
+      arEl.innerHTML='<div class="fc-empty">No Auto Reply rules configured</div>';
+      arTb.innerHTML='<tr class="empty-row"><td colspan="6">No auto reply steps configured</td></tr>';
+      return;
+    }
+    // Use first active rule (or first rule)
+    const rule=d.data.find(r=>r.status==='active')||d.data[0];
+    const steps=rule.steps||[];
+    if(steps.length===0){
+      arEl.innerHTML='<div class="fc-empty">No steps configured in "'+esc(rule.name)+'"</div>';
+      arTb.innerHTML='<tr class="empty-row"><td colspan="6">No steps configured</td></tr>';
+      return;
+    }
+
+    // Render timeline
+    let html='';
+    // Start node
+    html+='<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 New Traffic Email Arrives</span><div class="fc-meta"><span>IMAP detects incoming email → triggers sequence</span></div></div></div>';
+
+    steps.forEach((s,i)=>{
+      const n=s.step_number||i+1;
+      const subj=s.subject||'Reply Message '+n;
+      const smtp=n===1?'SMTP 1 (Primary)':'SMTP 2 (Secondary)';
+      const smtpCls=n===1?'smtp1':'smtp2';
+      const trigger=n===1?'First incoming email':'Traffic replies to Reply '+(n-1);
+      const delayVal=s.delay_value||s.delay_minutes||0;
+      const delayUnit=s.delay_unit||'minutes';
+      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+
+      // Trigger connector
+      if(i>0){
+        html+='<div class="fc-connector">↕ ⏳ Wait for traffic reply…</div>';
+      }
+
+      html+='<div class="fc-node">';
+      html+='<div class="fc-dot ar"></div>';
+      html+='<div class="fc-card ar-card">';
+      html+='<span class="fc-step-num ar">'+n+'</span>';
+      html+='<span class="fc-label">✉️ '+esc(subj)+'</span>';
+      html+='<div class="fc-meta">';
+      html+='<span>'+esc(trigger)+'</span>';
+      html+='<span class="fc-tag '+smtpCls+'">📤 '+smtp+'</span>';
+      html+='<span class="fc-tag '+(delayVal>0?'delay':'instant')+'">'+(delayVal>0?'⏰ '+delayTxt:'⚡ Immediate')+'</span>';
+      html+='</div></div></div>';
+    });
+    // End node
+    html+='<div class="fc-node"><div class="fc-dot ar" style="background:#00bcd4"></div><div class="fc-card ar-card" style="background:rgba(0,188,212,.06)"><span style="font-size:13px;font-weight:600;color:#00bcd4">✅ Auto Reply Sequence Complete</span></div></div>';
+    arEl.innerHTML=html;
+
+    // Render table
+    let thtml='';
+    steps.forEach((s,i)=>{
+      const n=s.step_number||i+1;
+      const subj=s.subject||'Reply Message '+n;
+      const smtp=n===1?'<span class="fc-tag smtp1">SMTP 1</span>':'<span class="fc-tag smtp2">SMTP 2</span>';
+      const trigger=n===1?'First incoming email':'User replies to Reply '+(n-1);
+      const delayVal=s.delay_value||s.delay_minutes||0;
+      const delayUnit=s.delay_unit||'minutes';
+      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+      thtml+='<tr><td><span class="fc-step-num ar">'+n+'</span></td><td>'+esc(trigger)+'</td><td>'+(delayVal>0?'After '+delayTxt:'Immediately')+'</td><td>'+esc(subj)+'</td><td>'+smtp+'</td><td><span class="fc-tag '+(delayVal>0?'delay':'instant')+'">'+delayTxt+'</span></td></tr>';
+    });
+    arTb.innerHTML=thtml;
+  }).catch(()=>{
+    $('fc-ar-timeline').innerHTML='<div class="fc-empty">Failed to load Auto Reply data</div>';
+  });
+
+  // Fetch FU rules
+  api('followup','GET').then(d=>{
+    const fuEl=$('fc-fu-timeline'), fuTb=$('fc-fu-tbody');
+    if(!d||!d.ok||!d.data||d.data.length===0){
+      fuEl.innerHTML='<div class="fc-empty">No Follow-up rules configured</div>';
+      fuTb.innerHTML='<tr class="empty-row"><td colspan="5">No follow-up steps configured</td></tr>';
+      return;
+    }
+    const rule=d.data.find(r=>r.status==='active')||d.data[0];
+    const steps=rule.steps||[];
+    if(steps.length===0){
+      fuEl.innerHTML='<div class="fc-empty">No steps configured in "'+esc(rule.name)+'"</div>';
+      fuTb.innerHTML='<tr class="empty-row"><td colspan="5">No steps configured</td></tr>';
+      return;
+    }
+
+    let html='';
+    // Start node
+    html+='<div class="fc-node"><div class="fc-dot trigger"></div><div class="fc-card trigger-card"><span style="font-size:13px;font-weight:600;color:#ff9800">📨 Lead Enrolled in System</span><div class="fc-meta"><span>Follow-up sequence starts automatically</span></div></div></div>';
+
+    steps.forEach((s,i)=>{
+      const n=s.step_number||i+1;
+      const subj=s.subject||'Follow-up Message '+n;
+      const trigger=n===1?'After lead enrollment':'After Follow-up '+(n-1)+' sent';
+      const delayVal=s.delay_value||s.delay_minutes||0;
+      const delayUnit=s.delay_unit||'minutes';
+      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+
+      if(i>0){
+        html+='<div class="fc-connector">↕ ⏰ '+delayTxt+' delay</div>';
+      }
+
+      html+='<div class="fc-node">';
+      html+='<div class="fc-dot fu"></div>';
+      html+='<div class="fc-card fu-card">';
+      html+='<span class="fc-step-num fu">'+n+'</span>';
+      html+='<span class="fc-label">📬 '+esc(subj)+'</span>';
+      html+='<div class="fc-meta">';
+      html+='<span>'+esc(trigger)+'</span>';
+      html+='<span class="fc-tag delay">⏰ '+delayTxt+'</span>';
+      html+='</div></div></div>';
+    });
+    html+='<div class="fc-node"><div class="fc-dot fu" style="background:#4caf50"></div><div class="fc-card fu-card" style="background:rgba(76,175,80,.06)"><span style="font-size:13px;font-weight:600;color:#4caf50">✅ Follow-up Sequence Complete</span></div></div>';
+    fuEl.innerHTML=html;
+
+    // Render table
+    let thtml='';
+    steps.forEach((s,i)=>{
+      const n=s.step_number||i+1;
+      const subj=s.subject||'Follow-up Message '+n;
+      const trigger=n===1?'After lead enrollment':'After Follow-up '+(n-1);
+      const delayVal=s.delay_value||s.delay_minutes||0;
+      const delayUnit=s.delay_unit||'minutes';
+      const delayTxt=delayVal>0?delayVal+' '+delayUnit:'Immediate';
+      thtml+='<tr><td><span class="fc-step-num fu">'+n+'</span></td><td>'+esc(trigger)+'</td><td>At user-defined delay ('+delayTxt+')</td><td>'+esc(subj)+'</td><td><span class="fc-tag delay">'+delayTxt+'</span></td></tr>';
+    });
+    fuTb.innerHTML=thtml;
+  }).catch(()=>{
+    $('fc-fu-timeline').innerHTML='<div class="fc-empty">Failed to load Follow-up data</div>';
+  });
+}
 
 /* ─── Step-by-Step Reporting (AR + FU) ───────────────────────────────
    Two independent tables with shared logic. Each kind ('ar' | 'fu') has
@@ -4023,7 +4254,7 @@ async function doLogout(){
 }
 
 /* ─── Nav ───────────────────────────────── */
-const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs'};
+const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',flowchart:'AR & FU Flow Chart',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs'};
 function nav(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(x=>x.classList.remove('active'));
@@ -4052,6 +4283,7 @@ function nav(p){
       loadStepReport('fu', stepRepState.fu.page);
     },15000);
   }
+  if(p==='flowchart')loadFlowChart();
   if(p==='campaigns')loadCampaigns();
   if(p==='templates')loadTemplates();
   if(p==='lists')loadLists();
@@ -8397,6 +8629,7 @@ const CMD_PALETTE_ITEMS = [
   { title: 'Dashboard & Telemetry', page: 'dashboard', icon: '📊', group: 'Navigation', kbd: 'G D' },
   { title: 'Email Campaigns', page: 'campaigns', icon: '📤', group: 'Navigation', kbd: 'G C' },
   { title: 'Step-by-Step Reporting', page: 'stepreporting', icon: '📑', group: 'Navigation', kbd: 'G R' },
+  { title: 'AR & FU Flow Chart', page: 'flowchart', icon: '🔀', group: 'Navigation', kbd: 'G F' },
   { title: 'Email Templates', page: 'templates', icon: '📝', group: 'Navigation', kbd: 'G T' },
   { title: 'Image Asset Gallery', page: 'images', icon: '🖼️', group: 'Navigation', kbd: 'G I' },
   { title: 'Email Lists & Contacts', page: 'lists', icon: '👥', group: 'Navigation', kbd: 'G L' },
