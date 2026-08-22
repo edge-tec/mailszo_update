@@ -1577,18 +1577,57 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
           </div>
         </div>
 
-        <!-- Combined Tables -->
+        <!-- Configured Sequence Tables -->
         <div style="margin-top:32px">
-          <h4 style="color:#00bcd4;margin-bottom:12px">↩️ Auto Reply Steps</h4>
-          <div class="tw" style="margin-bottom:24px"><table id="fc-ar-table">
-            <thead><tr><th>Step</th><th>Trigger</th><th>Send Time</th><th>Subject</th><th>SMTP</th><th>Delay</th></tr></thead>
+          <h4 style="color:#00bcd4;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span>↩️</span><span>Auto Reply Sequence (রিপ্লে মেসেজ ও সেন্ডিং টাইম শিডিউল)</span></h4>
+          <div class="tw" style="margin-bottom:28px"><table id="fc-ar-table">
+            <thead><tr><th style="width:70px">Step</th><th style="width:200px">Trigger Event (ট্রিগার)</th><th style="width:190px">Send Time (কখন সেন্ড হবে)</th><th>Message Subject (বিষয়)</th><th>Message Preview (মেসেজ)</th><th style="width:150px">SMTP Server</th></tr></thead>
             <tbody id="fc-ar-tbody"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
           </table></div>
 
-          <h4 style="color:#4caf50;margin-bottom:12px">📬 Follow-up Steps</h4>
-          <div class="tw"><table id="fc-fu-table">
-            <thead><tr><th>Step</th><th>Trigger</th><th>Send Time</th><th>Subject</th><th>Delay</th></tr></thead>
+          <h4 style="color:#4caf50;margin-bottom:12px;display:flex;align-items:center;gap:8px"><span>📬</span><span>Follow-up Sequence (ফলোআপ মেসেজ ও সেন্ডিং টাইম শিডিউল)</span></h4>
+          <div class="tw" style="margin-bottom:36px"><table id="fc-fu-table">
+            <thead><tr><th style="width:70px">Step</th><th style="width:200px">Trigger Event (ট্রিগার)</th><th style="width:190px">Send Time (কখন সেন্ড হবে)</th><th>Message Subject (বিষয়)</th><th>Message Preview (মেসেজ)</th></tr></thead>
             <tbody id="fc-fu-tbody"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ── LIVE PENDING EMAIL QUEUE (পেন্ডিং ইমেইল তালিকা ও সেন্ডিং শিডিউল) ── -->
+        <div style="margin-top:10px;padding-top:24px;border-top:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h3 style="font-size:16px;color:#ff9800;display:flex;align-items:center;gap:8px">
+              <span>⏳</span><span>Live Pending Email Queue (কোন পেন্ডিং ইমেইলে কখন কোন মেসেজ যাবে)</span>
+            </h3>
+            <span class="badge b-amber" id="fc-pending-badge" style="font-size:12px">0 Pending</span>
+          </div>
+
+          <!-- Pending AR Queue -->
+          <h4 style="color:#00bcd4;margin-bottom:10px;font-size:13px">↩️ Pending Auto Reply Queue (অটো-রিপ্লাই পেন্ডিং ইমেইল তালিকা)</h4>
+          <div class="tw" style="margin-bottom:24px"><table id="fc-ar-pending-table">
+            <thead><tr>
+              <th>Recipient Email (প্রাপক ইমেইল)</th>
+              <th>Rule / Campaign</th>
+              <th style="width:80px">Step</th>
+              <th>Next Message to Send (পরবর্তী মেসেজ)</th>
+              <th style="width:170px">Scheduled Send Time (কখন যাবে)</th>
+              <th style="width:140px">SMTP to Use</th>
+              <th style="width:120px">Current Status</th>
+            </tr></thead>
+            <tbody id="fc-ar-pending-tbody"><tr class="empty-row"><td colspan="7">Loading pending auto-replies…</td></tr></tbody>
+          </table></div>
+
+          <!-- Pending FU Queue -->
+          <h4 style="color:#4caf50;margin-bottom:10px;font-size:13px">📬 Pending Follow-up Queue (ফলোআপ পেন্ডিং ইমেইল তালিকা)</h4>
+          <div class="tw"><table id="fc-fu-pending-table">
+            <thead><tr>
+              <th>Recipient Email (প্রাপক ইমেইল)</th>
+              <th>Rule / Campaign</th>
+              <th style="width:80px">Step</th>
+              <th>Next Message to Send (পরবর্তী মেসেজ)</th>
+              <th style="width:170px">Scheduled Send Time (কখন যাবে)</th>
+              <th style="width:120px">Current Status</th>
+            </tr></thead>
+            <tbody id="fc-fu-pending-tbody"><tr class="empty-row"><td colspan="6">Loading pending follow-ups…</td></tr></tbody>
           </table></div>
         </div>
       </div>
@@ -4057,6 +4096,77 @@ async function loadFlowChart(){
   } catch (e) {
     if ($('fc-fu-timeline')) $('fc-fu-timeline').innerHTML = '<div class="fc-empty">Failed to load Follow-up data</div>';
   }
+
+  // ── Fetch Pending Queue Lists ──
+  let totalPendingCount = 0;
+
+  // 1. Fetch AR Pending Threads
+  try {
+    const arPendData = await get('reports/reply-pending');
+    const arPendTb = $('fc-ar-pending-tbody');
+    const arRows = arPendData?.rows || [];
+    totalPendingCount += arRows.length;
+    if (!arRows.length) {
+      if (arPendTb) arPendTb.innerHTML = '<tr class="empty-row"><td colspan="7">No pending auto-replies at this moment</td></tr>';
+    } else {
+      if (arPendTb) {
+        arPendTb.innerHTML = arRows.map(r => {
+          const st = r.status || 'pending';
+          let stBadge = '<span class="badge b-amber">⏳ Waiting for Reply</span>';
+          let schedTxt = 'When traffic replies';
+          if (st === 'scheduled') {
+            stBadge = '<span class="badge b-blue">⚡ Ready to Send</span>';
+            schedTxt = r.scheduled_send_time ? `⏰ ${r.scheduled_send_time}` : 'Next cron tick';
+          } else if (st === 'sending') {
+            stBadge = '<span class="badge b-purple">📤 Sending Now</span>';
+            schedTxt = 'In Progress';
+          }
+          const smtpBadge = (r.current_step == 1) ? '<span class="fc-tag smtp1">📤 SMTP 1 (Primary)</span>' : '<span class="fc-tag smtp2">📤 SMTP 2 (Secondary)</span>';
+          return `<tr>
+            <td><strong style="color:var(--text)">${esc(r.from_email)}</strong>${r.from_name ? `<br><small style="color:var(--text2)">${esc(r.from_name)}</small>` : ''}</td>
+            <td><span class="badge b-gray">${esc(r.rule_name || 'Rule #' + r.rule_id)}</span></td>
+            <td><span class="fc-step-num ar">${r.current_step}</span></td>
+            <td><strong>${esc(r.next_subject || 'Reply #' + r.current_step)}</strong></td>
+            <td><span class="mono" style="font-size:11px;color:var(--accent3)">${schedTxt}</span></td>
+            <td>${smtpBadge}</td>
+            <td>${stBadge}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+  } catch (e) {
+    if ($('fc-ar-pending-tbody')) $('fc-ar-pending-tbody').innerHTML = '<tr class="empty-row"><td colspan="7">Error loading pending auto-replies</td></tr>';
+  }
+
+  // 2. Fetch FU Pending Contacts
+  try {
+    const fuPendData = await get('reports/followup-pending');
+    const fuPendTb = $('fc-fu-pending-tbody');
+    const fuRows = fuPendData?.rows || [];
+    totalPendingCount += fuRows.length;
+    if (!fuRows.length) {
+      if (fuPendTb) fuPendTb.innerHTML = '<tr class="empty-row"><td colspan="6">No pending follow-ups at this moment</td></tr>';
+    } else {
+      if (fuPendTb) {
+        fuPendTb.innerHTML = fuRows.map(r => {
+          const schedTxt = r.next_send_at ? `⏰ ${r.next_send_at}` : 'Next scheduled run';
+          return `<tr>
+            <td><strong style="color:var(--text)">${esc(r.email)}</strong>${r.name ? `<br><small style="color:var(--text2)">${esc(r.name)}</small>` : ''}</td>
+            <td><span class="badge b-gray">${esc(r.rule_name || 'Rule #' + r.rule_id)}</span></td>
+            <td><span class="fc-step-num fu">${r.current_step}</span></td>
+            <td><strong>${esc(r.next_subject || 'Follow-up #' + r.current_step)}</strong></td>
+            <td><span class="mono" style="font-size:11px;color:var(--accent3)">${schedTxt}</span></td>
+            <td><span class="badge b-green">Active / Scheduled</span></td>
+          </tr>`;
+        }).join('');
+      }
+    }
+  } catch (e) {
+    if ($('fc-fu-pending-tbody')) $('fc-fu-pending-tbody').innerHTML = '<tr class="empty-row"><td colspan="6">Error loading pending follow-ups</td></tr>';
+  }
+
+  const pBadge = $('fc-pending-badge');
+  if (pBadge) pBadge.textContent = totalPendingCount + ' Total Pending';
 }
 
 /* ─── Step-by-Step Reporting (AR + FU) ───────────────────────────────

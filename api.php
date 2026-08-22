@@ -2308,27 +2308,30 @@ if ($res==='followup') {
 // ── REPORTS ───────────────────────────────────────────────────────
 if ($res==='reports') {
 
-    // GET reports/reply-pending — auto-reply threads still active (not completed)
+    // GET reports/reply-pending — auto-reply threads still active or pending
     if ($method==='GET' && $id==='reply-pending') {
         $page  = max(1,(int)($_GET['page']??1));
         $limit = 100; $offset = ($page-1)*$limit;
         $ruleFilter = isset($_GET['rule']) ? (int)$_GET['rule'] : 0;
         $search     = $_GET['q'] ?? '';
 
-        $where = $IS_ADMIN ? "t.status='active'" : "t.status='active' AND r.user_id=$UID";
+        $where = $IS_ADMIN ? "t.status IN ('scheduled','pending','sending','active')" : "t.status IN ('scheduled','pending','sending','active') AND r.user_id=$UID";
         if ($ruleFilter) $where .= " AND t.rule_id=$ruleFilter";
         if ($search)     $where .= " AND t.from_email LIKE ".db()->quote('%'.$search.'%');
 
         $total = db()->query("SELECT COUNT(*) FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE $where")->fetchColumn();
-        $rows  = db()->query("SELECT t.*,r.name rule_name,r.id rule_id_val FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE $where ORDER BY t.next_send_at ASC LIMIT $limit OFFSET $offset")->fetchAll();
+        $rows  = db()->query("SELECT t.*,r.name rule_name,r.id rule_id_val FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE $where ORDER BY COALESCE(t.scheduled_send_time, t.next_send_at, t.updated_at) DESC LIMIT $limit OFFSET $offset")->fetchAll();
         // Attach next step subject + body preview
         foreach ($rows as &$row) {
-            $ns = db()->prepare("SELECT subject, text_body, html_body FROM autoreply_steps WHERE rule_id=? AND step_number=?");
+            $ns = db()->prepare("SELECT subject, text_body, html_body, delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
             $ns->execute([$row['rule_id_val'], $row['current_step']]);
             $stepData = $ns->fetch() ?: [];
             $row['next_subject'] = $stepData['subject'] ?: '—';
             $row['next_text']    = $stepData['text_body'] ?: '';
             $row['next_html']    = $stepData['html_body'] ?: '';
+            $row['delay_value']  = $stepData['delay_value'] ?? $stepData['delay_minutes'] ?? 0;
+            $row['delay_unit']   = $stepData['delay_unit'] ?? 'minutes';
+            $row['smtp_assigned'] = ((int)$row['current_step'] === 1) ? 'SMTP 1 (Primary)' : 'SMTP 2 (Secondary)';
         }
         // Rule list for filter dropdown
         $rulesQ = db()->query("SELECT id,name FROM autoreply_rules".($IS_ADMIN ? '' : ' WHERE user_id='.$UID)." ORDER BY name")->fetchAll();
@@ -2342,19 +2345,21 @@ if ($res==='reports') {
         $ruleFilter = isset($_GET['rule']) ? (int)$_GET['rule'] : 0;
         $search     = $_GET['q'] ?? '';
 
-        $where = $IS_ADMIN ? "c.status='active'" : "c.status='active' AND r.user_id=$UID";
+        $where = $IS_ADMIN ? "c.status IN ('active','scheduled')" : "c.status IN ('active','scheduled') AND r.user_id=$UID";
         if ($ruleFilter) $where .= " AND c.rule_id=$ruleFilter";
         if ($search)     $where .= " AND c.email LIKE ".db()->quote('%'.$search.'%');
 
         $total = db()->query("SELECT COUNT(*) FROM followup_contacts c JOIN followup_rules r ON r.id=c.rule_id WHERE $where")->fetchColumn();
-        $rows  = db()->query("SELECT c.*,r.name rule_name FROM followup_contacts c JOIN followup_rules r ON r.id=c.rule_id WHERE $where ORDER BY c.next_send_at ASC LIMIT $limit OFFSET $offset")->fetchAll();
+        $rows  = db()->query("SELECT c.*,r.name rule_name FROM followup_contacts c JOIN followup_rules r ON r.id=c.rule_id WHERE $where ORDER BY COALESCE(c.next_send_at, c.enrolled_at) ASC LIMIT $limit OFFSET $offset")->fetchAll();
         foreach ($rows as &$row) {
-            $ns = db()->prepare("SELECT subject, text_body, html_body FROM followup_steps WHERE rule_id=? AND step_number=?");
+            $ns = db()->prepare("SELECT subject, text_body, html_body, delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id=? AND step_number=?");
             $ns->execute([$row['rule_id'], $row['current_step']]);
             $stepData = $ns->fetch() ?: [];
             $row['next_subject'] = $stepData['subject'] ?: '—';
             $row['next_text']    = $stepData['text_body'] ?: '';
             $row['next_html']    = $stepData['html_body'] ?: '';
+            $row['delay_value']  = $stepData['delay_value'] ?? $stepData['delay_minutes'] ?? 0;
+            $row['delay_unit']   = $stepData['delay_unit'] ?? 'minutes';
         }
         $rulesQ = db()->query("SELECT id,name FROM followup_rules".($IS_ADMIN?'':' WHERE user_id='.$UID)." ORDER BY name")->fetchAll();
         jsonOut(['rows'=>$rows,'total'=>(int)$total,'page'=>$page,'pages'=>(int)ceil($total/$limit),'rules'=>$rulesQ]);
