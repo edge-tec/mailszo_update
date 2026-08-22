@@ -850,7 +850,7 @@ if ($res==='campaigns') {
                             : "(SELECT IFNULL(SUM(emails_read),0) FROM imap_accounts) total_imap_read"
                     ).",
                     (SELECT COUNT(*) FROM followup_contacts WHERE status='active' AND next_send_at IS NOT NULL) total_followup_pending,
-                    (SELECT COUNT(*) FROM autoreply_threads WHERE status IN ('active','scheduled','pending','sending') AND COALESCE(awaiting_reply,0)!=1) total_reply_pending,
+                    (SELECT COUNT(*) FROM autoreply_threads WHERE status IN ('scheduled','sending')) total_reply_pending,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='autoreply' AND status='sent'  {$dfSL}) total_ar_sent,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='autoreply' AND status='failed'{$dfSL}) total_ar_failed,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='followup'  AND status='sent'  {$dfSL}) total_fu_sent,
@@ -905,7 +905,7 @@ if ($res==='campaigns') {
                             : "(SELECT IFNULL(SUM(ia.emails_read),0) FROM imap_accounts ia WHERE ia.user_id={$UID}) total_imap_read"
                     ).",
                     (SELECT COUNT(*) FROM followup_contacts fc JOIN followup_rules fr ON fr.id=fc.rule_id WHERE fc.status='active' AND fc.next_send_at IS NOT NULL AND fr.user_id=?) total_followup_pending,
-                    (SELECT COUNT(*) FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE t.status IN ('active','scheduled','pending','sending') AND COALESCE(t.awaiting_reply,0)!=1 AND r.user_id=?) total_reply_pending,
+                    (SELECT COUNT(*) FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE t.status IN ('scheduled','sending') AND r.user_id=?) total_reply_pending,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='autoreply' AND status='sent'   AND user_id=?{$dfSL}) total_ar_sent,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='autoreply' AND status='failed' AND user_id=?{$dfSL}) total_ar_failed,
                     (SELECT COUNT(*) FROM send_logs WHERE log_source='followup'  AND status='sent'   AND user_id=?{$dfSL}) total_fu_sent,
