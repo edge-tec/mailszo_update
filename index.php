@@ -7240,11 +7240,29 @@ let _draggedPrefix = null;
 function stepDragStart(e, i, prefix){
   _draggedStepIndex = i;
   _draggedPrefix = prefix;
-  e.dataTransfer.effectAllowed = 'move';
-  e.target.closest('.step-card-box')?.classList.add('step-card-dragging');
+  if(e.dataTransfer){
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(i)); } catch(err){}
+  }
+  const card = e.target.closest('.step-card-box');
+  if(card){
+    setTimeout(() => {
+      card.classList.add('step-card-dragging');
+    }, 0);
+  }
+}
+
+function stepDragEnd(e){
+  document.querySelectorAll('.step-card-box').forEach(c => {
+    c.classList.remove('step-card-dragging');
+    c.classList.remove('step-card-dragover');
+  });
+  _draggedStepIndex = null;
+  _draggedPrefix = null;
 }
 
 function stepDragOver(e){
+  if(_draggedStepIndex === null) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   const card = e.target.closest('.step-card-box');
@@ -7258,25 +7276,22 @@ function stepDragLeave(e){
 
 function stepDrop(e, targetIndex, prefix){
   e.preventDefault();
-  document.querySelectorAll('.step-card-box').forEach(c => {
-    c.classList.remove('step-card-dragging');
-    c.classList.remove('step-card-dragover');
-  });
-  if(_draggedStepIndex === null || _draggedStepIndex === targetIndex || _draggedPrefix !== prefix) return;
+  const fromIndex = _draggedStepIndex;
+  const fromPrefix = _draggedPrefix;
+  stepDragEnd(e);
+  if(fromIndex === null || fromIndex === targetIndex || fromPrefix !== prefix) return;
   
   if(prefix === 'fu'){
     fuSaveCurrentSteps();
-    const item = fuSteps.splice(_draggedStepIndex, 1)[0];
+    const item = fuSteps.splice(fromIndex, 1)[0];
     fuSteps.splice(targetIndex, 0, item);
     renderFuSteps();
   } else if(prefix === 'ar'){
     arSaveCurrentSteps();
-    const item = arSteps.splice(_draggedStepIndex, 1)[0];
+    const item = arSteps.splice(fromIndex, 1)[0];
     arSteps.splice(targetIndex, 0, item);
     renderArSteps();
   }
-  _draggedStepIndex = null;
-  _draggedPrefix = null;
 }
 
 function moveStepUp(i, prefix){
@@ -7322,9 +7337,9 @@ function buildStepCard(st,i,prefix,pid,addFn,rmFn,rmImgFn,pickFn,note){
   const dVal = st.delay_value != null ? st.delay_value : (st.delay_minutes || (prefix==='ar'?1:30));
   const dUnit = st.delay_unit || (st.delay_minutes >= 1440 && st.delay_minutes % 1440 === 0 ? 'days' : (st.delay_minutes >= 60 && st.delay_minutes % 60 === 0 ? 'hours' : 'minutes'));
 
-  return `<div class="step-card-box" draggable="true" ondragstart="stepDragStart(event, ${i}, '${prefix}')" ondragover="stepDragOver(event)" ondragleave="stepDragLeave(event)" ondrop="stepDrop(event, ${i}, '${prefix}')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:14px;transition:all .15s">
+  return `<div class="step-card-box" ondragover="stepDragOver(event)" ondragleave="stepDragLeave(event)" ondrop="stepDrop(event, ${i}, '${prefix}')" style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:14px;transition:all .15s">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <span class="step-card-drag-handle" title="Drag to reorder sequence">⋮⋮ Drag</span>
+      <span class="step-card-drag-handle" draggable="true" ondragstart="stepDragStart(event, ${i}, '${prefix}')" ondragend="stepDragEnd(event)" title="Drag to reorder sequence">⋮⋮ Drag</span>
       <span style="background:var(--accent);color:#000;font-weight:700;font-size:11px;padding:3px 12px;border-radius:20px">#${i+1}</span>
       <span style="font-size:11px;color:var(--text2);flex:1">${note}</span>
       <div class="btn-group" style="margin-left:auto">
