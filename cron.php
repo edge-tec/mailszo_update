@@ -182,7 +182,18 @@ function processAutoReplyQueue(): int {
             try {
                 $inReplyToHdr = $job['last_received_message_id'] ?: ($job['last_message_id'] ?: ($job['original_message_id'] ?: ''));
                 $referencesHdr = $job['references_header'] ?: ($job['original_message_id'] ?: '');
-                $arOpts = ['is_auto_reply' => true, 'in_reply_to' => $inReplyToHdr, 'references' => $referencesHdr];
+                $arTrackingToken = generateTrackingToken();
+                $arOpts = [
+                    'is_auto_reply'   => true,
+                    'in_reply_to'     => $inReplyToHdr,
+                    'references'      => $referencesHdr,
+                    'tracking_token'  => $arTrackingToken,
+                    'track_clicks'    => true,
+                    'rule_id'         => $ruleId,
+                    'sequence_step'   => $stepNum,
+                    'user_id'         => $userId,
+                    'smtp_account_id' => $mc['id'] ?? null,
+                ];
 
                 if ($secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
                     $arOpts['reply_to'] = $secReplyTo; $arOpts['return_path'] = $secReplyTo; $arOpts['sender'] = $fromEmailUsed;
@@ -207,7 +218,7 @@ function processAutoReplyQueue(): int {
                     ->execute([$ruleId, $threadId, $stepNum, $job['from_email'], $smtpNameUsed]);
                 db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','autoreply',?,?)")
                     ->execute([$userId, $job['from_email'], $smtpNameUsed, $fromEmailUsed]);
-                logSystemEvent('sent', $job['from_email'], "Auto Reply #{$stepNum} sent", $userId, null, $ruleId);
+                logSystemEvent('sent', $job['from_email'], "Auto Reply #{$stepNum} sent", $userId, null, $ruleId, null, $arTrackingToken, $smtpNameUsed);
                 $dispatched++;
 
             } catch (Exception $e) {
@@ -1085,8 +1096,11 @@ try {
                     $message['text'],
                     $message['inlineImages'],
                     [
-                        'tracking_token' => $campTrackingToken,
-                        'track_clicks'   => true,
+                        'tracking_token'  => $campTrackingToken,
+                        'track_clicks'    => true,
+                        'campaign_id'     => $cid,
+                        'user_id'         => $cUid,
+                        'smtp_account_id' => $mailerCfg['id'] ?? null,
                     ]
                 );
 
@@ -1760,11 +1774,16 @@ try {
                     $msg['text'],
                     $msg['inlineImages'],
                     [
-                        'tracking_token' => $qItem['tracking_token'],
-                        'track_clicks'   => true,
-                        'in_reply_to'    => $fuInReplyTo,
-                        'references'     => $fuReferences,
-                        'reply_to'       => $fuReplyTo ?: $fuFromEmail,
+                        'tracking_token'  => $qItem['tracking_token'],
+                        'track_clicks'    => true,
+                        'in_reply_to'     => $fuInReplyTo,
+                        'references'      => $fuReferences,
+                        'reply_to'        => $fuReplyTo ?: $fuFromEmail,
+                        'campaign_id'     => $qItem['campaign_id'] ?? null,
+                        'rule_id'         => $ruleId,
+                        'sequence_step'   => $stepOrder,
+                        'user_id'         => $qUserId,
+                        'smtp_account_id' => $mc['id'] ?? null,
                     ]
                 );
 
@@ -2018,6 +2037,11 @@ try {
             $fuSmtpName = $mc['name'] ?? '';
             $fuFromEmail = $mc['from_email'] ?? '';
 
+            $fuContactToken = $contact['tracking_token'] ?: generateTrackingToken();
+            if (empty($contact['tracking_token'])) {
+                try { db()->prepare("UPDATE followup_contacts SET tracking_token=? WHERE id=?")->execute([$fuContactToken, $contact['id']]); } catch (Throwable $_tEx) {}
+            }
+
             try {
                 $mailer = new Mailer($mc);
                 $mailer->send(
@@ -2028,8 +2052,12 @@ try {
                     $msg['text'],
                     $msg['inlineImages'],
                     [
-                        'tracking_token' => $contact['tracking_token'] ?? '',
-                        'track_clicks'   => true,
+                        'tracking_token'  => $fuContactToken,
+                        'track_clicks'    => true,
+                        'rule_id'         => $ruleId,
+                        'sequence_step'   => $contact['current_step'] ?? 1,
+                        'user_id'         => $userId,
+                        'smtp_account_id' => $mc['id'] ?? null,
                     ]
                 );
 
@@ -2039,7 +2067,7 @@ try {
                 db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used) VALUES (NULL, ?, ?, 'sent', 'followup', ?, ?)")
                     ->execute([$userId, $contact['email'], $fuSmtpName, $fuFromEmail]);
 
-                logSystemEvent('sent', $contact['email'], "Follow-up step #{$contact['current_step']} sent", $userId, null, $ruleId, null, $contact['tracking_token'] ?? null, $fuSmtpName);
+                logSystemEvent('sent', $contact['email'], "Follow-up step #{$contact['current_step']} sent", $userId, null, $ruleId, null, $fuContactToken, $fuSmtpName);
 
                 // Next Step in Sequence
                 $nr = db()->prepare("SELECT * FROM followup_steps WHERE rule_id=? AND step_number=?");

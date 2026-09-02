@@ -222,25 +222,31 @@ class Mailer {
                 if (function_exists('db')) {
                     $etIns = db()->prepare(
                         "INSERT INTO email_tracking (
-                            tracking_token, email_log_id, campaign_id, lead_id, smtp_account_id, sequence_step, recipient_email, sent_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                            tracking_token, user_id, email_log_id, campaign_id, rule_id, lead_id, smtp_account_id, sequence_step, recipient_email, sent_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                         ON DUPLICATE KEY UPDATE
+                            user_id = COALESCE(user_id, VALUES(user_id)),
                             campaign_id = COALESCE(campaign_id, VALUES(campaign_id)),
+                            rule_id = COALESCE(rule_id, VALUES(rule_id)),
                             lead_id = COALESCE(lead_id, VALUES(lead_id)),
                             smtp_account_id = COALESCE(smtp_account_id, VALUES(smtp_account_id)),
                             sequence_step = COALESCE(sequence_step, VALUES(sequence_step))"
                     );
                     $etIns->execute([
                         $trackingToken,
+                        $options['user_id'] ?? null,
                         $options['email_log_id'] ?? null,
                         $options['campaign_id'] ?? null,
+                        $options['rule_id'] ?? null,
                         $options['lead_id'] ?? null,
                         $this->cfg['id'] ?? ($options['smtp_account_id'] ?? null),
                         $options['sequence_step'] ?? null,
                         $to
                     ]);
                 }
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+                error_log("[Mailer Tracking] Warning creating master email_tracking: " . $e->getMessage());
+            }
 
             // Production Open Tracking Pixel: {{APP_URL}}/track/open/{{tracking_token}}.png
             $pixelUrl = rtrim($baseUrl, '/') . '/track/open/' . urlencode($trackingToken) . '.png';

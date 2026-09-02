@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '15'; // bump this when adding new migrations
+    $migrationVersion = '16'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -181,8 +181,10 @@ function db() {
             "CREATE TABLE IF NOT EXISTS `email_tracking` (
                 `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
                 `tracking_token` VARCHAR(64) UNIQUE NOT NULL,
+                `user_id` INT DEFAULT NULL,
                 `email_log_id` BIGINT DEFAULT NULL,
                 `campaign_id` BIGINT DEFAULT NULL,
+                `rule_id` BIGINT DEFAULT NULL,
                 `lead_id` BIGINT DEFAULT NULL,
                 `smtp_account_id` BIGINT DEFAULT NULL,
                 `sequence_step` INT DEFAULT NULL,
@@ -198,6 +200,7 @@ function db() {
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX `idx_et_token` (`tracking_token`),
                 INDEX `idx_et_campaign` (`campaign_id`),
+                INDEX `idx_et_rule` (`rule_id`),
                 INDEX `idx_et_lead` (`lead_id`),
                 INDEX `idx_et_recipient` (`recipient_email`),
                 INDEX `idx_et_opened` (`is_opened`),
@@ -309,6 +312,8 @@ function db() {
             ['inbound_emails',   'thread_id',            "VARCHAR(255) DEFAULT NULL"],
             ['inbound_emails',   'body',                 "LONGTEXT DEFAULT NULL"],
             ['imap_accounts',    'skip_bcc',             "TINYINT(1) NOT NULL DEFAULT 1"],
+            ['email_tracking',  'rule_id',              "BIGINT DEFAULT NULL"],
+            ['email_tracking',  'user_id',              "INT DEFAULT NULL"],
         ];
         foreach ($arCols as [$tbl, $col, $def]) {
             try {

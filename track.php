@@ -27,6 +27,9 @@ if ($token === '') {
 
 // Security: Ignore invalid / empty tokens
 if ($token === '' || strlen($token) > 64 || !preg_match('/^[a-zA-Z0-9_-]+$/', $token)) {
+    if ($token !== '') {
+        error_log("[OpenTracking Pixel] Invalid token received: " . substr($token, 0, 32));
+    }
     exit;
 }
 
@@ -39,7 +42,7 @@ try {
         'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
     ]);
 } catch (\Throwable $e) {
-    // Fail silently to never break pixel response
+    error_log("[OpenTracking Pixel] Exception recording open event: " . $e->getMessage());
 }
 
 exit;

@@ -452,8 +452,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "CREATE TABLE IF NOT EXISTS `email_tracking` (
                     `id`                  BIGINT AUTO_INCREMENT PRIMARY KEY,
                     `tracking_token`      VARCHAR(64) UNIQUE NOT NULL,
+                    `user_id`             INT DEFAULT NULL,
                     `email_log_id`        BIGINT DEFAULT NULL,
                     `campaign_id`         BIGINT DEFAULT NULL,
+                    `rule_id`             BIGINT DEFAULT NULL,
                     `lead_id`             BIGINT DEFAULT NULL,
                     `smtp_account_id`     BIGINT DEFAULT NULL,
                     `sequence_step`       INT DEFAULT NULL,
@@ -469,6 +471,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     `created_at`          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX `idx_et_token` (`tracking_token`),
                     INDEX `idx_et_campaign` (`campaign_id`),
+                    INDEX `idx_et_rule` (`rule_id`),
                     INDEX `idx_et_lead` (`lead_id`),
                     INDEX `idx_et_recipient` (`recipient_email`),
                     INDEX `idx_et_opened` (`is_opened`),

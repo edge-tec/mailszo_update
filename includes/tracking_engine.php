@@ -117,22 +117,22 @@ function parseTrackingUserAgent(?string $ua): array {
 
     // 4. Browser & Email Client
     $browser = 'Unknown';
-    if (stripos($ua, 'Outlook') !== false || stripos($ua, 'Microsoft Office') !== false) {
+    if (stripos($ua, 'Outlook') !== false || stripos($ua, 'Microsoft Office') !== false || stripos($ua, 'MSOffice') !== false) {
         $browser = 'Outlook';
     } elseif (stripos($ua, 'GoogleImageProxy') !== false) {
         $browser = 'Gmail App';
-    } elseif (stripos($ua, 'AppleWebKit') !== false && stripos($ua, 'Mobile') !== false && stripos($ua, 'Safari') !== false && stripos($ua, 'Chrome') === false) {
-        $browser = 'Apple Mail';
-    } elseif (stripos($ua, 'Edg/') !== false || stripos($ua, 'Edge/') !== false) {
-        $browser = 'Edge';
-    } elseif (stripos($ua, 'Chrome') !== false && stripos($ua, 'Edg') === false) {
-        $browser = 'Chrome';
-    } elseif (stripos($ua, 'Firefox') !== false) {
-        $browser = 'Firefox';
-    } elseif (stripos($ua, 'Safari') !== false && stripos($ua, 'Chrome') === false) {
-        $browser = 'Safari';
     } elseif (stripos($ua, 'Thunderbird') !== false) {
         $browser = 'Thunderbird';
+    } elseif (stripos($ua, 'Edg/') !== false || stripos($ua, 'Edge/') !== false) {
+        $browser = 'Edge';
+    } elseif (stripos($ua, 'Chrome') !== false || stripos($ua, 'CriOS') !== false) {
+        $browser = 'Chrome';
+    } elseif (stripos($ua, 'Firefox') !== false || stripos($ua, 'FxiOS') !== false) {
+        $browser = 'Firefox';
+    } elseif (stripos($ua, 'AppleWebKit') !== false && (stripos($ua, 'Mobile/') !== false || stripos($ua, 'iPhone') !== false || stripos($ua, 'iPad') !== false || stripos($ua, 'CFNetwork') !== false)) {
+        $browser = 'Apple Mail';
+    } elseif (stripos($ua, 'Safari') !== false) {
+        $browser = 'Safari';
     }
 
     return [
@@ -315,15 +315,23 @@ function resolveTrackingIpLocation(string $ip): array {
  * Record an email open event in database with dedup cooldown and metrics updates.
  */
 function recordTrackingOpenEvent(string $token, array $context = []): array {
-    if (!function_exists('db')) return ['ok' => false, 'message' => 'db function unavailable'];
+    if (!function_exists('db')) {
+        error_log("[OpenTracking] Database function db() not available.");
+        return ['ok' => false, 'message' => 'db function unavailable'];
+    }
 
     $pdo = db();
-    $stmt = $pdo->prepare("SELECT * FROM email_tracking WHERE tracking_token = ? LIMIT 1");
-    $stmt->execute([$token]);
-    $tracking = $stmt->fetch();
+    $tracking = null;
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM email_tracking WHERE tracking_token = ? LIMIT 1");
+        $stmt->execute([$token]);
+        $tracking = $stmt->fetch();
+    } catch (\Throwable $e) {
+        error_log("[OpenTracking] Error querying email_tracking: " . $e->getMessage());
+    }
 
     if (!$tracking) {
-        $recEmail = null; $campId = null; $ruleId = null; $stepSeq = null; $smtpAcctId = null;
+        $recEmail = null; $campId = null; $ruleId = null; $stepSeq = null; $smtpAcctId = null; $userId = null;
         try {
             // 1. Search email_followup_queue
             $fq = $pdo->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ? LIMIT 1");
@@ -332,8 +340,9 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
                 $recEmail   = $qRow['recipient_email'] ?? null;
                 $campId     = $qRow['campaign_id'] ?? null;
                 $ruleId     = $qRow['rule_id'] ?? null;
-                $stepSeq    = $qRow['step_number'] ?? null;
+                $stepSeq    = $qRow['followup_order'] ?? ($qRow['step_number'] ?? null);
                 $smtpAcctId = $qRow['smtp_account_id'] ?? null;
+                $userId     = $qRow['user_id'] ?? null;
             }
 
             // 2. Search followup_contacts
@@ -343,6 +352,7 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
                 if ($cRow = $fc->fetch()) {
                     $recEmail = $cRow['email'] ?? null;
                     $ruleId   = $cRow['rule_id'] ?? null;
+                    $stepSeq  = $cRow['current_step'] ?? null;
                 }
             }
 
@@ -354,7 +364,21 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
                     $recEmail = $sRow['recipient_email'] ?? null;
                     $campId   = $sRow['campaign_id'] ?? null;
                     $ruleId   = $sRow['rule_id'] ?? null;
+                    $userId   = $sRow['user_id'] ?? null;
                 }
+            }
+
+            // 4. Search send_logs
+            if (!$recEmail) {
+                try {
+                    $sl2 = $pdo->prepare("SELECT * FROM send_logs WHERE tracking_token = ? LIMIT 1");
+                    $sl2->execute([$token]);
+                    if ($sl2Row = $sl2->fetch()) {
+                        $recEmail = $sl2Row['email'] ?? null;
+                        $campId   = $sl2Row['campaign_id'] ?? null;
+                        $userId   = $sl2Row['user_id'] ?? null;
+                    }
+                } catch (\Throwable $_) {}
             }
 
             if (!$recEmail) {
@@ -363,15 +387,18 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
 
             $insEt = $pdo->prepare("
                 INSERT INTO email_tracking (
-                    tracking_token, campaign_id, rule_id, sequence_step, smtp_account_id, recipient_email, sent_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    tracking_token, user_id, campaign_id, rule_id, sequence_step, smtp_account_id, recipient_email, sent_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE tracking_token = VALUES(tracking_token)
             ");
-            $insEt->execute([$token, $campId, $ruleId, $stepSeq, $smtpAcctId, $recEmail]);
+            $insEt->execute([$token, $userId, $campId, $ruleId, $stepSeq, $smtpAcctId, $recEmail]);
 
+            $stmt = $pdo->prepare("SELECT * FROM email_tracking WHERE tracking_token = ? LIMIT 1");
             $stmt->execute([$token]);
             $tracking = $stmt->fetch();
-        } catch (Throwable $_e) {}
+        } catch (\Throwable $e) {
+            error_log("[OpenTracking] Warning inserting email_tracking master: " . $e->getMessage());
+        }
     }
 
     if (!$tracking) {
@@ -380,7 +407,10 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
             'tracking_token' => $token,
             'recipient_email' => 'anonymous@tracked.mail',
             'campaign_id' => 0,
-            'first_open_at' => null
+            'first_open_at' => null,
+            'open_count' => 0,
+            'unique_open_count' => 0,
+            'is_opened' => 0
         ];
     }
 
@@ -404,58 +434,93 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
 
     $isBot = $uaInfo['is_bot'];
 
-    // Cooldown rule: If the same IP opened within 10 minutes, do not increment unique count
-    $cooldownStmt = $pdo->prepare("SELECT id FROM email_open_events WHERE tracking_token = ? AND ip_address = ? AND opened_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1");
-    $cooldownStmt->execute([$token, $ip]);
-    $withinCooldown = (bool)$cooldownStmt->fetch();
+    // Distinct IP check for unique opens calculation
+    $hasOpenedFromThisIp = false;
+    try {
+        $ipStmt = $pdo->prepare("SELECT id FROM email_open_events WHERE tracking_token = ? AND ip_address = ? LIMIT 1");
+        $ipStmt->execute([$token, $ip]);
+        $hasOpenedFromThisIp = (bool)$ipStmt->fetch();
+    } catch (\Throwable $e) {}
 
     // 1. Insert detailed open event
-    $ins = $pdo->prepare(
-        "INSERT INTO email_open_events (
-            tracking_token, ip_address, country, country_code, city, region, timezone,
-            latitude, longitude, isp, device_type, operating_system, browser,
-            user_agent, referer, accept_language, privacy_proxy, proxy_open, confidence, is_bot, opened_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
-    );
-    $ins->execute([
-        $token,
-        $ip,
-        $location['country'],
-        $location['country_code'],
-        $location['city'],
-        $location['region'],
-        $location['timezone'],
-        $location['latitude'],
-        $location['longitude'],
-        $location['isp'],
-        $uaInfo['device_type'],
-        $uaInfo['operating_system'],
-        $uaInfo['browser'],
-        $ua,
-        $referer ? substr($referer, 0, 500) : null,
-        $lang ? substr($lang, 0, 100) : null,
-        $applePrivacy ? 1 : 0,
-        $gmailProxy ? 1 : 0,
-        $confidence,
-        $isBot
-    ]);
+    try {
+        $ins = $pdo->prepare(
+            "INSERT INTO email_open_events (
+                tracking_token, ip_address, country, country_code, city, region, timezone,
+                latitude, longitude, isp, device_type, operating_system, browser,
+                user_agent, referer, accept_language, privacy_proxy, proxy_open, confidence, is_bot, opened_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+        );
+        $ins->execute([
+            $token,
+            $ip,
+            $location['country'],
+            $location['country_code'],
+            $location['city'],
+            $location['region'],
+            $location['timezone'],
+            $location['latitude'],
+            $location['longitude'],
+            $location['isp'],
+            $uaInfo['device_type'],
+            $uaInfo['operating_system'],
+            $uaInfo['browser'],
+            $ua,
+            $referer ? substr($referer, 0, 500) : null,
+            $lang ? substr($lang, 0, 100) : null,
+            $applePrivacy ? 1 : 0,
+            $gmailProxy ? 1 : 0,
+            $confidence,
+            $isBot
+        ]);
+    } catch (\Throwable $e) {
+        error_log("[OpenTracking] Database insertion failure for email_open_events: " . $e->getMessage());
+    }
 
     // 2. Update master email_tracking record
-    $isFirstOpen = empty($tracking['first_open_at']);
-    $uniqueIncr  = (!$withinCooldown && !$isBot) ? 1 : 0;
-    
-    $updSql = "UPDATE email_tracking SET
-        is_opened = 1,
-        last_open_at = NOW(),
-        open_count = open_count + 1,
-        unique_open_count = unique_open_count + {$uniqueIncr},
-        apple_privacy_count = apple_privacy_count + " . ($applePrivacy ? 1 : 0) . ",
-        gmail_proxy_count = gmail_proxy_count + " . ($gmailProxy ? 1 : 0) . "
-        " . ($isFirstOpen ? ", first_open_at = NOW()" : "") . "
-        WHERE id = ?";
-    $pdo->prepare($updSql)->execute([$tracking['id']]);
+    $isFirstOpen = empty($tracking['first_open_at']) || (int)($tracking['is_opened'] ?? 0) === 0;
+    $uniqueIncr  = ($isFirstOpen || !$hasOpenedFromThisIp) && !$isBot ? 1 : 0;
 
-    // 3. Log event to system_logs for real-time telemetry stream
+    if (!empty($tracking['id'])) {
+        try {
+            $updSql = "UPDATE email_tracking SET
+                is_opened = 1,
+                last_open_at = NOW(),
+                open_count = open_count + 1,
+                unique_open_count = unique_open_count + {$uniqueIncr},
+                apple_privacy_count = apple_privacy_count + " . ($applePrivacy ? 1 : 0) . ",
+                gmail_proxy_count = gmail_proxy_count + " . ($gmailProxy ? 1 : 0) . "
+                " . ($isFirstOpen ? ", first_open_at = NOW()" : "") . "
+                WHERE id = ?";
+            $pdo->prepare($updSql)->execute([$tracking['id']]);
+        } catch (\Throwable $e) {
+            error_log("[OpenTracking] Database update failure for email_tracking ID {$tracking['id']}: " . $e->getMessage());
+        }
+    } else {
+        // Fallback update by token
+        try {
+            $updSql = "UPDATE email_tracking SET
+                is_opened = 1,
+                last_open_at = NOW(),
+                open_count = open_count + 1,
+                unique_open_count = unique_open_count + {$uniqueIncr},
+                apple_privacy_count = apple_privacy_count + " . ($applePrivacy ? 1 : 0) . ",
+                gmail_proxy_count = gmail_proxy_count + " . ($gmailProxy ? 1 : 0) . ",
+                first_open_at = COALESCE(first_open_at, NOW())
+                WHERE tracking_token = ?";
+            $pdo->prepare($updSql)->execute([$token]);
+        } catch (\Throwable $e) {
+            error_log("[OpenTracking] Fallback update failure by tracking_token: " . $e->getMessage());
+        }
+    }
+
+    // 3. Synchronize open status on follow-up queues & contacts
+    try {
+        $pdo->prepare("UPDATE email_followup_queue SET opened_at = COALESCE(opened_at, NOW()) WHERE tracking_token = ?")->execute([$token]);
+        $pdo->prepare("UPDATE followup_contacts SET opened_at = COALESCE(opened_at, NOW()), open_count = open_count + 1 WHERE tracking_token = ?")->execute([$token]);
+    } catch (\Throwable $_fuEx) {}
+
+    // 4. Log event to system_logs for real-time telemetry stream
     if (function_exists('logSystemEvent') && !$isBot) {
         $detailNote = "Email opened on {$uaInfo['device_type']} ({$uaInfo['browser']} / {$location['country']})";
         if ($applePrivacy) $detailNote .= " [Apple Privacy]";
@@ -464,9 +529,9 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
             'opened',
             $tracking['recipient_email'],
             $detailNote,
-            null,
+            $tracking['user_id'] ?? null,
             (int)($tracking['campaign_id'] ?? 0),
-            null,
+            (int)($tracking['rule_id'] ?? 0),
             null,
             $token,
             null,
@@ -475,7 +540,7 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
         );
     }
 
-    // 4. Trigger Webhook on first verified human open
+    // 5. Trigger Webhook on first verified human open
     if ($isFirstOpen && !$isBot) {
         dispatchTrackingWebhook($tracking, [
             'event'          => 'email_opened',
