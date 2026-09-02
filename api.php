@@ -4149,6 +4149,17 @@ if ($res === 'blocked-skipped') {
         ]);
     }
 
+    // Detect if 'reason' column exists in blacklist table safely
+    $hasBlReasonCol = false;
+    try {
+        $c = db()->query("SHOW COLUMNS FROM blacklist LIKE 'reason'")->fetch();
+        $hasBlReasonCol = !empty($c);
+    } catch (Exception $e) {}
+
+    $blReasonSql = $hasBlReasonCol
+        ? "COALESCE(NULLIF(reason, ''), CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), '')))"
+        : "CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), ''))";
+
     // 2. EXPORT CSV
     if (($method === 'POST' || $method === 'GET') && $id === 'export') {
         header('Content-Type: text/csv; charset=UTF-8');
@@ -4161,7 +4172,7 @@ if ($res === 'blocked-skipped') {
             SELECT recipient_email as email, 'Skipped (BCC)' as category, details as reason, smtp_server as source, created_at
             FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'
             UNION ALL
-            SELECT COALESCE(NULLIF(email, ''), domain, '') as email, 'Blacklisted' as category, CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), '')) as reason, 'Blacklist' as source, created_at
+            SELECT COALESCE(NULLIF(email, ''), domain, '') as email, 'Blacklisted' as category, {$blReasonSql} as reason, 'Blacklist' as source, created_at
             FROM blacklist WHERE {$whereUser}
             UNION ALL
             SELECT recipient_email as email, 'Unsubscribed' as category, details as reason, smtp_server as source, created_at
@@ -4200,7 +4211,7 @@ if ($res === 'blocked-skipped') {
             $unions[] = "SELECT id, 'skipped_bcc' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'";
         }
         if ($category === 'all' || $category === 'blacklisted') {
-            $unions[] = "SELECT id, 'blacklisted' as category, COALESCE(NULLIF(email, ''), domain, '') as email, CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), '')) as reason, 'Blacklist Manager' as source, created_at FROM blacklist WHERE {$whereUser}";
+            $unions[] = "SELECT id, 'blacklisted' as category, COALESCE(NULLIF(email, ''), domain, '') as email, {$blReasonSql} as reason, 'Blacklist Manager' as source, created_at FROM blacklist WHERE {$whereUser}";
         }
         if ($category === 'all' || $category === 'unsubscribed') {
             $unions[] = "SELECT id, 'unsubscribed' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'";
@@ -4265,7 +4276,11 @@ if ($res === 'blocked-skipped') {
             if ($check->fetch()) {
                 jsonOut(['ok' => false, 'message' => 'Email is already blacklisted']);
             }
-            db()->prepare("INSERT INTO blacklist (user_id, type, email, reason) VALUES (?, 'email', ?, ?)")->execute([$UID, $email, $reason]);
+            if ($hasBlReasonCol) {
+                db()->prepare("INSERT INTO blacklist (user_id, type, email, reason) VALUES (?, 'email', ?, ?)")->execute([$UID, $email, $reason]);
+            } else {
+                db()->prepare("INSERT INTO blacklist (user_id, type, email) VALUES (?, 'email', ?)")->execute([$UID, $email]);
+            }
             jsonOut(['ok' => true, 'message' => "Email {$email} added to Blacklist"]);
         } catch (Exception $e) {
             jsonOut(['ok' => false, 'message' => $e->getMessage()], 500);
