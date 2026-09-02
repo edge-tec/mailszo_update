@@ -58,12 +58,18 @@ class Mailer {
         if (!$this->cfg['secure'] && stripos($resp, 'STARTTLS') !== false) {
             $this->cmd($sock, 'STARTTLS');
             $this->read($sock);
-            // FIX: Try multiple TLS versions for broader server compatibility.
-            $crypto = STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
-                    | STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT
-                    | STREAM_CRYPTO_METHOD_TLS_CLIENT;
+            // Broad TLS version negotiation (TLS 1.3, 1.2, 1.1, 1.0) with fallback
+            $crypto = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT;
+
             if (!@stream_socket_enable_crypto($sock, true, $crypto)) {
-                throw new Exception("STARTTLS handshake failed — try SSL port 465 instead");
+                $anyCrypto = defined('STREAM_CRYPTO_METHOD_ANY_CLIENT') ? STREAM_CRYPTO_METHOD_ANY_CLIENT : STREAM_CRYPTO_METHOD_TLS_CLIENT;
+                if (!@stream_socket_enable_crypto($sock, true, $anyCrypto)) {
+                    throw new Exception("STARTTLS handshake failed — try SSL port 465 instead");
+                }
             }
             $this->cmd($sock, "EHLO {$ehloHost}");
             $this->read($sock);
