@@ -256,14 +256,9 @@ class Mailer {
             }
         }
 
-        // Unsubscribe placeholder replacement
-        $unsubUrl = trim($options['list_unsubscribe'] ?? ($trackingToken ? $baseUrl . '/api.php?r=track/unsub&t=' . urlencode($trackingToken) : ''));
-        if ($unsubUrl) {
-            $html = str_ireplace('{{UNSUBSCRIBE_URL}}', $unsubUrl, $html);
-            $html = str_ireplace('{{unsubscribe_url}}', $unsubUrl, $html);
-            $text = str_ireplace('{{UNSUBSCRIBE_URL}}', $unsubUrl, $text);
-            $text = str_ireplace('{{unsubscribe_url}}', $unsubUrl, $text);
-        }
+        // Unsubscribe placeholders removed (traffic cannot unsubscribe)
+        $html = str_ireplace(['{{UNSUBSCRIBE_URL}}', '{{unsubscribe_url}}'], '#', $html);
+        $text = str_ireplace(['{{UNSUBSCRIBE_URL}}', '{{unsubscribe_url}}'], '', $text);
 
         // Optional headers & Auto-Reply RFC 3834 compliance
         $isAutoReply = !empty($options['is_auto_reply']);
@@ -313,13 +308,8 @@ class Mailer {
             $threadHdrs .= "References: {$formattedInReplyTo}\r\n";
         }
 
-        // List-Unsubscribe headers (RFC 8058 One-Click compliance)
+        // List-Unsubscribe header disabled per user request (traffic cannot unsubscribe)
         $unsubHdrs = '';
-        if ($unsubUrl) {
-            $formattedUnsub = (strpos($unsubUrl, '<') === false) ? "<{$unsubUrl}>" : $unsubUrl;
-            $unsubHdrs .= "List-Unsubscribe: {$formattedUnsub}\r\n";
-            $unsubHdrs .= "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n";
-        }
 
         // Deliverability compliance headers
         $returnPathVal = !empty($options['return_path']) ? trim($options['return_path']) : $from;

@@ -3395,7 +3395,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
             <span class="badge b-blue" style="font-size:10px">Live Filtering</span>
           </div>
           <div class="feat-hero-sub" style="margin-top:4px">
-            Unified list and report of all blocked, blacklisted, unsubscribed, bounced, and skipped emails across IMAP auto-responders and campaigns.
+            Unified list and report of all blocked, blacklisted, bounced, and skipped emails across IMAP auto-responders and campaigns.
           </div>
         </div>
       </div>
@@ -3406,12 +3406,12 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
       </div>
     </div>
 
-    <!-- 6 KPI Telemetry Cards -->
-    <div class="sys-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px">
+    <!-- 5 KPI Telemetry Cards -->
+    <div class="sys-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:18px">
       <div class="sys-kpi-card" style="border-top:3px solid #EF4444">
         <div class="sys-kpi-lbl">🚫 TOTAL BLOCKED</div>
         <div class="sys-kpi-val" id="bs-stat-blocked" style="color:#EF4444">—</div>
-        <div class="sys-kpi-sub">Blacklist + Unsub + Bounce</div>
+        <div class="sys-kpi-sub">Blacklist + Bounced</div>
       </div>
       <div class="sys-kpi-card" style="border-top:3px solid #F59E0B">
         <div class="sys-kpi-lbl">⏭️ TOTAL SKIPPED</div>
@@ -3427,11 +3427,6 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
         <div class="sys-kpi-lbl">⛔ BLACKLISTED</div>
         <div class="sys-kpi-val" id="bs-stat-blacklisted" style="color:#DC2626">—</div>
         <div class="sys-kpi-sub">Explicit Block Rules</div>
-      </div>
-      <div class="sys-kpi-card" style="border-top:3px solid #64748B">
-        <div class="sys-kpi-lbl">🛑 UNSUBSCRIBED</div>
-        <div class="sys-kpi-val" id="bs-stat-unsub" style="color:#64748B">—</div>
-        <div class="sys-kpi-sub">Opt-Out List</div>
       </div>
       <div class="sys-kpi-card" style="border-top:3px solid #EA580C">
         <div class="sys-kpi-lbl">⚠️ BOUNCED / FAILED</div>
@@ -3485,7 +3480,6 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
             <button class="chip-btn active" id="bs-chip-all" onclick="setBsCategory('all',this)">All Records</button>
             <button class="chip-btn" id="bs-chip-skipped_bcc" onclick="setBsCategory('skipped_bcc',this)">🛡️ Skipped (BCC)</button>
             <button class="chip-btn" id="bs-chip-blacklisted" onclick="setBsCategory('blacklisted',this)">🚫 Blacklisted</button>
-            <button class="chip-btn" id="bs-chip-unsubscribed" onclick="setBsCategory('unsubscribed',this)">🛑 Unsubscribed</button>
             <button class="chip-btn" id="bs-chip-bounced" onclick="setBsCategory('bounced',this)">⚠️ Bounced / Failed</button>
             <button class="chip-btn" id="bs-chip-skipped_queue" onclick="setBsCategory('skipped_queue',this)">⏭️ Skipped (Queue)</button>
           </div>
@@ -10477,7 +10471,6 @@ async function loadBlockedSkippedStats() {
   set('bs-stat-skipped', fmt(st.total_skipped));
   set('bs-stat-bcc', fmt(st.skipped_bcc));
   set('bs-stat-blacklisted', fmt(st.blacklisted));
-  set('bs-stat-unsub', fmt(st.unsubscribed));
   set('bs-stat-bounced', fmt(st.bounced));
 
   // Render 14-Day Timeline Chart
@@ -10515,7 +10508,6 @@ async function loadBlockedSkippedStats() {
     const totalAll = (st.total_blocked || 0) + (st.total_skipped || 0) || 1;
     const cats = [
       { name: 'Blacklisted', count: st.blacklisted, color: '#DC2626' },
-      { name: 'Unsubscribed', count: st.unsubscribed, color: '#64748B' },
       { name: 'Bounced / Failed', count: st.bounced, color: '#EA580C' },
       { name: 'Skipped (BCC)', count: st.skipped_bcc, color: '#6366F1' },
       { name: 'Skipped (Queue / Other)', count: (st.skipped_queue || 0) + (st.skipped_other || 0), color: '#F59E0B' }

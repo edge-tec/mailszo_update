@@ -259,44 +259,14 @@ if ($res === 'track') {
         exit;
     }
 
-    // 3. UNSUBSCRIBE
+    // 3. UNSUBSCRIBE (Disabled per user request - traffic cannot unsubscribe)
     if ($subAction === 'unsub') {
-        $email = '';
-        $userId = 1;
-        if ($token) {
-            try {
-                $qStmt = db()->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ?");
-                $qStmt->execute([$token]);
-                $qRow = $qStmt->fetch();
-                if ($qRow) {
-                    $email = $qRow['recipient_email'];
-                    $userId = (int)$qRow['user_id'];
-                    db()->prepare("UPDATE email_followup_queue SET status = 'cancelled' WHERE recipient_email = ? AND status IN ('pending','scheduled')")->execute([$email]);
-                }
-                $fcStmt = db()->prepare("SELECT c.*, r.user_id FROM followup_contacts c JOIN followup_rules r ON r.id = c.rule_id WHERE c.tracking_token = ?");
-                $fcStmt->execute([$token]);
-                $fcRow = $fcStmt->fetch();
-                if ($fcRow) {
-                    $email = $fcRow['email'];
-                    $userId = (int)$fcRow['user_id'];
-                    db()->prepare("UPDATE followup_contacts SET status = 'stopped' WHERE email = ?")->execute([$email]);
-                }
-                if ($email) {
-                    db()->prepare("UPDATE emails SET status = 'unsubscribed' WHERE email = ?")->execute([$email]);
-                    db()->prepare("INSERT INTO blacklist (user_id, type, email) VALUES (?, 'email', ?) ON DUPLICATE KEY UPDATE type='email'")->execute([$userId, $email]);
-                    logSystemEvent('unsubscribed', $email, 'Recipient unsubscribed via tracking link', $userId, null, null, null, $token);
-                }
-            } catch (Throwable $_uEx) {}
-        }
-
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            jsonOut(['ok' => true, 'message' => 'Successfully unsubscribed.']);
+            jsonOut(['ok' => false, 'message' => 'Unsubscribe is not available for this mailing list.']);
         }
-
-        // Output clean HTML unsubscribe confirmation page
         while (ob_get_level() > 0) { ob_end_clean(); }
         header('Content-Type: text/html; charset=UTF-8');
-        echo '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribed</title><style>body{background:#090c12;color:#e2eaf6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}.card{background:#0e1420;border:1px solid #1a2540;padding:36px 24px;border-radius:14px;max-width:420px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}.ic{font-size:44px;margin-bottom:16px}h2{color:#4ade80;font-size:20px;margin-bottom:10px}p{color:#7a92b8;font-size:14px;line-height:1.6}</style></head><body><div class="card"><div class="ic">📬</div><h2>You have been unsubscribed</h2><p>' . htmlspecialchars($email ?: 'Your email address') . ' has been removed from our mailing list. You will not receive any further automated emails from this sequence.</p></div></body></html>';
+        echo '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mailing List</title><style>body{background:#090c12;color:#e2eaf6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}.card{background:#0e1420;border:1px solid #1a2540;padding:36px 24px;border-radius:14px;max-width:420px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}.ic{font-size:44px;margin-bottom:16px}h2{color:#6366f1;font-size:20px;margin-bottom:10px}p{color:#7a92b8;font-size:14px;line-height:1.6}</style></head><body><div class="card"><div class="ic">📬</div><h2>Subscription Status</h2><p>Your subscription to this service remains active.</p></div></body></html>';
         exit;
     }
 
