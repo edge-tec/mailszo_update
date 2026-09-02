@@ -415,6 +415,46 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .feat-guide strong{color:var(--indigo)}
 .feat-guide-hd{display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:700;color:var(--text)}
 
+/* ── Smart Routing Modern Pipeline & KPI Components ── */
+.mr-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+.mr-kpi-card{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:12px;
+  padding:16px 18px;box-shadow:0 2px 6px rgba(16,24,40,0.03);position:relative;
+  overflow:hidden;transition:all .2s cubic-bezier(.16,1,.3,1);
+}
+.mr-kpi-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,24,40,0.06);border-color:var(--border2)}
+.mr-kpi-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-c,var(--indigo));
+}
+.mr-kpi-lbl{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px}
+.mr-kpi-val{font-size:26px;font-weight:800;font-family:var(--font);color:var(--text);letter-spacing:-0.02em;line-height:1.1}
+.mr-kpi-sub{font-size:11px;color:var(--text2);margin-top:8px;display:flex;align-items:center;gap:5px;font-weight:500}
+
+.pipeline-box{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:14px;
+  padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(16,24,40,0.03);
+}
+.pipeline-box-hd{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;
+}
+.pipeline-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;position:relative;
+}
+.pipe-step{
+  background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;
+  position:relative;transition:all .2s ease;display:flex;flex-direction:column;justify-content:space-between;
+}
+.pipe-step:hover{
+  background:#FFFFFF;border-color:var(--indigo);transform:translateY(-2px);box-shadow:0 8px 20px rgba(99,102,241,0.08);
+}
+.pipe-step-num{
+  font-size:10px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:20px;margin-bottom:10px;width:fit-content;
+}
+.pipe-step-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.pipe-step-desc{font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px}
+.pipe-step-tag{margin-top:auto}
+
 #login-wrap{position:fixed;inset:0;background:radial-gradient(ellipse at 25% 60%,rgba(99,102,241,.12),transparent 55%),var(--bg);display:flex;align-items:center;justify-content:center;z-index:99999}
 .login-card{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;width:90%;max-width:380px;padding:32px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
 .login-logo{text-align:center;margin-bottom:24px}
@@ -2317,169 +2357,187 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- SMART MAIL ROUTING STUDIO -->
   <div class="page" id="page-mailrouting">
-    <!-- Header & KPIs -->
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px">
-      <div>
-        <h2 style="font-size:20px;font-weight:700;display:flex;align-items:center;gap:8px;margin:0">
-          🔀 Smart Mail Routing Studio
-          <span class="badge b-purple" style="font-size:11px">Multi-IMAP & Multi-SMTP Failover</span>
-        </h2>
-        <div style="font-size:12px;color:var(--text2);margin-top:4px">
-          Automatic Reply Routing (Gmail Priority → SMTP #1 Reply → Secondary Mailbox #2 Migration) with full thread persistence.
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🔀</div>
+        <div class="feat-hero-text">
+          <h2>Smart Mail Routing Studio <span class="badge b-purple" style="font-size:10px">Multi-IMAP &amp; SMTP Failover</span> <span class="badge b-blue" style="font-size:10px">Zero-Drop Thread Persistence</span></h2>
+          <p>Autonomous conversational email routing: Inbound Gmail capture &rarr; Primary SMTP #1 auto-reply with Reply-To switch &rarr; Secondary Mailbox #2 migration.</p>
         </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()">↺ Refresh</button>
-        <button class="btn btn-emerald btn-sm" onclick="triggerRoutingCron()">⚡ Run Routing Cron</button>
-      </div>
-    </div>
-
-    <!-- KPI Stats Cards -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px">
-      <div class="sc" style="--sc-c:var(--blue)">
-        <div class="sc-lbl">Total Leads (Gmail)</div>
-        <div class="sc-val" id="mr-stat-leads">0</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">📥 Inbound from IMAP #1</div>
-      </div>
-      <div class="sc" style="--sc-c:var(--purple)">
-        <div class="sc-lbl">First Replies Dispatched</div>
-        <div class="sc-val" id="mr-stat-first-replies">0</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">📤 Sent via SMTP #1 (Reply-To: #2)</div>
-      </div>
-      <div class="sc" style="--sc-c:var(--emerald)">
-        <div class="sc-lbl">Migrated to Mailbox #2</div>
-        <div class="sc-val" id="mr-stat-migrated">0</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">🔄 Attached to Secondary IMAP/SMTP</div>
-      </div>
-      <div class="sc" style="--sc-c:var(--amber)">
-        <div class="sc-lbl">Follow-Ups Active</div>
-        <div class="sc-val" id="mr-stat-followups">0</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">⏳ Simultaneous timer sequence</div>
-      </div>
-      <div class="sc" style="--sc-c:var(--teal)">
-        <div class="sc-lbl">Active Conversations</div>
-        <div class="sc-val" id="mr-stat-active">0</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">💬 Ongoing chat threads</div>
-      </div>
-    </div>
-
-    <!-- Live Smart Routing Flow Architecture Visualizer -->
-    <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(30,41,59,0.7),rgba(15,23,42,0.9));border:1px solid rgba(167,139,250,0.25)">
-      <div class="card-hd" style="border-bottom:1px solid rgba(255,255,255,0.08)">
-        <h3 style="display:flex;align-items:center;gap:8px;color:#f8fafc">
-          <span>⚡</span> Smart Email Routing Engine Architecture
-        </h3>
-        <span class="badge b-purple" style="font-size:10px">Up to 10 IMAP + 10 SMTP Accounts Supported</span>
-      </div>
-      <div class="card-body" style="padding:16px">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-          <!-- Step 1 Box -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:12px">
-            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--blue);margin-bottom:6px">
-              <span>1️⃣</span> Lead Reception
-            </div>
-            <div style="font-size:11px;color:var(--text2);line-height:1.4">
-              <strong>IMAP #1 (Gmail Priority)</strong> captures new inbound email.<br>
-              Extracts <code class="mono">Message-ID</code>, <code class="mono">Subject</code>, assigns <span class="badge b-blue" style="font-size:9px">NEW_LEAD</span>.
-            </div>
-          </div>
-          <!-- Step 2 Box -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:12px">
-            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--purple);margin-bottom:6px">
-              <span>2️⃣</span> Simultaneous First Reply + Follow-Up
-            </div>
-            <div style="font-size:11px;color:var(--text2);line-height:1.4">
-              <strong>SMTP #1 (Primary Sender)</strong> sends first response with <code class="mono">Reply-To: SMTP #2</code>.<br>
-              Follow-Up queue starts simultaneously (delay timer).
-            </div>
-          </div>
-          <!-- Step 3 Box -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:12px">
-            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--emerald);margin-bottom:6px">
-              <span>3️⃣</span> Mailbox Migration
-            </div>
-            <div style="font-size:11px;color:var(--text2);line-height:1.4">
-              Lead replies → lands in <strong>IMAP #2 (Secondary Inbox)</strong>.<br>
-              Conversation stage updates to <span class="badge b-green" style="font-size:9px">MOVED_TO_SECONDARY</span>.
-            </div>
-          </div>
-          <!-- Step 4 Box -->
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px">
-            <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--amber);margin-bottom:6px">
-              <span>4️⃣</span> Continuous Chat Mode
-            </div>
-            <div style="font-size:11px;color:var(--text2);line-height:1.4">
-              All subsequent replies send from <strong>SMTP #2</strong> with <code class="mono">In-Reply-To</code> headers.<br>
-              Never switches back to SMTP #1.
-            </div>
-          </div>
+      <div class="feat-hero-stats">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="triggerRoutingCron()" style="background:linear-gradient(135deg,#10B981 0%,#059669 100%) !important;border:none !important">⚡ Run Routing Cron</button>
         </div>
       </div>
     </div>
 
-    <!-- Active Conversation Threads Table -->
+    <!-- Modern KPI Stats Cards -->
+    <div class="mr-kpi-grid">
+      <div class="mr-kpi-card" style="--kpi-c:#3B82F6">
+        <div class="mr-kpi-lbl">Total Leads (Gmail)</div>
+        <div class="mr-kpi-val" id="mr-stat-leads" style="color:#2563EB">0</div>
+        <div class="mr-kpi-sub"><span>📥</span> Inbound from IMAP #1</div>
+      </div>
+      <div class="mr-kpi-card" style="--kpi-c:#6366F1">
+        <div class="mr-kpi-lbl">First Replies Dispatched</div>
+        <div class="mr-kpi-val" id="mr-stat-first-replies" style="color:#4F46E5">0</div>
+        <div class="mr-kpi-sub"><span>📤</span> Sent via SMTP #1 (Reply-To: #2)</div>
+      </div>
+      <div class="mr-kpi-card" style="--kpi-c:#10B981">
+        <div class="mr-kpi-lbl">Migrated to Mailbox #2</div>
+        <div class="mr-kpi-val" id="mr-stat-migrated" style="color:#059669">0</div>
+        <div class="mr-kpi-sub"><span>🔄</span> Attached to Secondary IMAP/SMTP</div>
+      </div>
+      <div class="mr-kpi-card" style="--kpi-c:#F59E0B">
+        <div class="mr-kpi-lbl">Follow-Ups Active</div>
+        <div class="mr-kpi-val" id="mr-stat-followups" style="color:#D97706">0</div>
+        <div class="mr-kpi-sub"><span>⏳</span> Simultaneous timer sequence</div>
+      </div>
+      <div class="mr-kpi-card" style="--kpi-c:#8B5CF6">
+        <div class="mr-kpi-lbl">Active Conversations</div>
+        <div class="mr-kpi-val" id="mr-stat-active" style="color:#7C3AED">0</div>
+        <div class="mr-kpi-sub"><span>💬</span> Ongoing chat threads</div>
+      </div>
+    </div>
+
+    <!-- Live Smart Routing Flow Architecture Visualizer (Clean Light SaaS Pipeline) -->
+    <div class="pipeline-box">
+      <div class="pipeline-box-hd">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">⚡</span>
+          <h3 style="margin:0;font-size:14px;font-weight:700;color:var(--text)">Smart Email Routing Engine Architecture</h3>
+        </div>
+        <span class="badge b-purple" style="font-size:10px;font-weight:700">Up to 10 IMAP + 10 SMTP Accounts Supported</span>
+      </div>
+      <div class="pipeline-grid">
+        <!-- Step 1 -->
+        <div class="pipe-step">
+          <div>
+            <div class="pipe-step-num" style="background:rgba(59,130,246,0.1);color:#2563EB;border:1px solid rgba(59,130,246,0.2)">1️⃣ Stage 01</div>
+            <div class="pipe-step-title">Inbound Lead Capture</div>
+            <div class="pipe-step-desc">
+              <strong>IMAP #1 (Gmail Priority)</strong> captures new inbound email, extracts <code class="mono" style="font-size:10px">Message-ID</code> &amp; <code class="mono" style="font-size:10px">Subject</code>.
+            </div>
+          </div>
+          <div class="pipe-step-tag"><span class="badge b-blue" style="font-weight:700;font-size:10px">NEW_LEAD</span></div>
+        </div>
+        <!-- Step 2 -->
+        <div class="pipe-step">
+          <div>
+            <div class="pipe-step-num" style="background:rgba(99,102,241,0.1);color:#4F46E5;border:1px solid rgba(99,102,241,0.2)">2️⃣ Stage 02</div>
+            <div class="pipe-step-title">Primary Sender &amp; Reply-To</div>
+            <div class="pipe-step-desc">
+              <strong>SMTP #1 (Primary Sender)</strong> dispatches first response with <code class="mono" style="font-size:10px">Reply-To: SMTP #2</code>. Follow-Up sequence arms simultaneously.
+            </div>
+          </div>
+          <div class="pipe-step-tag"><span class="badge b-purple" style="font-weight:700;font-size:10px">FIRST_REPLY_SENT</span></div>
+        </div>
+        <!-- Step 3 -->
+        <div class="pipe-step">
+          <div>
+            <div class="pipe-step-num" style="background:rgba(16,185,129,0.1);color:#059669;border:1px solid rgba(16,185,129,0.2)">3️⃣ Stage 03</div>
+            <div class="pipe-step-title">Mailbox Migration</div>
+            <div class="pipe-step-desc">
+              When lead responds, reply lands in <strong>IMAP #2 (Secondary Inbox)</strong>. Conversation rebinds permanently to secondary account.
+            </div>
+          </div>
+          <div class="pipe-step-tag"><span class="badge b-green" style="font-weight:700;font-size:10px">MOVED_TO_SECONDARY</span></div>
+        </div>
+        <!-- Step 4 -->
+        <div class="pipe-step">
+          <div>
+            <div class="pipe-step-num" style="background:rgba(245,158,11,0.1);color:#D97706;border:1px solid rgba(245,158,11,0.2)">4️⃣ Stage 04</div>
+            <div class="pipe-step-title">Continuous Chat Mode</div>
+            <div class="pipe-step-desc">
+              All ongoing chat replies dispatch from <strong>SMTP #2</strong> with <code class="mono" style="font-size:10px">In-Reply-To</code> headers. Never switches back to primary.
+            </div>
+          </div>
+          <div class="pipe-step-tag"><span class="badge b-amber" style="font-weight:700;font-size:10px">CHAT_ACTIVE</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Conversation Threads Table Card -->
     <div class="card" style="margin-bottom:20px">
-      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
-        <h3>💬 Active Smart Conversation Threads</h3>
-        <select class="fsel" id="mr-stage-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRouting()">
-          <option value="">All Stages</option>
-          <option value="NEW_LEAD">🔵 NEW_LEAD</option>
-          <option value="FIRST_REPLY_SENT">🟣 FIRST_REPLY_SENT</option>
-          <option value="MOVED_TO_SECONDARY">🟢 MOVED_TO_SECONDARY</option>
-          <option value="FOLLOWUP_RUNNING">🟠 FOLLOWUP_RUNNING</option>
-          <option value="FOLLOWUP_COMPLETED">⚪ FOLLOWUP_COMPLETED</option>
-        </select>
-        <select class="fsel" id="mr-mailbox-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRouting()">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap" style="flex:1;min-width:240px">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="mr-thread-search" placeholder="Search lead email, name, subject or thread ID…" oninput="mrSearchDebounce()">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="mr-chip-all" onclick="setMrStageFilter('',this)">All Stages</button>
+          <button class="chip-btn" id="mr-chip-new" onclick="setMrStageFilter('NEW_LEAD',this)">🔵 New Lead</button>
+          <button class="chip-btn" id="mr-chip-replied" onclick="setMrStageFilter('FIRST_REPLY_SENT',this)">🟣 1st Reply</button>
+          <button class="chip-btn" id="mr-chip-migrated" onclick="setMrStageFilter('MOVED_TO_SECONDARY',this)">🟢 Migrated #2</button>
+          <button class="chip-btn" id="mr-chip-fu" onclick="setMrStageFilter('FOLLOWUP_RUNNING',this)">🟠 Follow-Up</button>
+        </div>
+        <select class="fsel" id="mr-mailbox-filter" style="width:auto;padding:6px 10px;font-size:12px;margin:0" onchange="loadMailRouting()">
           <option value="">All Mailboxes</option>
-          <option value="primary">Primary (Gmail)</option>
-          <option value="secondary">Secondary (Mailbox #2)</option>
+          <option value="primary">📥 Primary (Gmail)</option>
+          <option value="secondary">📬 Secondary (Mailbox #2)</option>
         </select>
-        <input class="fi" id="mr-thread-search" placeholder="Search email / subject / thread ID…" style="width:200px;padding:4px 8px;font-size:12px" oninput="mrSearchDebounce()">
-        <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()">↺ Refresh</button>
+        <select class="fsel" id="mr-stage-filter" style="display:none" onchange="loadMailRouting()">
+          <option value="">All Stages</option>
+          <option value="NEW_LEAD">NEW_LEAD</option>
+          <option value="FIRST_REPLY_SENT">FIRST_REPLY_SENT</option>
+          <option value="MOVED_TO_SECONDARY">MOVED_TO_SECONDARY</option>
+          <option value="FOLLOWUP_RUNNING">FOLLOWUP_RUNNING</option>
+          <option value="FOLLOWUP_COMPLETED">FOLLOWUP_COMPLETED</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadMailRouting()" title="Refresh Threads">↺</button>
       </div>
+
       <div class="card-body" style="padding:0">
         <div class="tw"><table>
           <thead>
             <tr>
-              <th>Lead Email & Name</th>
-              <th>Rule & Subject</th>
+              <th>Lead Email &amp; Contact</th>
+              <th>Trigger Rule &amp; Subject</th>
               <th>Active Mailbox</th>
-              <th>Stage</th>
+              <th>Conversation Stage</th>
               <th>Replies In / Step</th>
               <th>Follow-Up Status</th>
               <th>Last Activity</th>
-              <th>Actions</th>
+              <th style="text-align:right">Actions</th>
             </tr>
           </thead>
           <tbody id="mr-threads-body">
             <tr class="empty-row"><td colspan="8">Loading conversation threads…</td></tr>
           </tbody>
         </table></div>
-        <div id="mr-threads-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-top:1px solid var(--border)"></div>
+        <div id="mr-threads-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
 
     <!-- Live Mail Routing Audit Log Stream -->
     <div class="card">
-      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
-        <h3>🛰️ Mail Routing Audit Trail & Live Log Stream</h3>
-        <select class="fsel" id="mr-log-event-filter" style="width:auto;padding:4px 8px;font-size:12px" onchange="loadMailRoutingLogs()">
-          <option value="">All Events</option>
-          <option value="lead_received">📥 Lead Received</option>
-          <option value="first_reply_sent">📤 First Reply Sent</option>
-          <option value="mailbox_migrated">🔄 Mailbox Migrated</option>
-          <option value="chat_reply_sent">💬 Chat Reply Sent</option>
-          <option value="followup_scheduled">⏱ Follow-Up Scheduled</option>
-          <option value="followup_sent">📬 Follow-Up Sent</option>
-          <option value="duplicate_ignored">🛡️ Duplicate Ignored</option>
-        </select>
-        <button class="btn btn-danger btn-sm" onclick="clearMailRoutingLogs()">🗑 Clear Routing Logs</button>
+      <div class="tbl-toolbar" style="border-bottom:1px solid var(--border)">
+        <div style="font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px;color:var(--text)">
+          <span>🛰️</span> Routing Audit Trail &amp; Telemetry Stream
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap">
+          <select class="fsel" id="mr-log-event-filter" style="width:auto;padding:6px 10px;font-size:12px;margin:0" onchange="loadMailRoutingLogs()">
+            <option value="">All Events</option>
+            <option value="lead_received">📥 Lead Received</option>
+            <option value="first_reply_sent">📤 First Reply Sent</option>
+            <option value="mailbox_migrated">🔄 Mailbox Migrated</option>
+            <option value="chat_reply_sent">💬 Chat Reply Sent</option>
+            <option value="followup_scheduled">⏱ Follow-Up Scheduled</option>
+            <option value="followup_sent">📬 Follow-Up Sent</option>
+            <option value="duplicate_ignored">🛡️ Duplicate Ignored</option>
+          </select>
+          <button class="btn btn-danger btn-sm" onclick="clearMailRoutingLogs()">🗑 Clear Logs</button>
+        </div>
       </div>
       <div class="card-body" style="padding:0">
         <div class="tw"><table>
           <thead>
             <tr>
-              <th>Time</th>
+              <th>Timestamp</th>
               <th>Event</th>
               <th>Lead Email</th>
               <th>Routing Mailbox / SMTP</th>
@@ -2492,7 +2550,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
             <tr class="empty-row"><td colspan="7">Loading routing audit logs…</td></tr>
           </tbody>
         </table></div>
-        <div id="mr-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-top:1px solid var(--border)"></div>
+        <div id="mr-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
   </div>
@@ -8262,9 +8320,18 @@ let mrDebounceTimer = null;
 let mrCurrentPage = 1;
 let mrLogsCurrentPage = 1;
 
+function setMrStageFilter(stage, btn) {
+  const sel = $('mr-stage-filter');
+  if (sel) sel.value = stage;
+  document.querySelectorAll('#page-mailrouting .chip-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  mrCurrentPage = 1;
+  loadMailRouting();
+}
+
 function mrSearchDebounce() {
   clearTimeout(mrDebounceTimer);
-  mrDebounceTimer = setTimeout(() => loadMailRouting(), 300);
+  mrDebounceTimer = setTimeout(() => { mrCurrentPage = 1; loadMailRouting(); }, 300);
 }
 
 async function loadMailRouting(silent) {
@@ -8301,49 +8368,56 @@ async function loadMailRouting(silent) {
     if (!tb) return;
 
     if (!r?.rows?.length) {
-      tb.innerHTML = '<tr class="empty-row"><td colspan="8">No active smart conversation threads found.</td></tr>';
+      tb.innerHTML = '<tr class="empty-row"><td colspan="8" style="padding:28px;text-align:center;color:var(--text3)">No active smart conversation threads found.</td></tr>';
     } else {
       const stageBadges = {
-        'NEW_LEAD': '<span class="badge b-blue">🔵 NEW_LEAD</span>',
-        'FIRST_REPLY_SENT': '<span class="badge b-purple">🟣 FIRST_REPLY_SENT</span>',
-        'MOVED_TO_SECONDARY': '<span class="badge b-green">🟢 MOVED_TO_SECONDARY</span>',
-        'FOLLOWUP_RUNNING': '<span class="badge b-amber">🟠 FOLLOWUP_RUNNING</span>',
-        'FOLLOWUP_COMPLETED': '<span class="badge b-gray">⚪ FOLLOWUP_COMPLETED</span>',
+        'NEW_LEAD': '<span class="badge b-blue" style="font-weight:700;display:inline-flex;align-items:center;gap:4px"><span class="live-dot" style="display:inline-block"></span> New Lead</span>',
+        'FIRST_REPLY_SENT': '<span class="badge b-indigo" style="font-weight:700;display:inline-flex;align-items:center;gap:4px">🟣 1st Reply Sent</span>',
+        'MOVED_TO_SECONDARY': '<span class="badge b-green" style="font-weight:700;display:inline-flex;align-items:center;gap:4px">🟢 Migrated #2</span>',
+        'FOLLOWUP_RUNNING': '<span class="badge b-amber" style="font-weight:700;display:inline-flex;align-items:center;gap:4px">⏳ Follow-Up Drip</span>',
+        'FOLLOWUP_COMPLETED': '<span class="badge b-gray" style="font-weight:600">✓ Completed</span>',
       };
 
       tb.innerHTML = r.rows.map(t => {
         const isSec = t.active_mailbox === 'secondary';
         const mbBadge = isSec
-          ? '<span class="badge b-green" style="font-weight:700">📬 Secondary (#2)</span>'
-          : '<span class="badge b-blue" style="font-weight:700">📥 Primary (Gmail)</span>';
+          ? '<span class="badge b-green" style="font-weight:700;display:inline-flex;align-items:center;gap:4px">📬 Secondary (#2)</span>'
+          : '<span class="badge b-blue" style="font-weight:700;display:inline-flex;align-items:center;gap:4px">📥 Primary (Gmail)</span>';
 
         const fuBadge = t.followup_status === 'running'
-          ? `<span class="badge b-amber">⏳ Running</span><br><small style="font-size:10px;color:var(--text3)">Next: ${t.followup_next_run || 'soon'}</small>`
-          : (t.followup_status === 'completed' ? '<span class="badge b-gray">Completed</span>' : '<span class="badge b-gray">Idle</span>');
+          ? `<span class="badge b-amber" style="font-weight:700">⏳ Running</span><br><small style="font-size:10px;color:var(--text3);font-family:var(--mono)">Next: ${t.followup_next_run || 'soon'}</small>`
+          : (t.followup_status === 'completed' ? '<span class="badge b-gray">Completed</span>' : '<span class="badge b-gray" style="opacity:.6">Idle</span>');
+
+        const initial = (t.from_name || t.from_email || 'L').charAt(0).toUpperCase();
 
         return `<tr>
           <td>
-            <strong>${esc(t.from_email)}</strong>
-            ${t.from_name ? `<br><small style="color:var(--text2)">${esc(t.from_name)}</small>` : ''}
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="owner-avatar" style="width:28px;height:28px;font-size:11px;flex-shrink:0">${esc(initial)}</span>
+              <div>
+                <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(t.from_email)}</div>
+                ${t.from_name ? `<div style="font-size:11px;color:var(--text3);font-weight:500">${esc(t.from_name)}</div>` : ''}
+              </div>
+            </div>
           </td>
           <td>
-            <strong>${esc(t.rule_name || 'Smart Routing')}</strong>
-            <br><small style="color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;display:inline-block">${esc(t.subject_in || '—')}</small>
+            <div style="font-weight:700;font-size:12px;color:var(--text)">${esc(t.rule_name || 'Smart Routing')}</div>
+            <div style="font-size:11px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.subject_in || '')}">${esc(t.subject_in || '—')}</div>
           </td>
           <td>${mbBadge}</td>
           <td>${stageBadges[t.conversation_stage] || `<span class="badge b-gray">${esc(t.conversation_stage)}</span>`}</td>
           <td>
-            <span class="badge b-purple">Step ${t.current_step || 1}</span>
-            <span class="badge b-blue" style="margin-left:4px">${t.reply_count || 1} msgs</span>
+            <div style="display:flex;gap:4px;align-items:center">
+              <span class="badge b-purple" style="font-weight:700">Step ${t.current_step || 1}</span>
+              <span class="badge b-gray" style="font-weight:600;font-family:var(--mono)">${t.reply_count || 1} msgs</span>
+            </div>
           </td>
           <td>${fuBadge}</td>
-          <td style="font-size:11px;color:var(--text2)">${t.last_sent_at || t.created_at || '—'}</td>
-          <td>
-            <div class="btn-group">
-              <button class="btn btn-secondary btn-sm" onclick="manualMigrateMailbox(${t.id}, '${isSec ? 'primary' : 'secondary'}')" title="Switch active mailbox">
-                ${isSec ? '⬅ Switch to Primary' : '➡ Migrate to #2'}
-              </button>
-            </div>
+          <td style="font-size:11px;color:var(--text3);font-family:var(--mono)">${t.last_sent_at || t.created_at || '—'}</td>
+          <td style="text-align:right">
+            <button class="act-btn ${isSec ? '' : 'act-btn-indigo'}" onclick="manualMigrateMailbox(${t.id}, '${isSec ? 'primary' : 'secondary'}')" title="Switch active mailbox">
+              ${isSec ? '⬅ Revert to Primary' : '➡ Migrate to #2'}
+            </button>
           </td>
         </tr>`;
       }).join('');
