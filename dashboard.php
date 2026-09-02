@@ -312,7 +312,7 @@ $siteName = $cfg['site_name'] ?? 'MailsZo';
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Live Dashboard — <?= htmlspecialchars($siteName) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -392,7 +392,25 @@ body{
 
 /* ─── Charts ──────────────────────────────────────────────── */
 .charts-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:26px;}
-@media(max-width:1100px){.charts-row{grid-template-columns:1fr 1fr;}}
+@media(max-width:1100px){.charts-row{grid-template-columns:1fr 1fr;}.stats-row{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}}
+@media(max-width:768px){
+  .topbar{padding:10px 14px;gap:10px;}
+  .topbar-date{display:none;}
+  .page{padding:16px 12px;}
+  .stats-row{grid-template-columns:repeat(2,1fr);gap:10px;}
+  .stat-card{padding:14px;}
+  .stat-val{font-size:24px;}
+  .charts-row{grid-template-columns:1fr;gap:12px;}
+  .big-chart-card{padding:14px;}
+  .report-hd{padding:12px 14px;}
+}
+@media(max-width:480px){
+  .stats-row{grid-template-columns:1fr;gap:8px;}
+  .topbar-clock{font-size:11px;}
+  .back-btn span{display:none;}
+  .back-btn{padding:6px 10px;}
+  .page{padding:12px 8px;}
+}
 @media(max-width:700px){.charts-row{grid-template-columns:1fr;}}
 .chart-card{background:#FFFFFF;border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;min-width:0;box-shadow:var(--shadow);}
 .chart-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
