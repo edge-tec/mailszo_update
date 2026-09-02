@@ -3440,6 +3440,42 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
       </div>
     </div>
 
+    <!-- Analytics Charts Grid: Timeline Chart + Category Breakdown -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:18px">
+      <!-- 14-Day Activity Trend Chart -->
+      <div class="card" style="margin:0">
+        <div class="card-head" style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">📈</span>
+            <span class="card-title">14-Day Audit Activity Trend</span>
+          </div>
+          <span style="font-size:11px;color:var(--text3)">Last 14 Days</span>
+        </div>
+        <div class="card-body">
+          <div id="bs-timeline-chart" style="display:flex;align-items:flex-end;gap:8px;height:160px;padding:12px 0;border-bottom:1px solid var(--border)">
+            <div style="margin:auto;color:var(--text3);font-size:12px">Loading timeline chart…</div>
+          </div>
+          <div style="display:flex;justify-content:center;gap:18px;margin-top:12px;font-size:12px;color:var(--text2)">
+            <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#EF4444;border-radius:2px;display:inline-block"></span> Blocked / Rejected</span>
+            <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#F59E0B;border-radius:2px;display:inline-block"></span> Skipped (BCC / Queue)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Ratio & Distribution Breakdown -->
+      <div class="card" style="margin:0">
+        <div class="card-head">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">📊</span>
+            <span class="card-title">Category Distribution Breakdown</span>
+          </div>
+        </div>
+        <div class="card-body" id="bs-distribution-bars" style="display:flex;flex-direction:column;gap:12px">
+          <div style="color:var(--text3);font-size:12px">Loading distribution breakdown…</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Report Card -->
     <div class="card">
       <!-- Toolbar & Category Chips -->
@@ -10443,6 +10479,62 @@ async function loadBlockedSkippedStats() {
   set('bs-stat-blacklisted', fmt(st.blacklisted));
   set('bs-stat-unsub', fmt(st.unsubscribed));
   set('bs-stat-bounced', fmt(st.bounced));
+
+  // Render 14-Day Timeline Chart
+  const tc = $('bs-timeline-chart');
+  if (tc && s.chart && s.chart.timeline) {
+    const tl = s.chart.timeline;
+    let maxVal = 1;
+    tl.forEach(d => {
+      const v = (d.total || 0);
+      if (v > maxVal) maxVal = v;
+    });
+    tc.innerHTML = tl.map(d => {
+      const bCnt = d.blocked || 0;
+      const sCnt = d.skipped || 0;
+      const tot = bCnt + sCnt;
+      const totalPct = Math.round((tot / maxVal) * 120);
+      const bPct = tot > 0 ? Math.round((bCnt / tot) * 100) : 0;
+      const h = Math.max(6, totalPct);
+      return `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:14px" title="${d.label} (${d.date}): ${bCnt} Blocked, ${sCnt} Skipped">
+          <div style="font-size:10px;font-weight:700;color:var(--text2)">${tot > 0 ? tot : ''}</div>
+          <div style="width:100%;height:${h}px;border-radius:4px 4px 0 0;overflow:hidden;display:flex;flex-direction:column-reverse;background:var(--bg3)">
+            <div style="width:100%;height:${bPct}%;background:#EF4444;transition:all 0.2s"></div>
+            <div style="width:100%;height:${100 - bPct}%;background:#F59E0B;transition:all 0.2s"></div>
+          </div>
+          <div style="font-size:9px;color:var(--text3);white-space:nowrap">${d.label}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Render Category Distribution Breakdown Bars
+  const db = $('bs-distribution-bars');
+  if (db) {
+    const totalAll = (st.total_blocked || 0) + (st.total_skipped || 0) || 1;
+    const cats = [
+      { name: 'Blacklisted', count: st.blacklisted, color: '#DC2626' },
+      { name: 'Unsubscribed', count: st.unsubscribed, color: '#64748B' },
+      { name: 'Bounced / Failed', count: st.bounced, color: '#EA580C' },
+      { name: 'Skipped (BCC)', count: st.skipped_bcc, color: '#6366F1' },
+      { name: 'Skipped (Queue / Other)', count: (st.skipped_queue || 0) + (st.skipped_other || 0), color: '#F59E0B' }
+    ];
+    db.innerHTML = cats.map(c => {
+      const pct = Math.round(((c.count || 0) / totalAll) * 100);
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;font-weight:600">
+            <span>${c.name}</span>
+            <span class="mono">${fmt(c.count || 0)} (${pct}%)</span>
+          </div>
+          <div style="height:8px;background:var(--bg3);border-radius:6px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${c.color};border-radius:6px;transition:width 0.3s"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
 }
 
 async function loadBlockedSkipped(page = 1, silent = false) {
@@ -10459,6 +10551,12 @@ async function loadBlockedSkipped(page = 1, silent = false) {
   if (q) url += `&q=${q}`;
 
   const r = await get(url);
+  if (r && r.error) {
+    tb.innerHTML = `<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center;color:var(--red)">Query Notice: ${esc(r.error)}</td></tr>`;
+    $('bs-pager').innerHTML = '';
+    set('bs-total-counter', 'Notice');
+    return;
+  }
   if (!r || !r.rows || !r.rows.length) {
     tb.innerHTML = '<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center;color:var(--text3)">No blocked or skipped emails found matching your filters</td></tr>';
     $('bs-pager').innerHTML = '';

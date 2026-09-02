@@ -340,7 +340,9 @@ function db() {
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_rule_created` (`rule_id`, `created_at`)",
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_created` (`created_at`)",
             "ALTER TABLE `autoreply_threads` MODIFY COLUMN `status` ENUM('active','completed','pending','scheduled','sending','sent','failed','cancelled') DEFAULT 'active'",
-            "ALTER TABLE `system_logs` MODIFY COLUMN `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry','skipped') NOT NULL"
+            "ALTER TABLE `system_logs` MODIFY COLUMN `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry','skipped') NOT NULL",
+            "ALTER TABLE `blacklist` ADD COLUMN IF NOT EXISTS `reason` VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE `blacklist` ADD COLUMN IF NOT EXISTS `phrase` VARCHAR(255) DEFAULT NULL"
         ];
         foreach ($idxSqls as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) {}

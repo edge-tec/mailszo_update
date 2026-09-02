@@ -4051,7 +4051,7 @@ if ($res === 'email-tracking') {
 if ($res === 'blocked-skipped') {
     $whereUser = $IS_ADMIN ? "1=1" : "user_id = {$UID}";
 
-    // 1. STATS
+    // 1. STATS & CHART DATA
     if ($method === 'GET' && $id === 'stats') {
         $skippedBcc = 0; $skippedQueue = 0; $skippedOther = 0;
         $blacklisted = 0; $unsubscribed = 0; $bounced = 0;
@@ -4076,6 +4076,59 @@ if ($res === 'blocked-skipped') {
 
         $totalSkipped = $skippedBcc + $skippedQueue + $skippedOther;
         $totalBlocked = $blacklisted + $unsubscribed + $bounced;
+        $totalRecords = $totalBlocked + $totalSkipped;
+
+        // Daily activity timeline for last 14 days
+        $timeline = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $date = date('Y-m-d', strtotime("-{$i} days"));
+            $timeline[$date] = [
+                'date' => $date,
+                'label' => date('M j', strtotime($date)),
+                'blocked' => 0,
+                'skipped' => 0,
+                'total' => 0
+            ];
+        }
+
+        // Aggregate from system_logs by day
+        try {
+            $stDays = db()->query("
+                SELECT DATE(created_at) as log_date,
+                       SUM(CASE WHEN event_type = 'skipped' THEN 1 ELSE 0 END) as skipped_cnt,
+                       SUM(CASE WHEN event_type IN ('unsubscribed','bounced','failed') THEN 1 ELSE 0 END) as blocked_cnt
+                FROM system_logs
+                WHERE {$whereUser} AND created_at >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+                GROUP BY DATE(created_at)
+            ")->fetchAll();
+
+            foreach ($stDays as $row) {
+                $d = $row['log_date'];
+                if (isset($timeline[$d])) {
+                    $timeline[$d]['skipped'] += (int)$row['skipped_cnt'];
+                    $timeline[$d]['blocked'] += (int)$row['blocked_cnt'];
+                    $timeline[$d]['total'] += (int)$row['skipped_cnt'] + (int)$row['blocked_cnt'];
+                }
+            }
+        } catch (Exception $e) {}
+
+        // Aggregate from blacklist by day
+        try {
+            $blDays = db()->query("
+                SELECT DATE(created_at) as log_date, COUNT(*) as cnt
+                FROM blacklist
+                WHERE {$whereUser} AND created_at >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+                GROUP BY DATE(created_at)
+            ")->fetchAll();
+
+            foreach ($blDays as $row) {
+                $d = $row['log_date'];
+                if (isset($timeline[$d])) {
+                    $timeline[$d]['blocked'] += (int)$row['cnt'];
+                    $timeline[$d]['total'] += (int)$row['cnt'];
+                }
+            }
+        } catch (Exception $e) {}
 
         jsonOut([
             'ok' => true,
@@ -4088,6 +4141,10 @@ if ($res === 'blocked-skipped') {
                 'blacklisted'    => $blacklisted,
                 'unsubscribed'   => $unsubscribed,
                 'bounced'        => $bounced,
+            ],
+            'chart' => [
+                'timeline' => array_values($timeline),
+                'total_records' => $totalRecords
             ]
         ]);
     }
@@ -4098,14 +4155,14 @@ if ($res === 'blocked-skipped') {
         header('Content-Disposition: attachment; filename="blocked_and_skipped_emails_' . date('Y-m-d_His') . '.csv"');
         $out = fopen('php://output', 'w');
         fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
-        fputcsv($out, ['Email Address', 'Category', 'Reason / Details', 'Source / Provider', 'Date & Time']);
+        fputcsv($out, ['Email Address / Target', 'Category', 'Reason / Details', 'Source / Provider', 'Date & Time']);
 
         $unionSql = "
             SELECT recipient_email as email, 'Skipped (BCC)' as category, details as reason, smtp_server as source, created_at
             FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'
             UNION ALL
-            SELECT email, 'Blacklisted' as category, COALESCE(reason, CONCAT('Blacklisted (', type, ')')) as reason, 'Blacklist' as source, created_at
-            FROM blacklist WHERE {$whereUser} AND email IS NOT NULL AND email != ''
+            SELECT COALESCE(NULLIF(email, ''), domain, '') as email, 'Blacklisted' as category, CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), '')) as reason, 'Blacklist' as source, created_at
+            FROM blacklist WHERE {$whereUser}
             UNION ALL
             SELECT recipient_email as email, 'Unsubscribed' as category, details as reason, smtp_server as source, created_at
             FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'
@@ -4143,7 +4200,7 @@ if ($res === 'blocked-skipped') {
             $unions[] = "SELECT id, 'skipped_bcc' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'";
         }
         if ($category === 'all' || $category === 'blacklisted') {
-            $unions[] = "SELECT id, 'blacklisted' as category, email, COALESCE(reason, CONCAT('Blacklisted (', type, ')')) as reason, 'Blacklist' as source, created_at FROM blacklist WHERE {$whereUser} AND email IS NOT NULL AND email != ''";
+            $unions[] = "SELECT id, 'blacklisted' as category, COALESCE(NULLIF(email, ''), domain, '') as email, CONCAT('Blacklisted ', type, IF(domain IS NOT NULL AND domain != '', CONCAT(': ', domain), '')) as reason, 'Blacklist Manager' as source, created_at FROM blacklist WHERE {$whereUser}";
         }
         if ($category === 'all' || $category === 'unsubscribed') {
             $unions[] = "SELECT id, 'unsubscribed' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'";
@@ -4162,7 +4219,7 @@ if ($res === 'blocked-skipped') {
             jsonOut(['ok' => true, 'rows' => [], 'total' => 0, 'page' => 1, 'pages' => 1]);
         }
 
-        $baseSql = "(" . implode(") UNION ALL (", $unions) . ")";
+        $baseSql = implode(" UNION ALL ", $unions);
         $whereClause = "1=1";
         $params = [];
 
