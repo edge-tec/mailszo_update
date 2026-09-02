@@ -33,8 +33,9 @@ if (php_sapi_name() !== 'cli') {
 }
 if (!isInstalled()) die("Not installed\n");
 
-$lock = sys_get_temp_dir() . '/mailszo_v4.lock';
-if (file_exists($lock) && (time() - filemtime($lock)) < 55) {
+$lockFile = sys_get_temp_dir() . '/mailpro_cron.lock';
+$lockFp   = @fopen($lockFile, 'c+');
+if (!$lockFp || !flock($lockFp, LOCK_EX | LOCK_NB)) {
     if (!empty($_GET['json'])) {
         if (php_sapi_name() !== 'cli') header('Content-Type: application/json');
         echo json_encode(['ok'=>false,'error'=>'Already running','results'=>[]]);
@@ -42,8 +43,6 @@ if (file_exists($lock) && (time() - filemtime($lock)) < 55) {
     }
     die("Already running\n");
 }
-file_put_contents($lock, getmypid());
-register_shutdown_function(function() use ($lock){ @unlink($lock); });
 
 // Ensure script can continue running even if the client (browser) disconnects early.
 ignore_user_abort(true);
