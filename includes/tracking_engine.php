@@ -65,18 +65,15 @@ function injectTrackingPixel(string $html, string $trackingToken, ?string $appUr
 
 /**
  * Parse User-Agent string into Device Type, Operating System, Browser, and Bot detection.
+ * Strictly adheres to captured telemetry with zero fabrication.
  */
 function parseTrackingUserAgent(?string $ua): array {
     $ua = trim((string)$ua);
-    if ($ua === '' && !empty($_SERVER['HTTP_USER_AGENT'])) {
-        $ua = trim((string)$_SERVER['HTTP_USER_AGENT']);
-    }
-
     if ($ua === '') {
         return [
-            'device_type'      => 'Desktop',
-            'operating_system' => 'Windows 10/11',
-            'browser'          => 'Chrome / Webmail',
+            'device_type'      => 'Unknown',
+            'operating_system' => 'Unknown',
+            'browser'          => 'Unknown',
             'is_bot'           => 0
         ];
     }
@@ -97,8 +94,8 @@ function parseTrackingUserAgent(?string $ua): array {
         }
     }
 
-    // 2. Operating System
-    $os = 'Windows 10/11';
+    // 2. Operating System Classification
+    $os = 'Unknown';
     if (stripos($ua, 'iPhone') !== false || stripos($ua, 'iPad') !== false || stripos($ua, 'iPod') !== false || stripos($ua, 'CPU iPhone OS') !== false || stripos($ua, 'CPU OS') !== false) {
         $os = 'iOS';
     } elseif (stripos($ua, 'Mac OS X') !== false || stripos($ua, 'Macintosh') !== false || stripos($ua, 'Mac_PowerPC') !== false || stripos($ua, 'Darwin') !== false) {
@@ -123,8 +120,8 @@ function parseTrackingUserAgent(?string $ua): array {
         $os = 'Linux';
     }
 
-    // 3. Browser & Email Client
-    $browser = 'Chrome';
+    // 3. Browser & Email Client Classification
+    $browser = 'Unknown';
     if (stripos($ua, 'GoogleImageProxy') !== false) {
         $browser = 'Gmail Proxy';
     } elseif (stripos($ua, 'Outlook') !== false || stripos($ua, 'Microsoft Office') !== false || stripos($ua, 'MSOffice') !== false || stripos($ua, 'MSIE') !== false || stripos($ua, 'Trident') !== false) {
@@ -143,14 +140,16 @@ function parseTrackingUserAgent(?string $ua): array {
         $browser = 'Mozilla Firefox';
     } elseif (stripos($ua, 'Chrome') !== false || stripos($ua, 'CriOS') !== false || stripos($ua, 'Chromium') !== false) {
         $browser = 'Google Chrome';
-    } elseif (stripos($ua, 'AppleWebKit') !== false && (stripos($ua, 'Mobile/') !== false || stripos($ua, 'iPhone') !== false || stripos($ua, 'iPad') !== false || stripos($ua, 'CFNetwork') !== false || stripos($ua, 'Mail/') !== false)) {
+    } elseif (stripos($ua, 'Safari') !== false && (stripos($ua, 'Version/') !== false || stripos($ua, 'Safari/') !== false)) {
+        $browser = 'Safari';
+    } elseif (stripos($ua, 'AppleWebKit') !== false && (stripos($ua, 'Mail/') !== false || stripos($ua, 'CFNetwork') !== false || (stripos($ua, 'Mobile/') !== false && stripos($ua, 'Safari') === false))) {
         $browser = 'Apple Mail';
-    } elseif (stripos($ua, 'Safari') !== false && stripos($ua, 'Version/') !== false) {
+    } elseif (stripos($ua, 'Safari') !== false) {
         $browser = 'Safari';
     }
 
-    // 4. Device Type
-    $deviceType = 'Desktop';
+    // 4. Device Type Classification
+    $deviceType = 'Unknown';
     if ($isBot) {
         $deviceType = 'Bot';
     } elseif (preg_match('/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i', $ua)) {
@@ -159,6 +158,8 @@ function parseTrackingUserAgent(?string $ua): array {
         $deviceType = 'Mobile';
     } elseif ($os === 'iOS' || $os === 'Android') {
         $deviceType = 'Mobile';
+    } elseif ($os === 'Windows 10/11' || $os === 'Windows 8.1' || $os === 'Windows 8' || $os === 'Windows 7' || $os === 'Windows' || $os === 'macOS' || $os === 'Linux' || $os === 'Ubuntu Linux' || $os === 'ChromeOS') {
+        $deviceType = 'Desktop';
     }
 
     return [
@@ -762,7 +763,7 @@ function syncHistoricalTrackingData(): void {
         ");
     } catch (\Throwable $e) {}
 
-    // 4. Ensure all opened email_tracking records have corresponding rows in email_open_events
+    // 4. Ensure all opened email_tracking records have baseline rows in email_open_events
     try {
         $opRows = $pdo->query("
             SELECT t.* 
@@ -777,23 +778,16 @@ function syncHistoricalTrackingData(): void {
         foreach ($opRows as $op) {
             $ip = '127.0.0.1';
             $openTime = $op['last_open_at'] ?: ($op['first_open_at'] ?: ($op['sent_at'] ?: date('Y-m-d H:i:s')));
-            $loc = resolveTrackingIpLocation($ip);
             
             $pdo->prepare("
                 INSERT INTO email_open_events (
                     tracking_token, ip_address, country, country_code, city, region, timezone,
                     latitude, longitude, isp, device_type, operating_system, browser,
                     user_agent, privacy_proxy, proxy_open, confidence, is_bot, opened_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'Desktop', 'Windows 10/11', 'Google Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', ?, ?, 'high', 0, ?)
+                ) VALUES (?, ?, 'Historical / Telemetry Unavailable', 'XX', 'Unavailable', 'Unavailable', 'UTC', NULL, NULL, 'Historical Open Record', 'Unknown', 'Unknown', 'Unknown', 'Historical Telemetry Unavailable', ?, ?, 'low', 0, ?)
             ")->execute([
                 $op['tracking_token'],
                 $ip,
-                $loc['country'] ?? 'Local / Private Network',
-                $loc['country_code'] ?? 'LOC',
-                $loc['city'] ?? 'Local Network',
-                $loc['region'] ?? 'Private Network',
-                $loc['timezone'] ?? 'UTC',
-                $loc['isp'] ?? 'Direct Mail Client',
                 $op['apple_privacy_count'] > 0 ? 1 : 0,
                 $op['gmail_proxy_count'] > 0 ? 1 : 0,
                 $openTime
@@ -803,16 +797,33 @@ function syncHistoricalTrackingData(): void {
         error_log("[OpenTracking] Warning syncing open events: " . $e->getMessage());
     }
 
-    // 5. Upgrade any legacy events with 'Unknown' to real detected telemetry
+    // 5. Re-classify any records with a genuine captured User-Agent string
     try {
-        $pdo->exec("
-            UPDATE email_open_events
-            SET device_type = CASE WHEN device_type = 'Unknown' OR device_type = '' OR device_type IS NULL THEN 'Desktop' ELSE device_type END,
-                operating_system = CASE WHEN operating_system = 'Unknown' OR operating_system = '' OR operating_system IS NULL THEN 'Windows 10/11' ELSE operating_system END,
-                browser = CASE WHEN browser = 'Unknown' OR browser = '' OR browser IS NULL THEN 'Google Chrome' ELSE browser END
-            WHERE device_type = 'Unknown' OR device_type = '' OR device_type IS NULL
-               OR operating_system = 'Unknown' OR operating_system = '' OR operating_system IS NULL
-               OR browser = 'Unknown' OR browser = '' OR browser IS NULL
-        ");
+        $reRows = $pdo->query("
+            SELECT id, user_agent 
+            FROM email_open_events 
+            WHERE user_agent IS NOT NULL 
+              AND user_agent != '' 
+              AND user_agent != 'Historical Telemetry Unavailable'
+              AND (device_type = 'Unknown' OR operating_system = 'Unknown' OR browser = 'Unknown')
+            LIMIT 200
+        ")->fetchAll();
+
+        foreach ($reRows as $r) {
+            $uaInfo = parseTrackingUserAgent($r['user_agent']);
+            if ($uaInfo['device_type'] !== 'Unknown' || $uaInfo['operating_system'] !== 'Unknown' || $uaInfo['browser'] !== 'Unknown') {
+                $pdo->prepare("
+                    UPDATE email_open_events 
+                    SET device_type = ?, operating_system = ?, browser = ?, is_bot = ?
+                    WHERE id = ?
+                ")->execute([
+                    $uaInfo['device_type'],
+                    $uaInfo['operating_system'],
+                    $uaInfo['browser'],
+                    $uaInfo['is_bot'],
+                    $r['id']
+                ]);
+            }
+        }
     } catch (\Throwable $e) {}
 }
