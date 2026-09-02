@@ -9801,6 +9801,7 @@ async function clearSystemLogs(){
     loadSystemLogStats();
   } else {
     alert('Clear failed: ' + (r?.message || 'Error'));
+  }
 }
 
 /* ─── EMAIL OPEN ANALYTICS & READ REPORT (Features 9-26) ────────── */

@@ -62,7 +62,7 @@ if ($res==='auth') {
         $_SESSION['lead_delete']=(bool)($u['lead_delete'] ?? 1);
         setRememberCookie($u['id']);
         try { session_write_close(); } catch (Throwable $e) {}
-        jsonOut(['success'=>true,'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin'],'image_upload'=>(bool)($u['image_upload'] ?? 1),'lead_delete'=>(bool)($u['lead_delete'] ?? 1)]);
+        jsonOut(['success'=>true,'ok'=>true,'uid'=>(int)$u['id'],'username'=>$u['username'],'is_admin'=>(bool)$u['is_admin'],'image_upload'=>(bool)($u['image_upload'] ?? 1),'lead_delete'=>(bool)($u['lead_delete'] ?? 1)]);
     }
     if ($method==='POST'&&$id==='logout'){
         try { startSecureSession(); } catch (Throwable $e) {}
