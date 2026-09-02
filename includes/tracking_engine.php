@@ -628,3 +628,132 @@ function outputTrackingTransparentPng(): void {
         flush();
     }
 }
+
+/**
+ * Automatically synchronize and backfill existing sent emails and historical
+ * open telemetry into email_tracking and email_open_events.
+ */
+function syncHistoricalTrackingData(): void {
+    if (!function_exists('db')) return;
+    try {
+        $pdo = db();
+    } catch (\Throwable $e) {
+        return;
+    }
+
+    // 1. Sync sent logs into email_tracking if email_tracking is missing sent records
+    try {
+        $trackingCount = (int)$pdo->query("SELECT COUNT(*) FROM email_tracking")->fetchColumn();
+        $sendLogsCount = (int)$pdo->query("SELECT COUNT(*) FROM send_logs WHERE status = 'sent'")->fetchColumn();
+
+        if ($trackingCount < $sendLogsCount) {
+            $pdo->exec("
+                INSERT INTO email_tracking (tracking_token, user_id, campaign_id, recipient_email, sent_at, created_at)
+                SELECT 
+                    COALESCE(NULLIF(tracking_token, ''), CONCAT('trk_', MD5(CONCAT(id, '_', email, '_', sent_at)))),
+                    user_id,
+                    campaign_id,
+                    email,
+                    COALESCE(sent_at, NOW()),
+                    COALESCE(sent_at, NOW())
+                FROM send_logs
+                WHERE status = 'sent'
+                ON DUPLICATE KEY UPDATE recipient_email = VALUES(recipient_email)
+            ");
+        }
+    } catch (\Throwable $e) {
+        error_log("[OpenTracking] Warning during send_logs sync: " . $e->getMessage());
+    }
+
+    // 2. Sync opened events from system_logs if any opened records exist
+    try {
+        $stmt = $pdo->query("
+            SELECT sl.* 
+            FROM system_logs sl
+            WHERE sl.event_type = 'opened'
+            ORDER BY sl.id ASC
+            LIMIT 500
+        ");
+        while ($row = $stmt->fetch()) {
+            $token = $row['token'] ?? null;
+            if (!$token) continue;
+            
+            // Ensure tracking record exists
+            $tStmt = $pdo->prepare("SELECT id, is_opened FROM email_tracking WHERE tracking_token = ? LIMIT 1");
+            $tStmt->execute([$token]);
+            $tr = $tStmt->fetch();
+            
+            if (!$tr) {
+                try {
+                    $pdo->prepare("
+                        INSERT INTO email_tracking (tracking_token, user_id, campaign_id, rule_id, recipient_email, sent_at, first_open_at, last_open_at, is_opened, open_count, unique_open_count, created_at)
+                        VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()), ?, ?, 1, 1, 1, NOW())
+                        ON DUPLICATE KEY UPDATE is_opened = 1, open_count = GREATEST(open_count, 1), unique_open_count = GREATEST(unique_open_count, 1)
+                    ")->execute([
+                        $token,
+                        $row['user_id'] ?? null,
+                        $row['campaign_id'] ?? null,
+                        $row['rule_id'] ?? null,
+                        $row['recipient_email'] ?? 'recipient@tracked.mail',
+                        $row['created_at'] ?? null,
+                        $row['created_at'] ?? null,
+                        $row['created_at'] ?? null
+                    ]);
+                } catch (\Throwable $_) {}
+            } else if ((int)$tr['is_opened'] === 0) {
+                try {
+                    $pdo->prepare("
+                        UPDATE email_tracking 
+                        SET is_opened = 1,
+                            open_count = GREATEST(open_count, 1),
+                            unique_open_count = GREATEST(unique_open_count, 1),
+                            first_open_at = COALESCE(first_open_at, ?),
+                            last_open_at = COALESCE(last_open_at, ?)
+                        WHERE tracking_token = ?
+                    ")->execute([$row['created_at'], $row['created_at'], $token]);
+                } catch (\Throwable $_) {}
+            }
+
+            // Also ensure event exists in email_open_events
+            $evCheck = $pdo->prepare("SELECT id FROM email_open_events WHERE tracking_token = ? LIMIT 1");
+            $evCheck->execute([$token]);
+            if (!$evCheck->fetch()) {
+                $ua = $row['user_agent'] ?? '';
+                $ip = $row['ip_address'] ?? '127.0.0.1';
+                $uaInfo = parseTrackingUserAgent($ua);
+                $locInfo = resolveTrackingIpLocation($ip);
+                $apple = detectAppleMailPrivacy($ip, $ua);
+                $gmail = detectGoogleImageProxy($ip, $ua);
+                
+                try {
+                    $pdo->prepare("
+                        INSERT INTO email_open_events (
+                            tracking_token, ip_address, country, country_code, city, region, timezone,
+                            latitude, longitude, isp, device_type, operating_system, browser,
+                            user_agent, privacy_proxy, proxy_open, confidence, is_bot, opened_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'high', 0, ?)
+                    ")->execute([
+                        $token, $ip, $locInfo['country'], $locInfo['country_code'], $locInfo['city'],
+                        $locInfo['region'], $locInfo['timezone'], $locInfo['latitude'], $locInfo['longitude'],
+                        $locInfo['isp'], $uaInfo['device_type'], $uaInfo['operating_system'], $uaInfo['browser'],
+                        $ua, $apple ? 1 : 0, $gmail ? 1 : 0, $row['created_at'] ?: date('Y-m-d H:i:s')
+                    ]);
+                } catch (\Throwable $_) {}
+            }
+        }
+    } catch (\Throwable $e) {}
+
+    // 3. Sync followup_contacts opened data
+    try {
+        $pdo->exec("
+            UPDATE email_tracking t
+            JOIN followup_contacts fc ON fc.tracking_token = t.tracking_token
+            SET t.is_opened = 1,
+                t.open_count = GREATEST(t.open_count, fc.open_count, 1),
+                t.unique_open_count = GREATEST(t.unique_open_count, 1),
+                t.first_open_at = COALESCE(t.first_open_at, fc.opened_at, NOW()),
+                t.last_open_at = COALESCE(fc.opened_at, t.last_open_at, NOW())
+            WHERE fc.opened_at IS NOT NULL OR fc.open_count > 0
+        ");
+    } catch (\Throwable $e) {}
+}

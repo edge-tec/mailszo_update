@@ -3773,6 +3773,9 @@ if ($res === 'mail-routing') {
 // ── EMAIL OPEN TRACKING & READ REPORT (Features 9–20) ───────────────
 if ($res === 'email-tracking') {
     require_once __DIR__ . '/includes/tracking_engine.php';
+    if (function_exists('syncHistoricalTrackingData')) {
+        syncHistoricalTrackingData();
+    }
 
     // 1. STATS (8 KPI Cards)
     if ($method === 'GET' && $id === 'stats') {
@@ -3877,6 +3880,29 @@ if ($res === 'email-tracking') {
                  WHERE {$cWhere}
                  ORDER BY opened_count DESC, sent_count DESC"
             )->fetchAll();
+
+            // Include Direct / Auto-Reply / Follow-up sends if present
+            $nonCampSent = (int)db()->query("SELECT COUNT(*) FROM email_tracking WHERE campaign_id IS NULL OR campaign_id = 0")->fetchColumn();
+            if ($nonCampSent === 0) {
+                $nonCampSent = (int)db()->query("SELECT COUNT(*) FROM send_logs WHERE (campaign_id IS NULL OR campaign_id = 0) AND status='sent'")->fetchColumn();
+            }
+            if ($nonCampSent > 0) {
+                $nonCampOpened = (int)db()->query("SELECT COUNT(*) FROM email_tracking WHERE (campaign_id IS NULL OR campaign_id = 0) AND is_opened = 1")->fetchColumn();
+                $nonCampUnique = (int)db()->query("SELECT SUM(unique_open_count) FROM email_tracking WHERE (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn() ?: $nonCampOpened;
+                $nonCampTotal  = (int)db()->query("SELECT SUM(open_count) FROM email_tracking WHERE (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn() ?: $nonCampOpened;
+                $nonCampLast   = db()->query("SELECT MAX(last_open_at) FROM email_tracking WHERE (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn() ?: null;
+                $rows[] = [
+                    'id' => 0,
+                    'name' => '⚡ Direct, Auto-Reply & Follow-up Sequences',
+                    'sent_count' => $nonCampSent,
+                    'opened_count' => $nonCampOpened,
+                    'unique_opens' => $nonCampUnique,
+                    'total_opens' => $nonCampTotal,
+                    'last_open_at' => $nonCampLast,
+                    'open_rate' => $nonCampSent > 0 ? round(($nonCampOpened / $nonCampSent) * 100, 1) : 0
+                ];
+            }
+
             foreach ($rows as &$r) {
                 $s = (int)$r['sent_count'];
                 $o = (int)$r['opened_count'];
@@ -4048,7 +4074,7 @@ if ($res === 'email-tracking') {
                 FROM email_tracking t
                 LEFT JOIN campaigns c ON c.id = t.campaign_id
                 WHERE {$where}
-                ORDER BY (t.last_open_at IS NOT NULL) DESC, t.last_open_at DESC, t.id DESC
+                ORDER BY (t.last_open_at IS NOT NULL) DESC, t.last_open_at DESC, t.sent_at DESC, t.id DESC
                 LIMIT {$limit} OFFSET {$offset}";
         $stmt = db()->prepare($sql);
         $stmt->execute($params);

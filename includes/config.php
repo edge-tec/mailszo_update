@@ -37,7 +37,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '16'; // bump this when adding new migrations
+    $migrationVersion = '17'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -358,8 +358,20 @@ function db() {
             $pdo->exec("UPDATE emails SET created_at = NOW() WHERE created_at IS NULL");
             $pdo->exec("UPDATE email_lists l SET total_count = (SELECT COUNT(*) FROM emails e WHERE e.list_id = l.id)");
         } catch (Exception $e) {}
+
         // Add index on emails.created_at for faster today/month leads queries
         try { $pdo->exec("ALTER TABLE `emails` ADD INDEX `idx_em_created` (`created_at`)"); } catch (Exception $e) {}
+
+        // Automatic historical sync for email tracking
+        try {
+            if (file_exists(__DIR__ . '/tracking_engine.php')) {
+                require_once __DIR__ . '/tracking_engine.php';
+                if (function_exists('syncHistoricalTrackingData')) {
+                    syncHistoricalTrackingData();
+                }
+            }
+        } catch (\Throwable $e) {}
+
         @file_put_contents($markerFile, $migrationVersion);
     }
     return $pdo;
