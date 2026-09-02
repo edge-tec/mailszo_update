@@ -50,6 +50,10 @@ ignore_user_abort(true);
 set_time_limit(0);
 
 $CRON_START_TIME = time();
+// CLI (shell cron) has no HTTP timeout — allow more time for all accounts
+$IS_CLI = (php_sapi_name() === 'cli');
+$IMAP_TIME_LIMIT = $IS_CLI ? 120 : 45;   // Main IMAP loop: 120s CLI, 45s HTTP
+$SPAM_TIME_GUARD = $IS_CLI ? 90  : 20;   // Spam scan guard: 90s CLI, 20s HTTP
 
 $results = [];
 
@@ -457,7 +461,7 @@ try {
     });
 
     foreach ($activeImaps as $ia) {
-        if (time() - $CRON_START_TIME > 45) {
+        if (time() - $CRON_START_TIME > $IMAP_TIME_LIMIT) {
             $results[] = ['status'=>'time_limit', 'message'=>'Time limit reached, stopping IMAP processing.'];
             break;
         }
@@ -647,7 +651,7 @@ try {
         // connection on every cron run. Detection only happens once per account.
         // TIME GUARD: Skips spam scanning if >20s elapsed to stay within aaPanel's 30s timeout.
         $spamElapsed = time() - $CRON_START_TIME;
-        if ($spamElapsed > 20) {
+        if ($spamElapsed > $SPAM_TIME_GUARD) {
             // Running low on time — skip spam scanning to prevent HTTP timeout
             $results[] = ['status'=>'imap_info','account'=>$iaUser,
                 'message'=>"Spam scan skipped — {$spamElapsed}s elapsed, preserving time budget."];
@@ -1048,7 +1052,7 @@ try {
 
     foreach ($allCampaigns as $camp) {
 
-        if (time() - $CRON_START_TIME > 45) {
+        if (time() - $CRON_START_TIME > $IMAP_TIME_LIMIT) {
             $results[] = ['status'=>'time_limit', 'message'=>'Time limit reached, stopping campaign processing.'];
             break;
         }
