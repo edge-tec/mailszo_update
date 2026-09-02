@@ -323,7 +323,65 @@ function recordTrackingOpenEvent(string $token, array $context = []): array {
     $tracking = $stmt->fetch();
 
     if (!$tracking) {
-        return ['ok' => false, 'message' => 'Tracking token not found'];
+        $recEmail = null; $campId = null; $ruleId = null; $stepSeq = null; $smtpAcctId = null;
+        try {
+            // 1. Search email_followup_queue
+            $fq = $pdo->prepare("SELECT * FROM email_followup_queue WHERE tracking_token = ? LIMIT 1");
+            $fq->execute([$token]);
+            if ($qRow = $fq->fetch()) {
+                $recEmail   = $qRow['recipient_email'] ?? null;
+                $campId     = $qRow['campaign_id'] ?? null;
+                $ruleId     = $qRow['rule_id'] ?? null;
+                $stepSeq    = $qRow['step_number'] ?? null;
+                $smtpAcctId = $qRow['smtp_account_id'] ?? null;
+            }
+
+            // 2. Search followup_contacts
+            if (!$recEmail) {
+                $fc = $pdo->prepare("SELECT * FROM followup_contacts WHERE tracking_token = ? LIMIT 1");
+                $fc->execute([$token]);
+                if ($cRow = $fc->fetch()) {
+                    $recEmail = $cRow['email'] ?? null;
+                    $ruleId   = $cRow['rule_id'] ?? null;
+                }
+            }
+
+            // 3. Search system_logs
+            if (!$recEmail) {
+                $sl = $pdo->prepare("SELECT * FROM system_logs WHERE token = ? LIMIT 1");
+                $sl->execute([$token]);
+                if ($sRow = $sl->fetch()) {
+                    $recEmail = $sRow['recipient_email'] ?? null;
+                    $campId   = $sRow['campaign_id'] ?? null;
+                    $ruleId   = $sRow['rule_id'] ?? null;
+                }
+            }
+
+            if (!$recEmail) {
+                $recEmail = 'recipient_' . substr($token, 0, 8) . '@anonymous.mail';
+            }
+
+            $insEt = $pdo->prepare("
+                INSERT INTO email_tracking (
+                    tracking_token, campaign_id, rule_id, sequence_step, smtp_account_id, recipient_email, sent_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE tracking_token = VALUES(tracking_token)
+            ");
+            $insEt->execute([$token, $campId, $ruleId, $stepSeq, $smtpAcctId, $recEmail]);
+
+            $stmt->execute([$token]);
+            $tracking = $stmt->fetch();
+        } catch (Throwable $_e) {}
+    }
+
+    if (!$tracking) {
+        $tracking = [
+            'id' => 0,
+            'tracking_token' => $token,
+            'recipient_email' => 'anonymous@tracked.mail',
+            'campaign_id' => 0,
+            'first_open_at' => null
+        ];
     }
 
     $ip        = $context['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
