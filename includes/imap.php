@@ -939,3 +939,520 @@ function isImapMessageBcc(array $msg, string $imapAccountEmail): bool {
     return true;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Verified Email Provider Whitelist
+// ─────────────────────────────────────────────────────────────────
+// Domains of major consumer email providers. Emails from these domains
+// are processed normally even when Gmail places them in Spam, because
+// they come from legitimate providers with SPF/DKIM/DMARC in place.
+// The list is extensible via config.json['verified_email_providers'].
+const VERIFIED_EMAIL_PROVIDERS = [
+    'gmail.com',
+    'googlemail.com',
+    'outlook.com',
+    'hotmail.com',
+    'live.com',
+    'msn.com',
+    'yahoo.com',
+    'ymail.com',
+    'icloud.com',
+    'me.com',
+    'mac.com',
+    'proton.me',
+    'protonmail.com',
+    'aol.com',
+    'zoho.com',
+    'fastmail.com',
+    'gmx.com',
+    'gmx.net',
+    'mail.com',
+    'yandex.com',
+    'yandex.ru',
+];
+
+/**
+ * Check if a sender email belongs to a verified (trusted) email provider.
+ *
+ * Returns true for domains in the hardcoded whitelist above or in the
+ * config.json 'verified_email_providers' array. Used by the spam-folder
+ * filter: verified-provider emails in Spam are processed normally,
+ * unverified ones are skipped.
+ */
+function isVerifiedEmailProvider(string $senderEmail): bool {
+    $senderEmail = strtolower(trim($senderEmail));
+    if ($senderEmail === '' || !filter_var($senderEmail, FILTER_VALIDATE_EMAIL)) return false;
+
+    $domain = substr($senderEmail, strrpos($senderEmail, '@') + 1);
+    if ($domain === '' || $domain === false) return false;
+
+    // Check hardcoded list
+    if (in_array($domain, VERIFIED_EMAIL_PROVIDERS, true)) return true;
+
+    // Check config-extensible list
+    if (function_exists('getConfig')) {
+        $cfg = getConfig();
+        $extra = $cfg['verified_email_providers'] ?? [];
+        if (is_array($extra)) {
+            $extra = array_map('strtolower', array_map('trim', $extra));
+            if (in_array($domain, $extra, true)) return true;
+        }
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Spam / Junk folder auto-detection & scanning
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Known Spam/Junk folder names across major IMAP providers.
+ * Checked in priority order — first match wins.
+ *
+ * Gmail:       [Gmail]/Spam
+ * Outlook:     Junk, Junk E-mail
+ * Yahoo:       Bulk Mail
+ * Generic:     Spam, Junk
+ */
+const IMAP_SPAM_FOLDER_CANDIDATES = [
+    '[Gmail]/Spam',
+    'Junk',
+    'Spam',
+    'Junk E-mail',
+    'Junk E-Mail',
+    'Bulk Mail',
+    'INBOX.Spam',
+    'INBOX.Junk',
+];
+
+/**
+ * Detect the Spam/Junk folder name on an IMAP server via LIST.
+ *
+ * Opens a short-lived connection, issues LIST "" *, and matches against
+ * known spam folder names. Returns the exact folder name the server uses,
+ * or null if no spam folder is found.
+ *
+ * @param string $host  IMAP hostname
+ * @param int    $port  IMAP port (993 typical)
+ * @param string $user  IMAP username
+ * @param string $pass  IMAP password
+ * @param bool   $ssl   Use SSL/TLS
+ * @return string|null  Server's spam folder name, or null
+ */
+function imapDetectSpamFolder(string $host, int $port, string $user, string $pass, bool $ssl): ?string {
+    $sock = imapSocketOpen($host, $port, $ssl, 10);
+    if (!$sock) return null;
+
+    $gr = imapReadLine($sock);
+    if (strpos($gr, '* OK') === false && strpos($gr, '* PREAUTH') === false) {
+        fclose($sock); return null;
+    }
+
+    fwrite($sock, 'S01 LOGIN "' . addslashes($user) . '" "' . addslashes($pass) . '"' . "\r\n");
+    if (strpos(imapReadResponse($sock, 'S01'), 'S01 OK') === false) {
+        fclose($sock); return null;
+    }
+
+    // LIST all folders
+    fwrite($sock, "S02 LIST \"\" \"*\"\r\n");
+    $listResp = imapReadResponse($sock, 'S02', 15);
+
+    fwrite($sock, "S03 LOGOUT\r\n");
+    fclose($sock);
+
+    // Parse folder names from LIST responses
+    // Format: * LIST (\flags) "delimiter" "folder-name"
+    $serverFolders = [];
+    foreach (explode("\n", $listResp) as $line) {
+        $line = rtrim($line, "\r");
+        // Match quoted folder name or unquoted folder name at end
+        if (preg_match('/^\* LIST \([^)]*\)\s+"?([^"]*)"?\s+"?([^"]*)"?\s*$/i', $line, $lm)) {
+            $folder = trim($lm[2], ' "');
+            if ($folder !== '') $serverFolders[] = $folder;
+        }
+    }
+
+    // Match against known spam folder names (case-insensitive comparison)
+    $serverFoldersLower = array_map('strtolower', $serverFolders);
+    foreach (IMAP_SPAM_FOLDER_CANDIDATES as $candidate) {
+        $idx = array_search(strtolower($candidate), $serverFoldersLower);
+        if ($idx !== false) {
+            // Return the server's actual casing, not our candidate
+            return $serverFolders[$idx];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Fetch new messages from the Spam/Junk folder by UID (raw socket).
+ *
+ * Identical logic to imapFetchSinceUid() but SELECTs the given $spamFolder
+ * instead of INBOX. Each returned message includes 'mailbox_folder' => $spamFolder
+ * so the caller can distinguish Spam vs INBOX messages.
+ *
+ * Uses its own last_spam_uid / last_spam_uid_validity tracking.
+ */
+function imapFetchSpamSinceUid(string $host, int $port, string $user, string $pass, bool $ssl, string $spamFolder, int $lastUid, int $prevUidValidity = 0, int $perRunCap = 50): array {
+    $result = [
+        'messages'    => [],
+        'highestUid'  => $lastUid,
+        'connected'   => false,
+        'uidValidity' => 0,
+        'uidNext'     => 0,
+        'existsCount' => 0,
+        'reset'       => null,
+    ];
+
+    $sock = imapSocketOpen($host, $port, $ssl);
+    if (!$sock) return $result;
+
+    $gr = imapReadLine($sock);
+    if (strpos($gr, '* OK') === false && strpos($gr, '* PREAUTH') === false) {
+        fclose($sock); return $result;
+    }
+
+    fwrite($sock, 'A01 LOGIN "' . addslashes($user) . '" "' . addslashes($pass) . '"' . "\r\n");
+    if (strpos(imapReadResponse($sock, 'A01'), 'A01 OK') === false) {
+        fclose($sock); return $result;
+    }
+
+    $result['connected'] = true;
+
+    // SELECT the Spam folder
+    fwrite($sock, 'A02 SELECT "' . addslashes($spamFolder) . '"' . "\r\n");
+    $selResp = imapReadResponse($sock, 'A02');
+
+    // If SELECT fails (folder doesn't exist or is not selectable), bail
+    if (strpos($selResp, 'A02 OK') === false) {
+        fwrite($sock, "A03 LOGOUT\r\n"); fclose($sock);
+        return $result;
+    }
+
+    $existsCount = 0;
+    if (preg_match('/\* (\d+) EXISTS/i', $selResp, $exm)) {
+        $existsCount = (int)$exm[1];
+    }
+    $uidValidity = 0;
+    if (preg_match('/UIDVALIDITY\s+(\d+)/i', $selResp, $uvm)) {
+        $uidValidity = (int)$uvm[1];
+    }
+    $uidNext = 0;
+    if (preg_match('/UIDNEXT\s+(\d+)/i', $selResp, $unm)) {
+        $uidNext = (int)$unm[1];
+    }
+    $result['existsCount'] = $existsCount;
+    $result['uidValidity'] = $uidValidity;
+    $result['uidNext']     = $uidNext;
+
+    // UID validity / stale UID recovery (same logic as INBOX)
+    if ($prevUidValidity > 0 && $uidValidity > 0 && $uidValidity !== $prevUidValidity) {
+        $lastUid          = 0;
+        $result['reset']  = 'uidvalidity_changed';
+        $result['highestUid'] = 0;
+    }
+    if ($uidNext > 0 && $lastUid >= $uidNext) {
+        $lastUid          = 0;
+        if ($result['reset'] === null) $result['reset'] = 'stale_last_uid';
+        $result['highestUid'] = 0;
+    }
+
+    if ($existsCount === 0) {
+        fwrite($sock, "A03 LOGOUT\r\n"); fclose($sock); return $result;
+    }
+
+    // UID SEARCH — same as INBOX path but no UNKEYWORD filter (we don't APPEND to Spam)
+    $searchRange = ($lastUid > 0) ? ($lastUid + 1) . ':*' : '1:*';
+    fwrite($sock, "A03 UID SEARCH UID {$searchRange}\r\n");
+    $searchResp = imapReadResponse($sock, 'A03', 30);
+
+    $uids = [];
+    if (preg_match('/\* SEARCH([\d\s]*)/i', $searchResp, $sm)) {
+        $uids = array_values(array_filter(array_map('intval', explode(' ', trim($sm[1]))), fn($u) => $u > $lastUid));
+    }
+
+    if (empty($uids)) {
+        fwrite($sock, "A04 LOGOUT\r\n"); fclose($sock); return $result;
+    }
+
+    sort($uids, SORT_NUMERIC);
+    $cap = $perRunCap > 0 ? $perRunCap : 50;
+    $processBatch = array_slice($uids, 0, $cap);
+
+    $messages       = [];
+    $attemptedUids  = [];
+    $tagNum         = 4;
+
+    foreach ($processBatch as $uid) {
+        $tFetch = sprintf('A%03d', $tagNum++);
+
+        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM TO CC BCC DELIVERED-TO ENVELOPE-TO X-ORIGINAL-TO X-ENVELOPE-TO SUBJECT MESSAGE-ID IN-REPLY-TO REFERENCES DATE)])\r\n");
+
+        $fetchLines  = '';
+        $literalData = null;
+        $deadline    = time() + 15;
+        $pfx         = $tFetch . ' ';
+
+        while (!feof($sock) && time() < $deadline) {
+            $line = imapReadLine($sock);
+            $fetchLines .= $line;
+
+            if ($literalData === null && preg_match('/\{(\d+)\}\r?\n$/', $line, $lm)) {
+                $lsize       = (int)$lm[1];
+                $literalData = imapReadLiteral($sock, $lsize);
+                $fetchLines .= $literalData;
+                $fetchLines .= imapReadLine($sock);
+                $fetchLines .= imapReadLine($sock);
+                break;
+            }
+
+            if (strncmp($line, $pfx, strlen($pfx)) === 0) break;
+        }
+
+        $attemptedUids[] = $uid;
+
+        $headerBlock = '';
+        if ($literalData !== null) {
+            $headerBlock = $literalData;
+        } else {
+            $headerBlock = imapExtractHeaders($fetchLines, $tFetch);
+        }
+
+        $headerBlock = preg_replace("/\r?\n([ \t])/", ' $1', $headerBlock);
+
+        $fromLine = ''; $subjectLine = ''; $msgIdLine = ''; $inReplyToLine = ''; $referencesLine = ''; $dateLine = '';
+        $toHeaders = []; $ccHeaders = []; $bccHeaders = []; $envToHeaders = [];
+        foreach (explode("\n", $headerBlock) as $hLine) {
+            $hLine = rtrim($hLine, "\r");
+            if ($fromLine       === '' && preg_match('/^From\s*:/i',        $hLine)) $fromLine       = $hLine;
+            if ($subjectLine    === '' && preg_match('/^Subject\s*:/i',     $hLine)) $subjectLine    = $hLine;
+            if ($msgIdLine      === '' && preg_match('/^Message-ID\s*:/i',  $hLine)) $msgIdLine      = $hLine;
+            if ($inReplyToLine  === '' && preg_match('/^In-Reply-To\s*:/i', $hLine)) $inReplyToLine  = $hLine;
+            if ($referencesLine === '' && preg_match('/^References\s*:/i',  $hLine)) $referencesLine = $hLine;
+            if ($dateLine       === '' && preg_match('/^Date\s*:/i',        $hLine)) $dateLine       = $hLine;
+            if (preg_match('/^To\s*:\s*(.*)$/i', $hLine, $m)) $toHeaders[] = $m[1];
+            if (preg_match('/^Cc\s*:\s*(.*)$/i', $hLine, $m)) $ccHeaders[] = $m[1];
+            if (preg_match('/^Bcc\s*:\s*(.*)$/i', $hLine, $m)) $bccHeaders[] = $m[1];
+            if (preg_match('/^(Delivered-To|Envelope-To|X-Original-To|X-Envelope-To|X-Gm-Original-To)\s*:\s*(.*)$/i', $hLine, $m)) $envToHeaders[] = $m[2];
+        }
+
+        if ($fromLine === '') continue;
+
+        $parsed     = imapParseFromHeader($fromLine);
+        $subject    = imapParseSubject($subjectLine);
+        $msgId      = trim(preg_replace('/^Message-ID\s*:\s*/i', '', $msgIdLine));
+        $inReplyTo  = trim(preg_replace('/^In-Reply-To\s*:\s*/i', '', $inReplyToLine));
+        $references = trim(preg_replace('/^References\s*:\s*/i', '', $referencesLine));
+        $dateHeader = trim(preg_replace('/^Date\s*:\s*/i', '', $dateLine));
+
+        if (!$parsed['email'] || !filter_var($parsed['email'], FILTER_VALIDATE_EMAIL)) continue;
+
+        $messages[] = [
+            'from_email'          => $parsed['email'],
+            'from_name'           => $parsed['name'],
+            'subject'             => $subject,
+            'message_id'          => $msgId,
+            'in_reply_to'         => $inReplyTo,
+            'references'          => $references,
+            'date_header'         => $dateHeader,
+            'to_header'           => implode(', ', $toHeaders),
+            'cc_header'           => implode(', ', $ccHeaders),
+            'bcc_header'          => implode(', ', $bccHeaders),
+            'delivered_to_header' => implode(', ', $envToHeaders),
+            'uid'                 => $uid,
+            'mailbox_folder'      => $spamFolder,
+        ];
+    }
+
+    fwrite($sock, sprintf('A%03d LOGOUT', $tagNum) . "\r\n");
+    fclose($sock);
+
+    $highestUid = $attemptedUids ? max($attemptedUids) : $lastUid;
+
+    $result['messages']    = $messages;
+    $result['highestUid']  = $highestUid;
+    return $result;
+}
+
+/**
+ * Fetch new messages from the Spam/Junk folder using php-imap extension.
+ *
+ * Identical logic to imapExtFetchSinceUid() but opens the spam folder.
+ * Each returned message includes 'mailbox_folder' => $spamFolder.
+ */
+function imapExtFetchSpamSinceUid(string $host, int $port, string $user, string $pass, bool $ssl, string $spamFolder, int $lastUid, int $prevUidValidity = 0, int $perRunCap = 50): array {
+    $result = [
+        'messages'    => [],
+        'highestUid'  => $lastUid,
+        'uidValidity' => 0,
+        'uidNext'     => 0,
+        'existsCount' => 0,
+        'reset'       => null,
+    ];
+
+    $flags   = $ssl ? '/imap/ssl/novalidate-cert' : '/imap/notls/norsh';
+    $mboxRef = '{' . $host . ':' . $port . $flags . '}' . $spamFolder;
+    $mbox    = @imap_open($mboxRef, $user, $pass, 0, 1);
+
+    if (!$mbox) return $result;
+
+    // STATUS for UIDVALIDITY / UIDNEXT / EXISTS
+    if (function_exists('imap_status')) {
+        $st = @imap_status($mbox, $mboxRef, SA_UIDVALIDITY | SA_UIDNEXT | SA_MESSAGES);
+        if ($st) {
+            $result['uidValidity'] = (int)($st->uidvalidity ?? 0);
+            $result['uidNext']     = (int)($st->uidnext     ?? 0);
+            $result['existsCount'] = (int)($st->messages    ?? 0);
+        }
+    }
+    if ($result['existsCount'] === 0 && function_exists('imap_num_msg')) {
+        $result['existsCount'] = (int)@imap_num_msg($mbox);
+    }
+
+    // UID validity / stale UID recovery
+    if ($prevUidValidity > 0 && $result['uidValidity'] > 0
+        && $result['uidValidity'] !== $prevUidValidity) {
+        $lastUid              = 0;
+        $result['reset']      = 'uidvalidity_changed';
+        $result['highestUid'] = 0;
+    }
+    if ($result['uidNext'] > 0 && $lastUid >= $result['uidNext']) {
+        $lastUid              = 0;
+        if ($result['reset'] === null) $result['reset'] = 'stale_last_uid';
+        $result['highestUid'] = 0;
+    }
+
+    if ($result['existsCount'] === 0) {
+        @imap_close($mbox);
+        return $result;
+    }
+
+    // Fetch all UIDs, filter to only new ones
+    $found = @imap_search($mbox, 'ALL', SE_UID);
+
+    if ((!$found || !is_array($found) || count($found) === 0) && $result['existsCount'] > 0) {
+        $found = [];
+        $n = $result['existsCount'];
+        for ($seq = 1; $seq <= $n; $seq++) {
+            $u = @imap_uid($mbox, $seq);
+            if ($u) $found[] = (int)$u;
+        }
+    }
+
+    if (!$found || !is_array($found) || count($found) === 0) {
+        @imap_close($mbox);
+        return $result;
+    }
+
+    $uids = array_values(array_filter($found, fn($u) => (int)$u > $lastUid));
+    if (empty($uids)) {
+        @imap_close($mbox);
+        return $result;
+    }
+
+    $cap = $perRunCap > 0 ? $perRunCap : 50;
+    sort($uids, SORT_NUMERIC);
+    if (count($uids) > $cap) $uids = array_slice($uids, 0, $cap);
+
+    $messages   = [];
+    $highestUid = max($uids);
+
+    $uidList  = implode(',', $uids);
+    $overview = @imap_fetch_overview($mbox, $uidList, FT_UID);
+
+    if ($overview === false) {
+        @imap_close($mbox);
+        return $result;
+    }
+
+    if ($overview) {
+        foreach ($overview as $ov) {
+            $rawFrom = $ov->from ?? '';
+            $fe = ''; $fn = '';
+
+            if (preg_match('/<([^>@\s]+@[^>]+)>/', $rawFrom, $em)) {
+                $fe = strtolower(trim($em[1]));
+                $fn = trim(preg_replace('/<[^>]+>/', '', $rawFrom), ' "\'');
+            } elseif (filter_var(trim($rawFrom), FILTER_VALIDATE_EMAIL)) {
+                $fe = strtolower(trim($rawFrom));
+            } else {
+                $seqNo = @imap_msgno($mbox, $ov->uid ?? 0);
+                if ($seqNo > 0) {
+                    $hdr = @imap_headerinfo($mbox, $seqNo);
+                    if ($hdr && !empty($hdr->from[0])) {
+                        $mb = $hdr->from[0]->mailbox ?? '';
+                        $hh = $hdr->from[0]->host ?? '';
+                        if ($mb && $hh) $fe = strtolower("{$mb}@{$hh}");
+                        if (!empty($hdr->from[0]->personal)) {
+                            $fn = function_exists('imap_utf8')
+                                ? @imap_utf8($hdr->from[0]->personal)
+                                : ($hdr->from[0]->personal ?? '');
+                        }
+                    }
+                }
+            }
+
+            if (!$fe || !filter_var($fe, FILTER_VALIDATE_EMAIL)) continue;
+
+            // Decode subject
+            $fs = '';
+            if (!empty($ov->subject)) {
+                if (function_exists('imap_mime_header_decode')) {
+                    $parts = @imap_mime_header_decode($ov->subject);
+                    if ($parts) {
+                        $fs = implode('', array_map(function($p) {
+                            if ($p->charset === 'default' || strtolower($p->charset) === 'utf-8') return $p->text;
+                            if (function_exists('mb_convert_encoding')) {
+                                try {
+                                    $c = @mb_convert_encoding($p->text, 'UTF-8', $p->charset);
+                                    if ($c !== false && $c !== '') return $c;
+                                } catch (\Throwable $_mbe) {}
+                            }
+                            if (function_exists('iconv')) {
+                                try {
+                                    $c = @iconv($p->charset, 'UTF-8//IGNORE', $p->text);
+                                    if ($c !== false && $c !== '') return $c;
+                                } catch (\Throwable $_ice) {}
+                            }
+                            return $p->text;
+                        }, $parts));
+                    }
+                }
+                if ($fs === '' && function_exists('imap_utf8')) $fs = @imap_utf8($ov->subject);
+                if ($fs === '') $fs = $ov->subject;
+            }
+
+            $toHdr = (string)($ov->to ?? '');
+            $ccHdr = '';
+            $bccHdr = '';
+            $seqNo = @imap_msgno($mbox, $ov->uid ?? 0);
+            if ($seqNo > 0) {
+                $hdr = @imap_headerinfo($mbox, $seqNo);
+                if ($hdr) {
+                    if (!empty($hdr->toaddress)) $toHdr = (string)$hdr->toaddress;
+                    if (!empty($hdr->ccaddress)) $ccHdr = (string)$hdr->ccaddress;
+                    if (!empty($hdr->bccaddress)) $bccHdr = (string)$hdr->bccaddress;
+                }
+            }
+
+            $messages[] = [
+                'from_email'     => $fe,
+                'from_name'      => $fn,
+                'subject'        => $fs,
+                'to_header'      => $toHdr,
+                'cc_header'      => $ccHdr,
+                'bcc_header'     => $bccHdr,
+                'uid'            => (int)($ov->uid ?? 0),
+                'mailbox_folder' => $spamFolder,
+            ];
+        }
+    }
+
+    @imap_close($mbox);
+
+    $result['messages']   = $messages;
+    $result['highestUid'] = max($highestUid, $result['highestUid']);
+    return $result;
+}
+

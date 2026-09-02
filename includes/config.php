@@ -314,6 +314,8 @@ function db() {
             ['imap_accounts',    'skip_bcc',             "TINYINT(1) NOT NULL DEFAULT 1"],
             ['email_tracking',  'rule_id',              "BIGINT DEFAULT NULL"],
             ['email_tracking',  'user_id',              "INT DEFAULT NULL"],
+            ['imap_accounts',   'last_spam_uid',        "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
+            ['imap_accounts',   'last_spam_uid_validity', "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
         ];
         foreach ($arCols as [$tbl, $col, $def]) {
             try {

@@ -474,6 +474,14 @@ try {
         $newHighUid = $lastUid;
         $fetched    = null;
 
+        // Spam folder UID tracking (separate from INBOX)
+        $lastSpamUid    = (int)($ia['last_spam_uid'] ?? 0);
+        $prevSpamUidV   = (int)($ia['last_spam_uid_validity'] ?? 0);
+        $spamFolderMsgs = [];
+        $spamFolderName = null;
+        $newHighSpamUid = $lastSpamUid;
+        $fetchedSpam    = null;
+
         // ── Strict Server-Side DAILY IMAP LIMIT & PER-MINUTE READ LIMIT Enforcement ────────
         // daily_send_limit = maximum leads IMAP is allowed to read per day for this user.
         // imap_read_limit  = maximum leads IMAP can read per cron run / per minute.
@@ -624,6 +632,60 @@ try {
                 'message'=>'IMAP fetch error: ' . $innerE->getMessage()];
         }
 
+        // ── Tag INBOX messages with mailbox_folder for downstream filtering ──────────────────────
+        foreach ($msgs as &$_m) {
+            if (!isset($_m['mailbox_folder'])) $_m['mailbox_folder'] = 'INBOX';
+        }
+        unset($_m);
+
+        // ── Spam/Junk Folder Scanning — fetch new messages from Spam folder ──────────────────────
+        // Detects the server's spam folder name (Gmail: [Gmail]/Spam, Outlook: Junk, etc.)
+        // and fetches new messages with separate UID tracking. These messages go through
+        // the 3-tier filter below: BCC→skip, verified provider→process, unverified→skip.
+        try {
+            if (function_exists('imapDetectSpamFolder')) {
+                $spamFolderName = imapDetectSpamFolder($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl);
+            }
+
+            if ($spamFolderName) {
+                $spamCap = min(50, max(1, (int)($effectiveCap / 4))); // Use 25% of INBOX cap for Spam, min 1 max 50
+
+                if (function_exists('imap_open') && function_exists('imapExtFetchSpamSinceUid')) {
+                    $fetchedSpam    = imapExtFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
+                    $spamFolderMsgs = $fetchedSpam['messages'];
+                    $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
+                } elseif (function_exists('imapFetchSpamSinceUid')) {
+                    $fetchedSpam    = imapFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
+                    $spamFolderMsgs = $fetchedSpam['messages'];
+                    $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
+                }
+
+                // Update spam UID tracking in DB
+                if ($fetchedSpam) {
+                    $curSpamUidV = (int)($fetchedSpam['uidValidity'] ?? 0);
+                    if ($newHighSpamUid > $lastSpamUid) {
+                        try {
+                            db()->prepare("UPDATE imap_accounts SET last_spam_uid=?, last_spam_uid_validity=? WHERE id=?")
+                                ->execute([$newHighSpamUid, $curSpamUidV ?: $prevSpamUidV, $iaId]);
+                        } catch (Exception $_spamUidE) { /* non-fatal */ }
+                    } elseif ($curSpamUidV > 0 && $curSpamUidV !== $prevSpamUidV) {
+                        try {
+                            db()->prepare("UPDATE imap_accounts SET last_spam_uid_validity=? WHERE id=?")
+                                ->execute([$curSpamUidV, $iaId]);
+                        } catch (Exception $_spamUidE) { /* non-fatal */ }
+                    }
+                }
+
+                if (!empty($spamFolderMsgs)) {
+                    $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                        'message'=>"Spam folder ({$spamFolderName}): found " . count($spamFolderMsgs) . " new message(s) for filtering."];
+                }
+            }
+        } catch (Exception $spamEx) {
+            $results[] = ['status'=>'imap_warn','account'=>$iaUser,
+                'message'=>'Spam folder scan failed (non-fatal): ' . $spamEx->getMessage()];
+        }
+
         // ── Domain Blacklist Filter — applied BEFORE inbound persistence ─────────────────────────
         // Emails from blacklisted domains/extensions are completely ignored:
         // they are NOT stored in inbound_emails, NOT processed by AR/FU rules,
@@ -652,41 +714,106 @@ try {
             }
         }
 
-        // ── Skip BCC Emails Filter — applied BEFORE inbound persistence & automation ──
-        // If the IMAP account has skip_bcc enabled (default: 1), emails where
-        // the mailbox received the message only via BCC are completely skipped:
-        // they are NOT stored in inbound_emails, do NOT create leads, do NOT trigger
-        // auto-reply, follow-up, or sequential sequences, and are recorded in the
-        // processing logs as 'Skipped (BCC Recipient)' for auditing.
+        // ── 3-Tier Spam/BCC/Verified-Domain Filter ─────────────────────────────────────────────
+        // Applied BEFORE inbound persistence & automation. Processing priority:
+        //   1. BCC email (any folder)               → SKIP (SKIPPED_BCC_SPAM if Spam, else BCC Recipient)
+        //   2. Verified provider (any folder)        → PROCESS normally (even from Spam)
+        //   3. Unverified domain in Spam folder only → SKIP (SKIPPED_UNVERIFIED_DOMAIN)
+        //   4. INBOX non-BCC email                   → PROCESS normally (unchanged from before)
+        //
+        // Spam-folder messages were fetched above and are now merged with INBOX messages
+        // for unified filtering. Each message carries 'mailbox_folder' to identify its source.
+
+        // Merge spam-folder messages into the main array for unified filtering
+        if (!empty($spamFolderMsgs)) {
+            $msgs = array_merge($msgs, $spamFolderMsgs);
+        }
+
         $skipBccEnabled = !isset($ia['skip_bcc']) || (int)$ia['skip_bcc'] === 1;
-        if (!empty($msgs) && $skipBccEnabled && function_exists('isImapMessageBcc')) {
-            $bccSkippedCount = 0;
-            $msgs = array_filter($msgs, function($m) use ($iaUser, $iaOwnerId, $iaHost, &$bccSkippedCount) {
-                if (isImapMessageBcc($m, $iaUser)) {
-                    $bccSkippedCount++;
-                    $fe   = strtolower(trim((string)($m['from_email'] ?? '')));
-                    $subj = (string)($m['subject'] ?? '');
+        if (!empty($msgs) && function_exists('isImapMessageBcc')) {
+            $bccSkippedCount       = 0;
+            $bccSpamSkippedCount   = 0;
+            $unverifiedSkipCount   = 0;
+            $spamVerifiedPassCount = 0;
+
+            $msgs = array_filter($msgs, function($m) use ($iaUser, $iaOwnerId, $iaHost, $skipBccEnabled, &$bccSkippedCount, &$bccSpamSkippedCount, &$unverifiedSkipCount, &$spamVerifiedPassCount) {
+                $fe          = strtolower(trim((string)($m['from_email'] ?? '')));
+                $subj        = (string)($m['subject'] ?? '');
+                $folder      = (string)($m['mailbox_folder'] ?? 'INBOX');
+                $isSpamFolder = (stripos($folder, 'spam') !== false || stripos($folder, 'junk') !== false || stripos($folder, 'bulk') !== false);
+                $isBcc       = isImapMessageBcc($m, $iaUser);
+
+                // ── Priority 1: BCC emails → always skip ──────────────────────────────────────
+                if ($skipBccEnabled && $isBcc) {
+                    if ($isSpamFolder) {
+                        $bccSpamSkippedCount++;
+                        if (function_exists('logSystemEvent')) {
+                            logSystemEvent(
+                                'skipped',
+                                $fe ?: $iaUser,
+                                'SKIPPED_BCC_SPAM' . ($subj !== '' ? ': ' . substr($subj, 0, 120) : ''),
+                                $iaOwnerId,
+                                null, null, null, null, $iaHost
+                            );
+                        }
+                    } else {
+                        $bccSkippedCount++;
+                        if (function_exists('logSystemEvent')) {
+                            logSystemEvent(
+                                'skipped',
+                                $fe ?: $iaUser,
+                                'Skipped (BCC Recipient)' . ($subj !== '' ? ': ' . substr($subj, 0, 120) : ''),
+                                $iaOwnerId,
+                                null, null, null, null, $iaHost
+                            );
+                        }
+                    }
+                    return false; // Skip completely!
+                }
+
+                // ── Priority 2: If from Spam folder, check sender domain ──────────────────────
+                if ($isSpamFolder) {
+                    // Verified provider → process normally even from Spam
+                    if (function_exists('isVerifiedEmailProvider') && isVerifiedEmailProvider($fe)) {
+                        $spamVerifiedPassCount++;
+                        return true; // Process normally!
+                    }
+
+                    // Unverified domain in Spam → skip
+                    $unverifiedSkipCount++;
                     if (function_exists('logSystemEvent')) {
                         logSystemEvent(
                             'skipped',
                             $fe ?: $iaUser,
-                            'Skipped (BCC Recipient)' . ($subj !== '' ? ': ' . substr($subj, 0, 120) : ''),
+                            'SKIPPED_UNVERIFIED_DOMAIN' . ($subj !== '' ? ': ' . substr($subj, 0, 120) : '') . ' [folder=' . $folder . ']',
                             $iaOwnerId,
-                            null, // campaign_id
-                            null, // rule_id
-                            null, // queue_id
-                            null, // token
-                            $iaHost
+                            null, null, null, null, $iaHost
                         );
                     }
-                    return false; // Skip completely!
+                    return false; // Skip — unverified domain in Spam
                 }
+
+                // ── Priority 3: INBOX non-BCC → process normally (unchanged) ──────────────────
                 return true;
             });
             $msgs = array_values($msgs);
+
+            // Structured result logging
+            if ($bccSpamSkippedCount > 0) {
+                $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                    'message'=>"SKIPPED_BCC_SPAM: {$bccSpamSkippedCount} BCC message(s) in Spam/Junk skipped."];
+            }
             if ($bccSkippedCount > 0) {
                 $results[] = ['status'=>'imap_info','account'=>$iaUser,
                     'message'=>"Skip BCC: {$bccSkippedCount} message(s) delivered as BCC were skipped before processing."];
+            }
+            if ($unverifiedSkipCount > 0) {
+                $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                    'message'=>"SKIPPED_UNVERIFIED_DOMAIN: {$unverifiedSkipCount} message(s) from unverified domains in Spam/Junk skipped."];
+            }
+            if ($spamVerifiedPassCount > 0) {
+                $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                    'message'=>"Spam verified pass-through: {$spamVerifiedPassCount} message(s) from verified providers in Spam/Junk processed normally."];
             }
         }
 
