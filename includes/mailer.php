@@ -23,15 +23,15 @@ class Mailer {
         ]);
 
         $pre  = $this->cfg['secure'] ? 'ssl://' : 'tcp://';
-        $sock = @stream_socket_client($pre.$ip.':'.$port, $errno, $errstr, 15,
+        $sock = @stream_socket_client($pre.$ip.':'.$port, $errno, $errstr, 20,
                     STREAM_CLIENT_CONNECT, $ctx);
         if (!$sock) {
             $detail = $errstr ? trim($errstr) : 'Connection refused or timed out';
             throw new Exception("Cannot connect to {$host}:{$port} — {$detail}");
         }
 
-        // FIX: Set a per-read timeout so fgets() never blocks forever.
-        stream_set_timeout($sock, 30);
+        // Set 60-second read timeout to prevent premature drops on busy mail servers
+        stream_set_timeout($sock, 60);
 
         // FIX: Use the domain part of from_email as the EHLO hostname.
         // Many receiving servers (especially Exim on cPanel/Namecheap shared hosting)
