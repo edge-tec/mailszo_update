@@ -2942,8 +2942,9 @@ if ($res==='leads') {
     // DELETE leads/clear — clear leads from a list, autoreply threads, or followup contacts
     if ($method==='DELETE' && $id==='clear') {
         if (!$IS_ADMIN && !(int)($CUR['lead_delete'] ?? 1)) jsonOut(['ok'=>false,'message'=>'Lead delete/clear is disabled for your account'],403);
-        $target   = $_GET['target']    ?? '';  // list | autoreply | followup | all
-        $targetId = isset($_GET['target_id']) ? (int)$_GET['target_id'] : 0;
+        $target      = $_GET['target']    ?? '';  // list | autoreply | followup | all
+        $rawTargetId = $_GET['target_id'] ?? '';
+        $targetId    = ($rawTargetId === 'all' || $rawTargetId === '') ? 0 : (int)$rawTargetId;
 
         if (!in_array($target, ['list','autoreply','followup','all'], true)) {
             jsonOut(['ok'=>false,'message'=>'Invalid target']);
@@ -2955,7 +2956,7 @@ if ($res==='leads') {
         try {
             // ── Clear email list contacts ──────────────────────────────
             if ($target === 'list' || $target === 'all') {
-                if ($targetId) {
+                if ($targetId > 0) {
                     $s = $pdo->prepare('SELECT user_id FROM email_lists WHERE id=?');
                     $s->execute([$targetId]); $own = $s->fetch();
                     if ($own && ($IS_ADMIN || (int)$own['user_id'] === $UID)) {
@@ -2965,27 +2966,26 @@ if ($res==='leads') {
                         $pdo->prepare('DELETE FROM emails WHERE list_id=?')->execute([$targetId]);
                         $pdo->prepare('UPDATE email_lists SET total_count=0 WHERE id=?')->execute([$targetId]);
                     }
-                } elseif ($target === 'all') {
+                } else {
+                    // Clear all lists for user (or all system-wide if admin)
                     if ($IS_ADMIN) {
-                        $listIds = $pdo->query('SELECT id FROM email_lists')->fetchAll(PDO::FETCH_COLUMN);
-                    } else {
-                        $st = $pdo->prepare('SELECT id FROM email_lists WHERE user_id=?');
-                        $st->execute([$UID]);
-                        $listIds = $st->fetchAll(PDO::FETCH_COLUMN);
-                    }
-                    foreach ($listIds as $lid) {
-                        $c = $pdo->prepare('SELECT COUNT(*) FROM emails WHERE list_id=?');
-                        $c->execute([$lid]);
+                        $c = $pdo->query('SELECT COUNT(*) FROM emails');
                         $cleared += (int)$c->fetchColumn();
-                        $pdo->prepare('DELETE FROM emails WHERE list_id=?')->execute([$lid]);
-                        $pdo->prepare('UPDATE email_lists SET total_count=0 WHERE id=?')->execute([$lid]);
+                        $pdo->query('DELETE FROM emails');
+                        $pdo->query('UPDATE email_lists SET total_count=0');
+                    } else {
+                        $c = $pdo->prepare('SELECT COUNT(*) FROM emails e JOIN email_lists l ON l.id=e.list_id WHERE l.user_id=?');
+                        $c->execute([$UID]);
+                        $cleared += (int)$c->fetchColumn();
+                        $pdo->prepare('DELETE e FROM emails e JOIN email_lists l ON l.id=e.list_id WHERE l.user_id=?')->execute([$UID]);
+                        $pdo->prepare('UPDATE email_lists SET total_count=0 WHERE user_id=?')->execute([$UID]);
                     }
                 }
             }
 
             // ── Clear auto-reply threads ───────────────────────────────
             if ($target === 'autoreply' || $target === 'all') {
-                if ($targetId) {
+                if ($targetId > 0) {
                     $s = $pdo->prepare('SELECT user_id FROM autoreply_rules WHERE id=?');
                     $s->execute([$targetId]); $own = $s->fetch();
                     if ($own && ($IS_ADMIN || (int)$own['user_id'] === $UID)) {
@@ -2995,27 +2995,26 @@ if ($res==='leads') {
                         $pdo->prepare('DELETE FROM autoreply_threads WHERE rule_id=?')->execute([$targetId]);
                         try { $pdo->prepare('DELETE FROM autoreply_logs WHERE rule_id=?')->execute([$targetId]); } catch(Exception $e2) {}
                     }
-                } elseif ($target === 'all') {
+                } else {
+                    // Clear all auto-reply threads for user (or all system-wide if admin)
                     if ($IS_ADMIN) {
-                        $arIds = $pdo->query('SELECT id FROM autoreply_rules')->fetchAll(PDO::FETCH_COLUMN);
-                    } else {
-                        $st = $pdo->prepare('SELECT id FROM autoreply_rules WHERE user_id=?');
-                        $st->execute([$UID]);
-                        $arIds = $st->fetchAll(PDO::FETCH_COLUMN);
-                    }
-                    foreach ($arIds as $rid) {
-                        $c = $pdo->prepare('SELECT COUNT(*) FROM autoreply_threads WHERE rule_id=?');
-                        $c->execute([$rid]);
+                        $c = $pdo->query('SELECT COUNT(*) FROM autoreply_threads');
                         $cleared += (int)$c->fetchColumn();
-                        $pdo->prepare('DELETE FROM autoreply_threads WHERE rule_id=?')->execute([$rid]);
-                        try { $pdo->prepare('DELETE FROM autoreply_logs WHERE rule_id=?')->execute([$rid]); } catch(Exception $e2) {}
+                        $pdo->query('DELETE FROM autoreply_threads');
+                        try { $pdo->query('DELETE FROM autoreply_logs'); } catch(Exception $e2) {}
+                    } else {
+                        $c = $pdo->prepare('SELECT COUNT(*) FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE r.user_id=?');
+                        $c->execute([$UID]);
+                        $cleared += (int)$c->fetchColumn();
+                        $pdo->prepare('DELETE t FROM autoreply_threads t JOIN autoreply_rules r ON r.id=t.rule_id WHERE r.user_id=?')->execute([$UID]);
+                        try { $pdo->prepare('DELETE l FROM autoreply_logs l JOIN autoreply_rules r ON r.id=l.rule_id WHERE r.user_id=?')->execute([$UID]); } catch(Exception $e2) {}
                     }
                 }
             }
 
             // ── Clear follow-up contacts ───────────────────────────────
             if ($target === 'followup' || $target === 'all') {
-                if ($targetId) {
+                if ($targetId > 0) {
                     $s = $pdo->prepare('SELECT user_id FROM followup_rules WHERE id=?');
                     $s->execute([$targetId]); $own = $s->fetch();
                     if ($own && ($IS_ADMIN || (int)$own['user_id'] === $UID)) {
@@ -3025,20 +3024,19 @@ if ($res==='leads') {
                         $pdo->prepare('DELETE FROM followup_contacts WHERE rule_id=?')->execute([$targetId]);
                         try { $pdo->prepare('DELETE FROM followup_logs WHERE rule_id=?')->execute([$targetId]); } catch(Exception $e2) {}
                     }
-                } elseif ($target === 'all') {
+                } else {
+                    // Clear all follow-up contacts for user (or all system-wide if admin)
                     if ($IS_ADMIN) {
-                        $fuIds = $pdo->query('SELECT id FROM followup_rules')->fetchAll(PDO::FETCH_COLUMN);
-                    } else {
-                        $st = $pdo->prepare('SELECT id FROM followup_rules WHERE user_id=?');
-                        $st->execute([$UID]);
-                        $fuIds = $st->fetchAll(PDO::FETCH_COLUMN);
-                    }
-                    foreach ($fuIds as $rid) {
-                        $c = $pdo->prepare('SELECT COUNT(*) FROM followup_contacts WHERE rule_id=?');
-                        $c->execute([$rid]);
+                        $c = $pdo->query('SELECT COUNT(*) FROM followup_contacts');
                         $cleared += (int)$c->fetchColumn();
-                        $pdo->prepare('DELETE FROM followup_contacts WHERE rule_id=?')->execute([$rid]);
-                        try { $pdo->prepare('DELETE FROM followup_logs WHERE rule_id=?')->execute([$rid]); } catch(Exception $e2) {}
+                        $pdo->query('DELETE FROM followup_contacts');
+                        try { $pdo->query('DELETE FROM followup_logs'); } catch(Exception $e2) {}
+                    } else {
+                        $c = $pdo->prepare('SELECT COUNT(*) FROM followup_contacts c JOIN followup_rules r ON r.id=c.rule_id WHERE r.user_id=?');
+                        $c->execute([$UID]);
+                        $cleared += (int)$c->fetchColumn();
+                        $pdo->prepare('DELETE c FROM followup_contacts c JOIN followup_rules r ON r.id=c.rule_id WHERE r.user_id=?')->execute([$UID]);
+                        try { $pdo->prepare('DELETE l FROM followup_logs l JOIN followup_rules r ON r.id=l.rule_id WHERE r.user_id=?')->execute([$UID]); } catch(Exception $e2) {}
                     }
                 }
             }
