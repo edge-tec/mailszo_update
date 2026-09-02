@@ -330,6 +330,91 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .live-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
 
+/* ── ADVANCED FEATURE SAAS COMPONENTS (STRIPE / LINEAR STYLE) ── */
+.feat-hero{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 24px;margin-bottom:18px;display:flex;align-items:center;
+  justify-content:space-between;flex-wrap:wrap;gap:16px;
+  box-shadow:0 1px 3px 0 rgba(16,24,40,0.05),0 1px 2px 0 rgba(16,24,40,0.03);
+  position:relative;overflow:hidden;
+}
+.feat-hero::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,var(--indigo),var(--purple));
+}
+.feat-hero-left{display:flex;align-items:center;gap:16px;min-width:0;flex:1}
+.feat-hero-icon{
+  width:48px;height:48px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(124,58,237,0.1));
+  border:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;
+  justify-content:center;font-size:24px;flex-shrink:0;
+}
+.feat-hero-text h2{font-size:18px;font-weight:800;color:var(--text);letter-spacing:-0.02em;margin:0;display:flex;align-items:center;gap:10px}
+.feat-hero-text p{font-size:12px;color:var(--text2);margin-top:3px;line-height:1.4}
+.feat-hero-stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.feat-stat-pill{
+  background:#F8FAFC;border:1px solid var(--border);border-radius:10px;
+  padding:7px 14px;display:flex;align-items:center;gap:10px;transition:all .18s;
+}
+.feat-stat-pill:hover{background:#F1F5F9;border-color:var(--border2);transform:translateY(-1px)}
+.feat-stat-lbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);letter-spacing:.06em}
+.feat-stat-val{font-family:var(--font);font-size:16px;font-weight:800;color:var(--text);line-height:1}
+
+/* Table Toolbar: Real-time search & filters */
+.tbl-toolbar{
+  display:flex;align-items:center;gap:12px;padding:12px 18px;
+  background:#FFFFFF;border-bottom:1px solid var(--border);flex-wrap:wrap;
+}
+.tbl-search-wrap{position:relative;flex:1;min-width:220px}
+.tbl-search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text3);pointer-events:none}
+.tbl-search-inp{
+  width:100%;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;
+  padding:7px 12px 7px 32px;font-family:var(--font);font-size:12px;color:var(--text);
+  outline:none;transition:all .18s;
+}
+.tbl-search-inp:focus{background:#FFFFFF;border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-dim)}
+.tbl-filter-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.chip-btn{
+  background:#F8FAFC;border:1px solid var(--border);border-radius:6px;
+  padding:5px 12px;font-size:11px;font-weight:600;color:var(--text2);
+  cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px;
+}
+.chip-btn:hover{background:#F1F5F9;color:var(--text)}
+.chip-btn.active{background:var(--indigo-dim);border-color:rgba(99,102,241,0.3);color:var(--indigo);font-weight:700}
+
+/* Enterprise Action Buttons in Table Rows */
+.act-group{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+.act-btn{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 10px;
+  border-radius:6px;font-size:11px;font-weight:600;font-family:var(--font);
+  border:1px solid var(--border);background:#FFFFFF;color:var(--text2);
+  cursor:pointer;transition:all .14s cubic-bezier(.16,1,.3,1);text-decoration:none;
+}
+.act-btn:hover{background:#F8FAFC;color:var(--text);border-color:var(--border2);transform:translateY(-1px);box-shadow:0 2px 5px rgba(0,0,0,0.05)}
+.act-btn-indigo{color:var(--indigo);border-color:rgba(99,102,241,0.25);background:var(--indigo-dim)}
+.act-btn-indigo:hover{background:#EEF2FF;border-color:var(--indigo);color:#4F46E5}
+.act-btn-cyan{color:#0284C7;border-color:rgba(2,132,199,0.25);background:rgba(2,132,199,0.06)}
+.act-btn-cyan:hover{background:#E0F2FE;border-color:#0284C7;color:#0369A1}
+.act-btn-amber{color:#D97706;border-color:rgba(217,119,6,0.25);background:rgba(217,119,6,0.06)}
+.act-btn-amber:hover{background:#FEF3C7;border-color:#D97706;color:#B45309}
+.act-btn-emerald{color:#059669;border-color:rgba(16,185,129,0.25);background:rgba(16,185,129,0.06)}
+.act-btn-emerald:hover{background:#ECFDF5;border-color:#059669;color:#047857}
+.act-btn-danger{color:#E11D48;border-color:rgba(225,29,72,0.2);background:transparent}
+.act-btn-danger:hover{background:#FFF1F2;border-color:#E11D48;color:#BE123C}
+
+/* Sleek user/owner avatar pill */
+.owner-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--text2);background:#F1F5F9;border-radius:12px;padding:2px 8px}
+.owner-avatar{width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#FFFFFF;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800}
+
+/* High-tech feature guide accordion/banner */
+.feat-guide{
+  background:linear-gradient(135deg,rgba(99,102,241,0.03) 0%,rgba(124,58,237,0.02) 100%);
+  border:1px solid rgba(99,102,241,0.15);border-radius:var(--radius);
+  padding:14px 18px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.6;
+}
+.feat-guide strong{color:var(--indigo)}
+.feat-guide-hd{display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:700;color:var(--text)}
+
 #login-wrap{position:fixed;inset:0;background:radial-gradient(ellipse at 25% 60%,rgba(99,102,241,.12),transparent 55%),var(--bg);display:flex;align-items:center;justify-content:center;z-index:99999}
 .login-card{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;width:90%;max-width:380px;padding:32px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
 .login-logo{text-align:center;margin-bottom:24px}
@@ -1699,13 +1784,52 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- CAMPAIGNS -->
   <div class="page" id="page-campaigns">
-    <div class="card">
-      <div class="card-hd"><h3>📤 Campaigns</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadCampaigns()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="openCampModal()">+ New Campaign</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🚀</div>
+        <div class="feat-hero-text">
+          <h2>Email Broadcast Campaigns <span class="badge b-indigo" style="font-size:10px">Multi-SMTP Rotation</span></h2>
+          <p>High-deliverability cold outreach &amp; newsletter broadcasting with spintax &amp; A/B variant testing.</p>
+        </div>
+      </div>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active / Sending</div><div class="feat-stat-val" id="camp-kpi-active" style="color:var(--accent)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Campaigns</div><div class="feat-stat-val" id="camp-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Sent</div><div class="feat-stat-val" id="camp-kpi-sent" style="color:var(--accent2)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Failed</div><div class="feat-stat-val" id="camp-kpi-failed" style="color:var(--red)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadCampaigns()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openCampModal()">+ New Campaign</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="camp-search-inp" placeholder="Search campaigns, lists, owner, variants…" oninput="filterCampTable()">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="camp-chip-all" onclick="filterCampStatus('')">All Campaigns</button>
+          <button class="chip-btn" id="camp-chip-running" onclick="filterCampStatus('running')">🚀 Running</button>
+          <button class="chip-btn" id="camp-chip-scheduled" onclick="filterCampStatus('scheduled')">⏳ Scheduled</button>
+          <button class="chip-btn" id="camp-chip-paused" onclick="filterCampStatus('paused')">⏸ Paused</button>
+          <button class="chip-btn" id="camp-chip-completed" onclick="filterCampStatus('completed')">✅ Completed</button>
+        </div>
       </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>Status</th><th>Variants</th><th>SMTPs</th><th>List</th><th>Sent</th><th>Failed</th><th>Scheduled</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Campaign Name &amp; Owner</th><th>Status</th><th>A/B Variants</th><th>SMTP Pool</th><th>Target List</th><th>Sent</th><th>Failed</th><th>Schedule</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="camps-body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -1713,22 +1837,69 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- IMAGES -->
   <div class="page" id="page-images">
-    <div class="card">
-      <div class="card-hd"><h3>🖼️ Image Library</h3>
-        <label class="btn btn-primary btn-sm" id="img-lib-upload-btn" style="cursor:pointer">📤 Upload<input type="file" accept="image/*" multiple onchange="uploadImgs(this,true)" style="display:none"></label>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🖼️</div>
+        <div class="feat-hero-text">
+          <h2>Asset &amp; Inline Image Library <span class="badge b-blue" style="font-size:10px">Media CDN</span></h2>
+          <p>High-speed image hosting for inline HTML email templates &amp; campaign tracking banners.</p>
+        </div>
       </div>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Supported Formats</div><div class="feat-stat-val" style="font-size:13px;color:var(--text)">PNG, JPG, GIF, WebP</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Embedding Mode</div><div class="feat-stat-val" style="font-size:13px;color:var(--accent)">CID &amp; Direct URL</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <label class="btn btn-primary btn-sm" id="img-lib-upload-btn" style="cursor:pointer;margin:0">📤 Upload Images<input type="file" accept="image/*" multiple onchange="uploadImgs(this,true)" style="display:none"></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><h3>🖼️ Uploaded Assets</h3></div>
       <div class="card-body"><div id="img-lib-al" class="al"></div><div id="img-lib" class="img-grid"><div style="color:var(--text3);font-size:12px">Loading…</div></div></div>
     </div>
   </div>
 
   <!-- LISTS -->
   <div class="page" id="page-lists">
-    <div class="card">
-      <div class="card-hd"><h3>👥 Email Lists</h3>
-        <button class="btn btn-secondary btn-sm" onclick="exportLeads('lists')">⬇ Export All</button>
-        <button class="btn btn-primary btn-sm" onclick="openListModal()">+ Import CSV</button></div>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">👥</div>
+        <div class="feat-hero-text">
+          <h2>Subscriber Lists Manager <span class="badge b-indigo" style="font-size:10px">Audience Segmentation</span></h2>
+          <p>Audience segmentation, CSV contact imports, and suppression list filtering.</p>
+        </div>
+      </div>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Lists</div><div class="feat-stat-val" id="lists-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Subscribers</div><div class="feat-stat-val" id="lists-kpi-subscribers" style="color:var(--accent)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="exportLeads('lists')">⬇ Export All</button>
+          <button class="btn btn-primary btn-sm" onclick="openListModal()">+ Import CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="lists-search-inp" placeholder="Search email lists by name…" oninput="filterListsTable()">
+        </div>
+      </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>Count</th><th>Created</th><th>Actions</th></tr></thead>
+        <thead><tr><th>List Name</th><th>Subscribers Count</th><th>Creation Date</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="lists-body"><tr class="empty-row"><td colspan="4">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -1736,11 +1907,41 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- SMTP -->
   <div class="page" id="page-smtp">
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🔌</div>
+        <div class="feat-hero-text">
+          <h2>SMTP Sending Relays &amp; Gateways <span class="badge b-purple" style="font-size:10px">Failover &amp; TLS</span></h2>
+          <p>Multi-server sender rotation, TLS/SSL connection health, and hourly throughput limits.</p>
+        </div>
+      </div>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Relays</div><div class="feat-stat-val" id="smtp-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">SSL Encrypted</div><div class="feat-stat-val" id="smtp-kpi-ssl" style="color:var(--accent)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadSmtps()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" id="smtp-add-btn" onclick="openSmtpModal()" style="display:none">+ Add SMTP Relay</button>
+        </div>
+      </div>
+    </div>
+
     <div id="smtp-info-bar" class="al a-inf" style="display:none;margin-bottom:14px"></div>
-    <div class="card">
-      <div class="card-hd"><h3>🔌 SMTP Servers</h3><button class="btn btn-primary btn-sm" id="smtp-add-btn" onclick="openSmtpModal()" style="display:none">+ Add SMTP</button></div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="smtp-search-inp" placeholder="Search relays by host, from-email, name…" oninput="filterSmtpTable()">
+        </div>
+      </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>Host : Port</th><th>From Email</th><th>From Name</th><th>TLS</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Relay Name &amp; Role</th><th>Host : Port</th><th>Default From Email</th><th>Sender Name</th><th>Security</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="smtp-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -1815,14 +2016,40 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
   <!-- SEND LOG -->
   <!-- USERS (admin) -->
   <div class="page" id="page-users">
-    <div class="card">
-      <div class="card-hd"><h3>👤 User Management</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadUsers()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Create User</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">👤</div>
+        <div class="feat-hero-text">
+          <h2>Tenant &amp; User Management <span class="badge b-purple" style="font-size:10px">Multi-Tenant Access</span></h2>
+          <p>Client accounts, dedicated SMTP/IMAP allocations, daily quotas, and subscription limits.</p>
+        </div>
+      </div>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Tenants</div><div class="feat-stat-val" id="users-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Accounts</div><div class="feat-stat-val" id="users-kpi-active" style="color:var(--accent)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadUsers()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Create User</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="users-search-inp" placeholder="Search tenants by username, role, status…" oninput="filterUsersTable()">
+        </div>
       </div>
       <div id="users-al" class="al" style="margin:10px 16px 0"></div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>#</th><th>Username</th><th>Role</th><th>SMTP Limit</th><th>Camp. Limit</th><th>Daily Send</th><th>Expires</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+        <thead><tr><th>#</th><th>Username</th><th>Role</th><th>SMTP Limit</th><th>Camp. Limit</th><th>Daily Send Limit</th><th>Expires</th><th>Status</th><th>Created</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="users-body"><tr class="empty-row"><td colspan="10">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -1985,17 +2212,42 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-hd">
-        <h3>📥 IMAP Accounts</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadImap()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" id="imap-add-btn" onclick="openImapModal()" style="display:none">+ Add IMAP Account</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">📥</div>
+        <div class="feat-hero-text">
+          <h2>IMAP Inbound Mailboxes <span class="badge b-blue" style="font-size:10px">Live Monitoring</span></h2>
+          <p>Real-time inbox monitoring, conversational auto-reply triggers, and bounce suppression.</p>
+        </div>
       </div>
-      <div class="info-box" style="margin:0 0 0 0;border-radius:0;border-left:0;border-right:0;border-top:0">
-        IMAP accounts let the server <strong>read your inbox</strong>. Used by Auto-Reply to detect incoming emails and trigger reply chains. Requires <code>php-imap</code> extension on server.
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Mailboxes</div><div class="feat-stat-val" id="imap-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Listening</div><div class="feat-stat-val" id="imap-kpi-active" style="color:var(--accent)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">SSL Protected</div><div class="feat-stat-val" id="imap-kpi-ssl" style="color:var(--accent2)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadImap()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" id="imap-add-btn" onclick="openImapModal()" style="display:none">+ Add IMAP Account</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="imap-search-inp" placeholder="Search mailboxes by host, username, name…" oninput="filterImapTable()">
+        </div>
       </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>Host : Port</th><th>Username</th><th>SSL</th><th>Last Check</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Mailbox Name</th><th>Host : Port</th><th>Username / Email</th><th>Security</th><th>Last Sync Telemetry</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="imap-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -2003,17 +2255,61 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- AUTO-REPLY -->
   <div class="page" id="page-autoreply">
-    <div class="card" style="margin-bottom:18px">
-      <div class="card-hd">
-        <h3>🔁 Auto-Reply Rules</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadAutoreply()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="openArModal()">+ New Auto-Reply Rule</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🤖</div>
+        <div class="feat-hero-text">
+          <h2>Auto-Reply Automation Studio <span class="badge b-indigo" style="font-size:10px">Sequential AI Inbound</span></h2>
+          <p>Instant conversational inbox response engine with multi-step sequences &amp; persistent thread telemetry.</p>
+        </div>
       </div>
-      <div class="info-box" style="margin:0;border-radius:0;border-left:0;border-right:0;border-top:0">
-        <strong>How it works:</strong> Cron reads your IMAP inbox every minute. When a new email arrives from someone, it sends <strong>Reply #1</strong> within 1 minute. When that person replies again, it sends <strong>Reply #2</strong>. If they reply again, it sends <strong>Reply #3</strong> — and so on through all configured replies. Every time they reply, the server sends the next auto-reply in the chain. When all replies are exhausted, the server <strong>automatically removes that contact</strong> from the auto-reply queue. <strong>Blacklisted</strong> email addresses and domains are skipped entirely.
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Rules</div><div class="feat-stat-val" id="ar-kpi-active" style="color:var(--accent)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Threads</div><div class="feat-stat-val" id="ar-kpi-threads" style="color:var(--amber)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Sent</div><div class="feat-stat-val" id="ar-kpi-sent" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">IMAP Mailboxes</div><div class="feat-stat-val" id="ar-kpi-imaps" style="color:var(--accent2)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadAutoreply()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openArModal()">+ New Auto-Reply Rule</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible Feature Guide -->
+    <div class="feat-guide">
+      <div class="feat-guide-hd" onclick="const b=document.getElementById('ar-guide-body');b.style.display=b.style.display==='none'?'block':'none'">
+        <span>💡 <strong>How Conversational Auto-Reply Works:</strong> Multi-step inbox response flow</span>
+        <span style="font-size:11px;color:var(--indigo)">Toggle Guide ▾</span>
+      </div>
+      <div id="ar-guide-body" style="margin-top:8px;display:none">
+        Cron reads your connected IMAP inbox every 60s. When a lead replies, <strong>Reply #1</strong> is dispatched within 60s. Subsequent user replies unlock <strong>Reply #2, #3…</strong> until the sequence completes. Contacts are automatically removed upon exhaustion. Blacklisted emails and keywords are suppressed automatically.
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="ar-search-inp" placeholder="Search rules, IMAP mailboxes, owner, steps…" oninput="filterArTable()">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="ar-chip-all" onclick="filterArStatus('')">All Rules</button>
+          <button class="chip-btn" id="ar-chip-active" onclick="filterArStatus('active')">✅ Active</button>
+          <button class="chip-btn" id="ar-chip-paused" onclick="filterArStatus('paused')">⏸ Paused</button>
+        </div>
       </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>IMAP Account</th><th>Replies</th><th>Active Threads</th><th>Total Sent</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Rule Name &amp; Mode</th><th>Connected IMAP</th><th>Configured Replies</th><th>Live Threads</th><th>Total Sent</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="ar-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -2203,17 +2499,61 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- FOLLOW-UP -->
   <div class="page" id="page-followup">
-    <div class="card" style="margin-bottom:18px">
-      <div class="card-hd">
-        <h3>📬 Follow-Up Rules</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadFollowup()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="openFuModal()">+ New Follow-Up Rule</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">📬</div>
+        <div class="feat-hero-text">
+          <h2>Follow-Up Automation Studio <span class="badge b-purple" style="font-size:10px">Scheduled Drips</span></h2>
+          <p>Automated multi-interval drip sequences with smart time delays &amp; manual enrollment telemetry.</p>
+        </div>
       </div>
-      <div class="info-box" style="margin:0;border-radius:0;border-left:0;border-right:0;border-top:0">
-        <strong>How it works:</strong> Cron reads your IMAP inbox every minute. When a new email arrives from someone, the follow-up sequence is <strong>automatically added</strong> for that contact. The server then sends the follow-up messages at the configured intervals. <strong>Blacklisted</strong> addresses and domains are never enrolled. You can also enroll contacts manually from an email list or CSV upload.
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Rules</div><div class="feat-stat-val" id="fu-kpi-active" style="color:var(--accent)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Active Contacts</div><div class="feat-stat-val" id="fu-kpi-leads" style="color:var(--amber)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Sent</div><div class="feat-stat-val" id="fu-kpi-sent" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Enrolled</div><div class="feat-stat-val" id="fu-kpi-enrolled" style="color:var(--text2)">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadFollowup()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openFuModal()">+ New Follow-Up Rule</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible Feature Guide -->
+    <div class="feat-guide">
+      <div class="feat-guide-hd" onclick="const b=document.getElementById('fu-guide-body');b.style.display=b.style.display==='none'?'block':'none'">
+        <span>💡 <strong>How Scheduled Follow-Up Works:</strong> Time-delayed message delivery</span>
+        <span style="font-size:11px;color:var(--indigo)">Toggle Guide ▾</span>
+      </div>
+      <div id="fu-guide-body" style="margin-top:8px;display:none">
+        Cron evaluates enrollments every minute. When a contact is enrolled (via inbound IMAP lead or manual CSV / list selection), the sequence sends messages on custom delays (hours/days). Contacts can be paused, resumed, or removed at any time.
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="fu-search-inp" placeholder="Search rules, owner, messages…" oninput="filterFuTable()">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="fu-chip-all" onclick="filterFuStatus('')">All Rules</button>
+          <button class="chip-btn" id="fu-chip-active" onclick="filterFuStatus('active')">✅ Active</button>
+          <button class="chip-btn" id="fu-chip-paused" onclick="filterFuStatus('paused')">⏸ Paused</button>
+        </div>
       </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Name</th><th>Steps</th><th>Active Contacts</th><th>Total Sent</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Rule Name &amp; Steps</th><th>Configured Sequence</th><th>Active Contacts</th><th>Total Sent</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody id="fu-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
       </table></div></div>
     </div>
@@ -2529,18 +2869,43 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- ══ EMAIL TEMPLATES PAGE ══ -->
   <div class="page" id="page-templates">
-    <div class="card" style="margin-bottom:18px">
-      <div class="card-hd">
-        <h3>📝 Email Templates</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadTemplates()">↺ Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">＋ Create Template</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">📝</div>
+        <div class="feat-hero-text">
+          <h2>HTML Email Template Studio <span class="badge b-purple" style="font-size:10px">Spintax &amp; Merge Tags</span></h2>
+          <p>Responsive HTML email designs with dynamic personalization tags, embedded media, and preview modes.</p>
+        </div>
       </div>
-      <div class="info-box" style="margin:0;border-radius:0;border-left:0;border-right:0;border-top:0">
-        Reusable HTML email templates with rich formatting, buttons, responsive design, spintax, and variable tags (<code>{{NAME}}</code>, <code>{{EMAIL}}</code>, <code>{{UNSUBSCRIBE_URL}}</code>).
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Templates</div><div class="feat-stat-val" id="tmpl-kpi-total" style="color:var(--indigo)">0</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Personalization</div><div class="feat-stat-val" style="color:var(--accent);font-size:12px;margin-top:2px"><code>{{NAME}}</code>, <code>{{EMAIL}}</code></div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Spintax Engine</div><div class="feat-stat-val" style="color:var(--accent2);font-size:12px;margin-top:2px">{Hello|Hi|Hey}</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="loadTemplates()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">＋ Create Template</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="tmpl-search-inp" placeholder="Search templates, subjects, owners…" oninput="filterTemplatesTable()">
+        </div>
       </div>
       <div class="card-body" style="padding:0">
         <div class="tw"><table>
-          <thead><tr><th>Name</th><th>Subject</th><th>Owner</th><th>Created</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Template Name</th><th>Default Subject</th><th>Author</th><th>Created Date</th><th style="text-align:right">Actions</th></tr></thead>
           <tbody id="templates-body"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
         </table></div>
       </div>
@@ -4769,25 +5134,55 @@ async function loadSmtps(){
     bar.style.display='block';bar.className='al a-inf on';
     bar.innerHTML='🔌 You have <strong>'+own+'</strong> own SMTP server'+(own!==1?'s':'')+(assigned?' + <strong>'+assigned+'</strong> assigned by Admin':'')+'.';
   }
+
+  // Update Top KPI Counters
+  const sslCount = allSmtps.filter(s=>s.secure).length;
+  if($('smtp-kpi-total')) $('smtp-kpi-total').textContent = fmt(allSmtps.length);
+  if($('smtp-kpi-ssl')) $('smtp-kpi-ssl').textContent = fmt(sslCount);
+
+  renderSmtpRows();
+}
+
+function renderSmtpRows(){
   const tb=$('smtp-body');
-  if(!rows?.length){
-    tb.innerHTML='<tr class="empty-row"><td colspan="6">'+(S.isAdmin?'No SMTP servers — click "+" Add SMTP"':'No SMTP servers yet — click "+ Add SMTP" to add your own, or contact admin to assign you one.')+'</td></tr>';
+  if(!tb) return;
+  const q = ($('smtp-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allSmtps;
+  if(q){
+    filtered = filtered.filter(s=>{
+      const n = (s.name||'').toLowerCase();
+      const h = (s.host||'').toLowerCase();
+      const fe = (s.from_email||'').toLowerCase();
+      const fn = (s.from_name||'').toLowerCase();
+      const ow = (s.owner||'').toLowerCase();
+      return n.includes(q) || h.includes(q) || fe.includes(q) || fn.includes(q) || ow.includes(q);
+    });
+  }
+
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center;color:var(--text3)">'+(S.isAdmin?'No SMTP servers found':'No SMTP servers found')+'</td></tr>';
     return;
   }
-  tb.innerHTML=rows.map(s=>`<tr>
-    <td><strong>${esc(s.name)}</strong>${s.is_assigned?'<br><span style="font-size:10px;color:var(--accent2)">📌 Assigned by Admin</span>':''}${S.isAdmin&&s.owner?`<br><small style="color:var(--text3)">@${esc(s.owner)}</small>`:''}</td>
-    <td class="mono">${esc(s.host)}:${s.port}</td>
-    <td class="mono">${esc(s.from_email||'—')}</td>
-    <td>${esc(s.from_name||'—')}</td>
-    <td>${s.secure?'<span class="badge b-blue">SSL</span>':'<span class="badge b-gray">STARTTLS</span>'}</td>
-    <td><div class="btn-group">
-      ${(S.isAdmin||s.is_own)?`<button class="btn btn-blue btn-sm" onclick="testSmtpById(${s.id})">🔍 Test</button>
-      <button class="btn btn-secondary btn-sm" onclick="openSmtpModal(${s.id})">Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="delSmtp(${s.id})">Del</button>`
+  tb.innerHTML=filtered.map(s=>`<tr>
+    <td>
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(s.name)}</div>
+      ${s.is_assigned?'<span style="font-size:10px;color:var(--accent2);font-weight:600">📌 Assigned by Admin</span>':''}
+      ${S.isAdmin&&s.owner?`<div style="margin-top:2px"><span class="owner-pill"><span class="owner-avatar">${esc(s.owner).charAt(0).toUpperCase()}</span>@${esc(s.owner)}</span></div>`:''}
+    </td>
+    <td class="mono" style="font-size:12px;font-weight:600">${esc(s.host)}:${s.port}</td>
+    <td class="mono" style="font-size:12px;color:var(--text2)">${esc(s.from_email||'—')}</td>
+    <td style="font-weight:500">${esc(s.from_name||'—')}</td>
+    <td>${s.secure?'<span class="badge b-blue" style="font-weight:700">🔒 SSL</span>':'<span class="badge b-gray">STARTTLS</span>'}</td>
+    <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
+      ${(S.isAdmin||s.is_own)?`<button class="act-btn act-btn-cyan" onclick="testSmtpById(${s.id})" title="Verify TLS Connection">🔍 Test</button>
+      <button class="act-btn" onclick="openSmtpModal(${s.id})" title="Edit Relay Config">✏️ Edit</button>
+      <button class="act-btn act-btn-danger" onclick="delSmtp(${s.id})" title="Delete Relay">🗑</button>`
       :'<span style="font-size:11px;color:var(--text3)">Assigned by Admin</span>'}
     </div></td>
   </tr>`).join('');
 }
+
+function filterSmtpTable(){ renderSmtpRows(); }
 function openSmtpModal(id=null){
   smtpEid=id;
   const s=id?allSmtps.find(x=>x.id==id):null;
@@ -4884,15 +5279,36 @@ async function delImg(id,e){e.stopPropagation();if(!confirm('Delete?'))return;aw
 /* ─── Lists ─────────────────────────────── */
 async function loadLists(){
   const rows=await get('lists');allLists=rows||[];
+
+  // Update Top KPI Counters
+  const totalSubscribers = allLists.reduce((acc,l)=>acc+(parseInt(l.total_count)||0),0);
+  if($('lists-kpi-total')) $('lists-kpi-total').textContent = fmt(allLists.length);
+  if($('lists-kpi-subscribers')) $('lists-kpi-subscribers').textContent = fmt(totalSubscribers);
+
+  renderListsRows();
+}
+
+function renderListsRows(){
   const tb=$('lists-body');
-  if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="4">No lists yet</td></tr>';return;}
-  tb.innerHTML=rows.map(l=>`<tr>
-    <td><strong>${esc(l.name)}</strong></td>
-    <td class="mono"><strong>${fmt(l.total_count)}</strong></td>
-    <td style="font-size:11px;color:var(--text2)">${(l.created_at||'').slice(0,10)}</td>
-    <td><button class="btn btn-danger btn-sm" onclick="delList(${l.id})">Delete</button></td>
+  if(!tb) return;
+  const q = ($('lists-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allLists;
+  if(q){
+    filtered = filtered.filter(l=>(l.name||'').toLowerCase().includes(q));
+  }
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="4" style="padding:28px;text-align:center;color:var(--text3)">No lists found matching your filter</td></tr>';
+    return;
+  }
+  tb.innerHTML=filtered.map(l=>`<tr>
+    <td><div style="font-weight:700;font-size:13px;color:var(--text)">${esc(l.name)}</div></td>
+    <td class="mono" style="font-weight:700;color:var(--accent);font-size:13px">${fmt(l.total_count)}</td>
+    <td style="font-size:11px;color:var(--text3);font-family:var(--mono)">${(l.created_at||'').slice(0,10)}</td>
+    <td style="text-align:right"><button class="act-btn act-btn-danger" onclick="delList(${l.id})" title="Delete List">🗑 Delete</button></td>
   </tr>`).join('');
 }
+
+function filterListsTable(){ renderListsRows(); }
 function openListModal(){al2('list-al');sv('lm-name','');showModal('list-modal');}
 async function saveList(){
   const name=v('lm-name'),file=$('lm-file').files[0];
@@ -4907,36 +5323,86 @@ async function saveList(){
 async function delList(id){if(!confirm('Delete list?'))return;await del('lists/'+id);loadLists();}
 
 /* ─── Campaigns ─────────────────────────── */
+let allCamps=[], campStatusFilter='';
+
 async function loadCampaigns(){
   const rows=await get('campaigns');allCamps=rows||[];
+
+  // Update Top KPI Counters
+  const activeCount = allCamps.filter(c=>['running','sending','scheduled'].includes(c.status)).length;
+  const totalSent = allCamps.reduce((acc,c)=>acc+(parseInt(c.sent_count)||0),0);
+  const totalFailed = allCamps.reduce((acc,c)=>acc+(parseInt(c.failed_count)||0),0);
+
+  if($('camp-kpi-active')) $('camp-kpi-active').textContent = fmt(activeCount);
+  if($('camp-kpi-total')) $('camp-kpi-total').textContent = fmt(allCamps.length);
+  if($('camp-kpi-sent')) $('camp-kpi-sent').textContent = fmt(totalSent);
+  if($('camp-kpi-failed')) $('camp-kpi-failed').textContent = fmt(totalFailed);
+
+  renderCampRows();
+}
+
+function renderCampRows(){
   const tb=$('camps-body');
-  if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="9">No campaigns</td></tr>';return;}
-  tb.innerHTML=rows.map(c=>`<tr>
-    <td><strong>${esc(c.name)}</strong>${S.isAdmin&&c.owner?`<br><small style="color:var(--text3)">@${esc(c.owner)}</small>`:''}</td>
+  if(!tb) return;
+  const q = ($('camp-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allCamps;
+  if(campStatusFilter){
+    filtered = filtered.filter(c=>c.status===campStatusFilter);
+  }
+  if(q){
+    filtered = filtered.filter(c=>{
+      const n = (c.name||'').toLowerCase();
+      const ow = (c.owner||'').toLowerCase();
+      const ln = (c.list_name||'').toLowerCase();
+      return n.includes(q) || ow.includes(q) || ln.includes(q);
+    });
+  }
+
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center;color:var(--text3)">No campaigns found matching your filter</td></tr>';
+    return;
+  }
+
+  tb.innerHTML=filtered.map(c=>`<tr>
+    <td>
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(c.name)}</div>
+      ${S.isAdmin&&c.owner?`<div style="margin-top:4px"><span class="owner-pill"><span class="owner-avatar">${esc(c.owner).charAt(0).toUpperCase()}</span>@${esc(c.owner)}</span></div>`:''}
+    </td>
     <td>${sbadge(c.status)}</td>
-    <td><span class="badge b-purple">${vc(c)}v</span></td>
-    <td><span class="badge b-blue">${sids(c).length}s</span></td>
-    <td>${esc(c.list_name||'—')}</td>
-    <td class="mono">${fmt(c.sent_count)}</td>
-    <td class="mono" style="color:var(--red)">${fmt(c.failed_count)}</td>
-    <td style="font-size:11px">${c.scheduled_at||'<span style="color:var(--accent)">Now</span>'}</td>
-    <td><div class="btn-group">${cbtns(c)}</div></td>
+    <td><span class="badge b-purple" style="font-weight:700">${vc(c)} variants</span></td>
+    <td><span class="badge b-blue" style="font-weight:700">${sids(c).length} servers</span></td>
+    <td><span class="badge b-gray" style="font-size:11px">${esc(c.list_name||'—')}</span></td>
+    <td class="mono" style="font-weight:700;color:var(--accent);font-size:13px">${fmt(c.sent_count)}</td>
+    <td class="mono" style="font-weight:700;color:var(--red);font-size:13px">${fmt(c.failed_count)}</td>
+    <td style="font-size:11px;color:var(--text2)">${c.scheduled_at||'<span class="badge b-green">Immediate</span>'}</td>
+    <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">${cbtns(c)}</div></td>
   </tr>`).join('');
 }
+
+function filterCampTable(){ renderCampRows(); }
+function filterCampStatus(st){
+  campStatusFilter = st;
+  ['all','running','scheduled','paused','completed'].forEach(k=>{
+    const b=$('camp-chip-'+k);
+    if(b) b.classList.toggle('active', (k==='all'&&!st) || k===st);
+  });
+  renderCampRows();
+}
+
 function cbtns(c){
   const b=[];
-  if(['scheduled','paused','completed','failed'].includes(c.status))b.push(`<button class="btn btn-primary btn-sm" onclick="ca(${c.id},'send-now')">▶</button>`);
-  if(['running','scheduled'].includes(c.status))b.push(`<button class="btn btn-amber btn-sm" onclick="ca(${c.id},'pause')">⏸</button>`);
-  if(c.status==='paused')b.push(`<button class="btn btn-blue btn-sm" onclick="ca(${c.id},'resume')">▶</button>`);
-  b.push(`<button class="btn btn-amber btn-sm" onclick="quickTestCamp(${c.id})">Test</button>`);
-  b.push(`<button class="btn btn-secondary btn-sm" onclick="editCamp(${c.id})">Edit</button>`);
-  b.push(`<button class="btn btn-blue btn-sm" onclick="viewCLogs(${c.id},'${esc(c.name)}')">Logs</button>`);
-  b.push(`<button class="btn btn-danger btn-sm" onclick="delCamp(${c.id})">Del</button>`);
+  if(['scheduled','paused','completed','failed'].includes(c.status))b.push(`<button class="act-btn act-btn-emerald" onclick="ca(${c.id},'send-now')" title="Start Sending Now">▶ Run</button>`);
+  if(['running','scheduled'].includes(c.status))b.push(`<button class="act-btn act-btn-amber" onclick="ca(${c.id},'pause')" title="Pause Campaign">⏸ Pause</button>`);
+  if(c.status==='paused')b.push(`<button class="act-btn act-btn-emerald" onclick="ca(${c.id},'resume')" title="Resume Campaign">▶ Resume</button>`);
+  b.push(`<button class="act-btn act-btn-amber" onclick="quickTestCamp(${c.id})" title="Send Test Email">🧪 Test</button>`);
+  b.push(`<button class="act-btn" onclick="editCamp(${c.id})" title="Edit Campaign Settings">✏️ Edit</button>`);
+  b.push(`<button class="act-btn act-btn-cyan" onclick="viewCLogs(${c.id},'${esc(c.name)}')" title="Audit Send Logs">📋 Logs</button>`);
+  b.push(`<button class="act-btn act-btn-danger" onclick="delCamp(${c.id})" title="Delete Campaign">🗑</button>`);
   return b.join('');
 }
 function cbtnsMini(c){
   const b=[];
-  if(['scheduled','paused','completed','failed'].includes(c.status))b.push(`<button class="btn btn-primary btn-sm" onclick="ca(${c.id},'send-now')">▶ Run</button>`);
+  if(['scheduled','paused','completed','failed'].includes(c.status))b.push(`<button class="act-btn act-btn-emerald" onclick="ca(${c.id},'send-now')">▶ Run</button>`);
   return b.join('');
 }
 async function ca(id,a){await post('campaigns/'+id+'/'+a,{});loadCampaigns();loadDash();}
@@ -5275,32 +5741,67 @@ async function clearDn(){
 }
 
 /* ─── Users (admin) ─────────────────────── */
+let allUsersList = [];
+
 async function loadUsers(){
   const rows=await get('users');
+  allUsersList = rows||[];
+
+  // Update Top KPI Counters
+  const activeCount = allUsersList.filter(u=>u.status==='active').length;
+  if($('users-kpi-total')) $('users-kpi-total').textContent = fmt(allUsersList.length);
+  if($('users-kpi-active')) $('users-kpi-active').textContent = fmt(activeCount);
+
+  renderUsersRows();
+}
+
+function renderUsersRows(){
   const tb=$('users-body');
-  if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="10">No users</td></tr>';return;}
-  tb.innerHTML=rows.map((u,i)=>{
+  if(!tb) return;
+  const q = ($('users-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allUsersList;
+  if(q){
+    filtered = filtered.filter(u=>{
+      const un = (u.username||'').toLowerCase();
+      const st = (u.status||'').toLowerCase();
+      const role = u.is_admin ? 'admin' : 'user';
+      return un.includes(q) || st.includes(q) || role.includes(q);
+    });
+  }
+
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="10" style="padding:28px;text-align:center;color:var(--text3)">No users found matching your filter</td></tr>';
+    return;
+  }
+  tb.innerHTML=filtered.map((u,i)=>{
     const exp=u.expires_at&&new Date(u.expires_at)<new Date();
     return `<tr>
-      <td style="color:var(--text3)">${i+1}</td>
-      <td><strong>${esc(u.username)}</strong></td>
-      <td>${u.is_admin?'<span class="badge b-purple">⚡ Admin</span>':'<span class="badge b-blue">👤 User</span>'}</td>
-      <td><span class="lpill">${u.smtp_limit}</span></td>
-      <td><span class="lpill">${u.campaign_limit}</span></td>
-      <td><span class="lpill">${fmt(u.daily_send_limit)}/day</span></td>
-      <td style="font-size:11px">${u.expires_at?`<span style="${exp?'color:var(--red)':'color:var(--accent)'}">${exp?'⚠️ ':''} ${u.expires_at.slice(0,10)}</span>`:'<span style="color:var(--text3)">Never</span>'}</td>
-      <td>${u.status==='active'?'<span class="badge b-green">Active</span>':'<span class="badge b-red">Suspended</span>'}</td>
-      <td style="font-size:10px;color:var(--text2)">${(u.created_at||'').slice(0,10)}</td>
-      <td><div class="btn-group">
-        <button class="btn btn-secondary btn-sm" onclick="openUserModal(${u.id})">Edit</button>
-        ${u.id!=1?`<button class="btn btn-danger btn-sm" onclick="delUser(${u.id})">Del</button>`:''}
-        <button class="btn btn-amber btn-sm" onclick="openClearDashModal(${u.id})" title="Clear today\'s dashboard statistics for this user">🗑 Clear Dash</button>
-        ${u.id!=1?`<button class="btn btn-amber btn-sm" onclick="clearUserData(${u.id},'${esc(u.username)}')">🗑 Wipe All</button>`:''}
-        ${u.id!=1?`<button class="btn btn-blue btn-sm" onclick="openResetStatsModal(${u.id},'${esc(u.username)}',${u.daily_send_limit||1000})">🔄 Reset Stats</button>`:''}
+      <td style="color:var(--text3);font-family:var(--mono)">${i+1}</td>
+      <td>
+        <div style="font-weight:700;font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px">
+          <span class="owner-avatar">${esc(u.username).charAt(0).toUpperCase()}</span>
+          ${esc(u.username)}
+        </div>
+      </td>
+      <td>${u.is_admin?'<span class="badge b-purple" style="font-weight:700">⚡ Admin</span>':'<span class="badge b-blue">👤 User</span>'}</td>
+      <td><span class="badge b-gray" style="font-family:var(--mono)">${u.smtp_limit}</span></td>
+      <td><span class="badge b-gray" style="font-family:var(--mono)">${u.campaign_limit}</span></td>
+      <td><span class="badge b-indigo" style="font-family:var(--mono);font-weight:700">${fmt(u.daily_send_limit)}/day</span></td>
+      <td style="font-size:11px;font-family:var(--mono)">${u.expires_at?`<span style="${exp?'color:var(--red);font-weight:700':'color:var(--accent)'}">${exp?'⚠️ Expired: ':''}${u.expires_at.slice(0,10)}</span>`:'<span style="color:var(--text3)">Never</span>'}</td>
+      <td>${u.status==='active'?'<span class="badge b-green"><span class="live-dot" style="display:inline-block"></span> Active</span>':'<span class="badge b-red">Suspended</span>'}</td>
+      <td style="font-size:11px;color:var(--text3);font-family:var(--mono)">${(u.created_at||'').slice(0,10)}</td>
+      <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
+        <button class="act-btn" onclick="openUserModal(${u.id})" title="Edit User">✏️ Edit</button>
+        <button class="act-btn act-btn-amber" onclick="openClearDashModal(${u.id})" title="Clear today's dashboard statistics for this user">🗑 Dash</button>
+        ${u.id!=1?`<button class="act-btn act-btn-cyan" onclick="openResetStatsModal(${u.id},'${esc(u.username)}',${u.daily_send_limit||1000})" title="Reset daily send stats">🔄 Reset</button>`:''}
+        ${u.id!=1?`<button class="act-btn act-btn-danger" onclick="clearUserData(${u.id},'${esc(u.username)}')" title="Wipe User Data">⚠️ Wipe</button>`:''}
+        ${u.id!=1?`<button class="act-btn act-btn-danger" onclick="delUser(${u.id})" title="Delete User Account">🗑</button>`:''}
       </div></td>
     </tr>`;
   }).join('');
 }
+
+function filterUsersTable(){ renderUsersRows(); }
 
 let _umCurrentUserId = null; // track which user's assignments are being shown
 let _umAssignmentsLoaded = false; // track if assignments finished loading
@@ -6540,29 +7041,57 @@ async function loadImap(){
   loadImapReadLimit();
   const rows=await get('imap');
   allImaps = Array.from(new Map((rows||[]).map(x=>[String(x.id),x])).values());
+
+  // Update Top KPI Counters
+  const activeCount = allImaps.filter(a=>a.status==='active').length;
+  const sslCount = allImaps.filter(a=>a.ssl=='1'||a.ssl===1).length;
+  if($('imap-kpi-total')) $('imap-kpi-total').textContent = fmt(allImaps.length);
+  if($('imap-kpi-active')) $('imap-kpi-active').textContent = fmt(activeCount);
+  if($('imap-kpi-ssl')) $('imap-kpi-ssl').textContent = fmt(sslCount);
+
+  renderImapRows();
+}
+
+function renderImapRows(){
   const tb=$('imap-body');
-  if(!rows?.length){
-    tb.innerHTML='<tr class="empty-row"><td colspan="7">'+(S.isAdmin?'No IMAP accounts yet':'No IMAP accounts yet — click "+ Add IMAP Account" to add your own, or contact admin to assign you one.')+'</td></tr>';
+  if(!tb) return;
+  const q = ($('imap-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allImaps;
+  if(q){
+    filtered = filtered.filter(a=>{
+      const n = (a.name||'').toLowerCase();
+      const h = (a.host||'').toLowerCase();
+      const u = (a.username||'').toLowerCase();
+      return n.includes(q) || h.includes(q) || u.includes(q);
+    });
+  }
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center;color:var(--text3)">No IMAP accounts found matching your filter</td></tr>';
     return;
   }
-  tb.innerHTML=rows.map(a=>`<tr>
-    <td><strong>${esc(a.name)}</strong>${a.is_assigned?'<br><span style="font-size:10px;color:var(--accent2)">📌 Assigned by Admin</span>':''}</td>
-    <td class="mono" style="font-size:11px">${esc(a.host)}:${a.port}</td>
-    <td class="mono" style="font-size:11px">${esc(a.username)}</td>
-    <td>${a.ssl=='1'||a.ssl===1?'<span class="badge b-green">SSL</span>':'<span class="badge b-gray">No SSL</span>'}</td>
-    <td style="font-size:11px;color:var(--text2)">${a.last_check||'Never'}<br><small style="color:var(--text3)">UID: ${a.last_uid||0} | read: ${a.emails_read||0}</small></td>
-    <td>${a.status==='active'?'<span class="badge b-green">Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
-    <td><div class="btn-group">
+  tb.innerHTML=filtered.map(a=>`<tr>
+    <td>
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(a.name)}</div>
+      ${a.is_assigned?'<span style="font-size:10px;color:var(--accent2);font-weight:600">📌 Assigned by Admin</span>':''}
+    </td>
+    <td class="mono" style="font-size:12px;font-weight:600">${esc(a.host)}:${a.port}</td>
+    <td class="mono" style="font-size:12px;color:var(--text2)">${esc(a.username)}</td>
+    <td>${a.ssl=='1'||a.ssl===1?'<span class="badge b-green" style="font-weight:700">🔒 SSL</span>':'<span class="badge b-gray">No SSL</span>'}</td>
+    <td style="font-size:11px;color:var(--text2)">${a.last_check||'Never'}<br><small style="color:var(--text3);font-family:var(--mono)">UID: ${a.last_uid||0} | read: ${a.emails_read||0}</small></td>
+    <td>${a.status==='active'?'<span class="badge b-green"><span class="live-dot" style="display:inline-block"></span> Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
+    <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
       ${(S.isAdmin || a.is_own)
-        ? `<button class="btn btn-blue btn-sm" onclick="testImapById(${a.id})">🔍 Test</button>
-           <button class="btn btn-secondary btn-sm" onclick="openImapModal(${a.id})">Edit</button>
-           ${S.isAdmin?`<button class="btn ${a.status==='active'?'btn-amber':'btn-success'} btn-sm" id="imap-toggle-${a.id}" onclick="toggleImapStatus(${a.id},this)" title="${a.status==='active'?'Pause — cron will stop reading this inbox':'Resume — cron will resume reading this inbox'}">${a.status==='active'?'⏸ Pause':'▶ Resume'}</button>
-           <button class="btn btn-amber btn-sm" onclick="resetImapUid(${a.id})" title="Reset UID tracker — next cron will re-scan all messages">↺ Reset UID</button>`:''}
-           <button class="btn btn-danger btn-sm" onclick="delImap(${a.id})">Del</button>`
+        ? `<button class="act-btn act-btn-cyan" onclick="testImapById(${a.id})" title="Test IMAP Auth & SSL">🔍 Test</button>
+           <button class="act-btn" onclick="openImapModal(${a.id})" title="Edit Account">✏️ Edit</button>
+           ${S.isAdmin?`<button class="act-btn ${a.status==='active'?'act-btn-amber':'act-btn-emerald'}" id="imap-toggle-${a.id}" onclick="toggleImapStatus(${a.id},this)" title="${a.status==='active'?'Pause cron polling':'Resume cron polling'}">${a.status==='active'?'⏸ Pause':'▶ Run'}</button>
+           <button class="act-btn act-btn-amber" onclick="resetImapUid(${a.id})" title="Reset UID tracker — next cron will re-scan all messages">↺ Reset UID</button>`:''}
+           <button class="act-btn act-btn-danger" onclick="delImap(${a.id})" title="Delete Account">🗑</button>`
         : '<span style="font-size:11px;color:var(--text3)">Assigned by Admin</span>'}
     </div></td>
   </tr>`).join('');
 }
+
+function filterImapTable(){ renderImapRows(); }
 
 function openImapModal(id=null){
   imapEid=id;
@@ -6649,31 +7178,82 @@ async function toggleImapStatus(id, btn){
 /* ══════════════════════════════════════════════════════════════════
    AUTO-REPLY
    ══════════════════════════════════════════════════════════════════ */
-let allAr=[], arEid=null, arSteps=[];
+let allAr=[], arEid=null, arSteps=[], arStatusFilter='';
 
 async function loadAutoreply(){
   // reload IMAP list too
   if(!allImaps.length) await loadImap();
   const rows=await get('autoreply'); allAr=rows||[];
+
+  // Update Top KPI Counters
+  const activeCount = allAr.filter(r=>r.status==='active').length;
+  const totalThreads = allAr.reduce((acc,r)=>acc+(parseInt(r.active_threads)||0),0);
+  const totalSent = allAr.reduce((acc,r)=>acc+(parseInt(r.total_sent)||0),0);
+  const imapSet = new Set(allAr.map(r=>r.imap_id).filter(Boolean));
+
+  if($('ar-kpi-active')) $('ar-kpi-active').textContent = fmt(activeCount);
+  if($('ar-kpi-threads')) $('ar-kpi-threads').textContent = fmt(totalThreads);
+  if($('ar-kpi-sent')) $('ar-kpi-sent').textContent = fmt(totalSent);
+  if($('ar-kpi-imaps')) $('ar-kpi-imaps').textContent = fmt(imapSet.size || allImaps.length || 0);
+
+  renderArRows();
+}
+
+function renderArRows(){
   const tb=$('ar-body');
-  if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="7">No auto-reply rules yet</td></tr>';return;}
-  tb.innerHTML=rows.map(r=>`<tr>
-    <td><strong>${esc(r.name)}</strong>${r.owner?`<br><small style="color:var(--text3)">@${esc(r.owner)}</small>`:''}<br><span class="badge ${r.sequential_mode==1?'b-purple':'b-gray'}" style="font-size:9px;margin-top:2px">${r.sequential_mode==1?'🔄 Sequential':'⏱ Time-Based'}</span></td>
-    <td>${r.imap_name?`<span class="badge b-blue">📥 ${esc(r.imap_name)}</span>`:'<span class="badge b-red">⚠ No IMAP</span>'}</td>
-    <td><span class="badge b-purple">${(r.steps||[]).length} replies</span></td>
-    <td><span class="badge b-amber">${r.active_threads||0} active</span> <span class="badge b-gray">${r.total_threads||0} total</span></td>
-    <td class="mono" style="color:var(--accent)">${fmt(r.total_sent||0)}</td>
-    <td>${r.status==='active'?'<span class="badge b-green">✅ Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
-    <td><div class="btn-group">
-      <button class="btn btn-secondary btn-sm" onclick="editAr(${r.id})">Edit</button>
-      <button class="btn btn-secondary btn-sm" onclick="openDupModal('autoreply', ${r.id}, '${esc(r.name)}')">Copy</button>
-      <button class="btn btn-blue btn-sm" onclick="openArThreads(${r.id},'${esc(r.name)}')">🧵 Threads</button>
-      <button class="btn btn-blue btn-sm" onclick="openArLogs(${r.id},'${esc(r.name)}')">📋 Logs</button>
-      <button class="btn btn-secondary btn-sm" onclick="arTestSend(${r.id})" title="Send test email to verify images">🧪 Test</button>
-      ${r.status==='active'?`<button class="btn btn-amber btn-sm" onclick="arToggle(${r.id},'pause')">⏸</button>`:`<button class="btn btn-primary btn-sm" onclick="arToggle(${r.id},'resume')">▶</button>`}
-      <button class="btn btn-danger btn-sm" onclick="delAr(${r.id})">Del</button>
+  if(!tb) return;
+  const q = ($('ar-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allAr;
+  if(arStatusFilter){
+    filtered = filtered.filter(r=>r.status===arStatusFilter);
+  }
+  if(q){
+    filtered = filtered.filter(r=>{
+      const n = (r.name||'').toLowerCase();
+      const im = (r.imap_name||'').toLowerCase();
+      const ow = (r.owner||'').toLowerCase();
+      return n.includes(q) || im.includes(q) || ow.includes(q);
+    });
+  }
+
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center;color:var(--text3)">No auto-reply rules found matching your filter</td></tr>';
+    return;
+  }
+
+  tb.innerHTML=filtered.map(r=>`<tr>
+    <td>
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(r.name)}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+        ${r.owner?`<span class="owner-pill"><span class="owner-avatar">${esc(r.owner).charAt(0).toUpperCase()}</span>@${esc(r.owner)}</span>`:''}
+        <span class="badge ${r.sequential_mode==1?'b-purple':'b-gray'}" style="font-size:9px">${r.sequential_mode==1?'🔄 Sequential Chain':'⏱ Time-Based Interval'}</span>
+      </div>
+    </td>
+    <td>${r.imap_name?`<span class="badge b-blue" style="font-size:11px">📥 ${esc(r.imap_name)}</span>`:'<span class="badge b-red">⚠ No IMAP Linked</span>'}</td>
+    <td><span class="badge b-purple" style="font-weight:700;font-size:11px">${(r.steps||[]).length} configured</span></td>
+    <td><span class="badge b-amber" style="font-weight:700">${r.active_threads||0} active</span> <span class="badge b-gray">${r.total_threads||0} total</span></td>
+    <td class="mono" style="color:var(--accent);font-weight:700;font-size:13px">${fmt(r.total_sent||0)}</td>
+    <td>${r.status==='active'?'<span class="badge b-green"><span class="live-dot" style="display:inline-block"></span> Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
+    <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
+      <button class="act-btn" onclick="editAr(${r.id})" title="Edit Rule">✏️ Edit</button>
+      <button class="act-btn act-btn-indigo" onclick="openDupModal('autoreply', ${r.id}, '${esc(r.name)}')" title="Duplicate Rule">📄 Copy</button>
+      <button class="act-btn act-btn-cyan" onclick="openArThreads(${r.id},'${esc(r.name)}')" title="View Active Inbound Threads">🧵 Threads</button>
+      <button class="act-btn act-btn-cyan" onclick="openArLogs(${r.id},'${esc(r.name)}')" title="View Send Logs">📋 Logs</button>
+      <button class="act-btn act-btn-amber" onclick="arTestSend(${r.id})" title="Send test email to verify images & delivery">🧪 Test</button>
+      ${r.status==='active'?`<button class="act-btn act-btn-amber" onclick="arToggle(${r.id},'pause')">⏸ Pause</button>`:`<button class="act-btn act-btn-emerald" onclick="arToggle(${r.id},'resume')">▶ Run</button>`}
+      <button class="act-btn act-btn-danger" onclick="delAr(${r.id})" title="Delete Rule">🗑</button>
     </div></td>
   </tr>`).join('');
+}
+
+function filterArTable(){ renderArRows(); }
+function filterArStatus(st){
+  arStatusFilter = st;
+  ['all','active','paused'].forEach(k=>{
+    const b=$('ar-chip-'+k);
+    if(b) b.classList.toggle('active', (k==='all'&&!st) || k===st);
+  });
+  renderArRows();
 }
 
 async function arToggle(id,a){await post('autoreply/'+id+'/'+a,{});loadAutoreply();}
@@ -7912,25 +8492,74 @@ async function clearArLogs(){
 /* ══════════════════════════════════════════════════════════════════
    FOLLOW-UP
    ══════════════════════════════════════════════════════════════════ */
+let allFu=[], fuStatusFilter='';
+
 async function loadFollowup(){
   const rows=await get('followup'); allFu=rows||[];
+
+  // Update Top KPI Counters
+  const activeCount = allFu.filter(r=>r.status==='active').length;
+  const activeLeads = allFu.reduce((acc,r)=>acc+(parseInt(r.active_contacts)||0),0);
+  const totalSent = allFu.reduce((acc,r)=>acc+(parseInt(r.total_sent)||0),0);
+  const totalEnrolled = allFu.reduce((acc,r)=>acc+(parseInt(r.total_contacts)||0),0);
+
+  if($('fu-kpi-active')) $('fu-kpi-active').textContent = fmt(activeCount);
+  if($('fu-kpi-leads')) $('fu-kpi-leads').textContent = fmt(activeLeads);
+  if($('fu-kpi-sent')) $('fu-kpi-sent').textContent = fmt(totalSent);
+  if($('fu-kpi-enrolled')) $('fu-kpi-enrolled').textContent = fmt(totalEnrolled);
+
+  renderFuRows();
+}
+
+function renderFuRows(){
   const tb=$('fu-body');
-  if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="6">No follow-up rules yet</td></tr>';return;}
-  tb.innerHTML=rows.map(r=>`<tr>
-    <td><strong>${esc(r.name)}</strong>${r.owner?`<br><small style="color:var(--text3)">@${esc(r.owner)}</small>`:''}</td>
-    <td><span class="badge b-purple">${(r.steps||[]).length} messages</span></td>
-    <td><span class="badge b-amber">${r.active_contacts||0} active</span> <span class="badge b-gray">${r.total_contacts||0} total</span></td>
-    <td class="mono" style="color:var(--accent)">${fmt(r.total_sent||0)}</td>
-    <td>${r.status==='active'?'<span class="badge b-green">✅ Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
-    <td><div class="btn-group">
-      <button class="btn btn-secondary btn-sm" onclick="editFu(${r.id})">Edit</button>
-      <button class="btn btn-secondary btn-sm" onclick="openDupModal('followup', ${r.id}, '${esc(r.name)}')">Copy</button>
-      <button class="btn btn-blue btn-sm" onclick="openFuContacts(${r.id},'${esc(r.name)}')">👥 Contacts</button>
-      <button class="btn btn-blue btn-sm" onclick="openFuLogs(${r.id},'${esc(r.name)}')">📋 Logs</button>
-      ${r.status==='active'?`<button class="btn btn-amber btn-sm" onclick="fuToggle(${r.id},'pause')">⏸</button>`:`<button class="btn btn-primary btn-sm" onclick="fuToggle(${r.id},'resume')">▶</button>`}
-      <button class="btn btn-danger btn-sm" onclick="delFu(${r.id})">Del</button>
+  if(!tb) return;
+  const q = ($('fu-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allFu;
+  if(fuStatusFilter){
+    filtered = filtered.filter(r=>r.status===fuStatusFilter);
+  }
+  if(q){
+    filtered = filtered.filter(r=>{
+      const n = (r.name||'').toLowerCase();
+      const ow = (r.owner||'').toLowerCase();
+      return n.includes(q) || ow.includes(q);
+    });
+  }
+
+  if(!filtered.length){
+    tb.innerHTML='<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center;color:var(--text3)">No follow-up rules found matching your filter</td></tr>';
+    return;
+  }
+
+  tb.innerHTML=filtered.map(r=>`<tr>
+    <td>
+      <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(r.name)}</div>
+      ${r.owner?`<div style="margin-top:4px"><span class="owner-pill"><span class="owner-avatar">${esc(r.owner).charAt(0).toUpperCase()}</span>@${esc(r.owner)}</span></div>`:''}
+    </td>
+    <td><span class="badge b-purple" style="font-weight:700;font-size:11px">${(r.steps||[]).length} scheduled steps</span></td>
+    <td><span class="badge b-amber" style="font-weight:700">${r.active_contacts||0} active</span> <span class="badge b-gray">${r.total_contacts||0} total</span></td>
+    <td class="mono" style="color:var(--accent);font-weight:700;font-size:13px">${fmt(r.total_sent||0)}</td>
+    <td>${r.status==='active'?'<span class="badge b-green"><span class="live-dot" style="display:inline-block"></span> Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
+    <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
+      <button class="act-btn" onclick="editFu(${r.id})" title="Edit Sequence">✏️ Edit</button>
+      <button class="act-btn act-btn-indigo" onclick="openDupModal('followup', ${r.id}, '${esc(r.name)}')" title="Duplicate Sequence">📄 Copy</button>
+      <button class="act-btn act-btn-cyan" onclick="openFuContacts(${r.id},'${esc(r.name)}')" title="View Enrolled Contacts">👥 Contacts</button>
+      <button class="act-btn act-btn-cyan" onclick="openFuLogs(${r.id},'${esc(r.name)}')" title="View Send Logs">📋 Logs</button>
+      ${r.status==='active'?`<button class="act-btn act-btn-amber" onclick="fuToggle(${r.id},'pause')">⏸ Pause</button>`:`<button class="act-btn act-btn-emerald" onclick="fuToggle(${r.id},'resume')">▶ Run</button>`}
+      <button class="act-btn act-btn-danger" onclick="delFu(${r.id})" title="Delete Sequence">🗑</button>
     </div></td>
   </tr>`).join('');
+}
+
+function filterFuTable(){ renderFuRows(); }
+function filterFuStatus(st){
+  fuStatusFilter = st;
+  ['all','active','paused'].forEach(k=>{
+    const b=$('fu-chip-'+k);
+    if(b) b.classList.toggle('active', (k==='all'&&!st) || k===st);
+  });
+  renderFuRows();
 }
 
 async function fuToggle(id,a){await post('followup/'+id+'/'+a,{});loadFollowup();}
@@ -8282,29 +8911,48 @@ async function compressImageCanvas(file, maxWidth = 1200, quality = 0.85){
 async function loadTemplates(){
   const r = await get('templates');
   allTemplates = r?.rows || [];
+  if($('tmpl-kpi-total')) $('tmpl-kpi-total').textContent = fmt(allTemplates.length);
+  renderTemplateRows();
+}
+
+function renderTemplateRows(){
   const tb = $('templates-body');
   if(!tb) return;
-  if(!allTemplates.length){
-    tb.innerHTML = '<tr class="empty-row"><td colspan="5">No templates yet — click "+ Create Template" to build one</td></tr>';
+  const q = ($('tmpl-search-inp')?.value || '').toLowerCase().trim();
+  let filtered = allTemplates;
+  if(q){
+    filtered = filtered.filter(t=>{
+      const n = (t.name||'').toLowerCase();
+      const s = (t.subject||'').toLowerCase();
+      const ow = (t.owner||'').toLowerCase();
+      return n.includes(q) || s.includes(q) || ow.includes(q);
+    });
+  }
+  if(!filtered.length){
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5" style="padding:28px;text-align:center;color:var(--text3)">No templates found matching your search</td></tr>';
     return;
   }
-  tb.innerHTML = allTemplates.map(t => `
+  tb.innerHTML = filtered.map(t => `
     <tr>
-      <td><strong>${esc(t.name)}</strong></td>
-      <td style="color:var(--text2);font-size:12px">${esc(t.subject || '—')}</td>
-      <td><span class="badge b-gray">${esc(t.owner || 'You')}</span></td>
-      <td style="color:var(--text3);font-size:11px">${t.created_at || '—'}</td>
       <td>
-        <div class="btn-group">
-          <button class="btn btn-secondary btn-sm" onclick="editTemplate(${t.id})">Edit</button>
-          <button class="btn btn-blue btn-sm" onclick="previewTemplate(${t.id})">👁️ Preview</button>
-          <button class="btn btn-purple btn-sm" onclick="duplicateTemplate(${t.id})">Copy</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteTemplate(${t.id})">Del</button>
+        <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(t.name)}</div>
+      </td>
+      <td style="color:var(--text2);font-size:12px;font-weight:500">${esc(t.subject || '—')}</td>
+      <td><span class="owner-pill"><span class="owner-avatar">${esc(t.owner || 'U').charAt(0).toUpperCase()}</span>${esc(t.owner || 'You')}</span></td>
+      <td style="color:var(--text3);font-size:11px;font-family:var(--mono)">${t.created_at || '—'}</td>
+      <td style="text-align:right">
+        <div class="act-group" style="justify-content:flex-end">
+          <button class="act-btn" onclick="editTemplate(${t.id})" title="Edit Template">✏️ Edit</button>
+          <button class="act-btn act-btn-cyan" onclick="previewTemplate(${t.id})" title="Live Device Preview">👁️ Preview</button>
+          <button class="act-btn act-btn-indigo" onclick="duplicateTemplate(${t.id})" title="Duplicate Template">📄 Copy</button>
+          <button class="act-btn act-btn-danger" onclick="deleteTemplate(${t.id})" title="Delete Template">🗑</button>
         </div>
       </td>
     </tr>
   `).join('');
 }
+
+function filterTemplatesTable(){ renderTemplateRows(); }
 
 function openNewTemplateModal(){
   $('tmpl-id').value = '';
