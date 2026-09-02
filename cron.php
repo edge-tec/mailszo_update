@@ -642,48 +642,69 @@ try {
         // Detects the server's spam folder name (Gmail: [Gmail]/Spam, Outlook: Junk, etc.)
         // and fetches new messages with separate UID tracking. These messages go through
         // the 3-tier filter below: BCC→skip, verified provider→process, unverified→skip.
-        try {
-            if (function_exists('imapDetectSpamFolder')) {
-                $spamFolderName = imapDetectSpamFolder($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl);
-            }
-
-            if ($spamFolderName) {
-                $spamCap = min(50, max(1, (int)($effectiveCap / 4))); // Use 25% of INBOX cap for Spam, min 1 max 50
-
-                if (function_exists('imap_open') && function_exists('imapExtFetchSpamSinceUid')) {
-                    $fetchedSpam    = imapExtFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
-                    $spamFolderMsgs = $fetchedSpam['messages'];
-                    $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
-                } elseif (function_exists('imapFetchSpamSinceUid')) {
-                    $fetchedSpam    = imapFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
-                    $spamFolderMsgs = $fetchedSpam['messages'];
-                    $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
+        //
+        // PERFORMANCE: Uses cached spam_folder_name from DB to avoid an extra IMAP LIST
+        // connection on every cron run. Detection only happens once per account.
+        // TIME GUARD: Skips spam scanning if >20s elapsed to stay within aaPanel's 30s timeout.
+        $spamElapsed = time() - $CRON_START_TIME;
+        if ($spamElapsed > 20) {
+            // Running low on time — skip spam scanning to prevent HTTP timeout
+            $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                'message'=>"Spam scan skipped — {$spamElapsed}s elapsed, preserving time budget."];
+        } else {
+            try {
+                // Use cached spam folder name from DB (avoids extra IMAP LIST connection each run)
+                $cachedSpamFolder = $ia['spam_folder_name'] ?? null;
+                if ($cachedSpamFolder && $cachedSpamFolder !== '') {
+                    $spamFolderName = $cachedSpamFolder;
+                } elseif (function_exists('imapDetectSpamFolder')) {
+                    // First run: detect and cache the spam folder name
+                    $spamFolderName = imapDetectSpamFolder($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl);
+                    // Cache in DB for future runs (even null → we won't re-detect every time)
+                    try {
+                        db()->prepare("UPDATE imap_accounts SET spam_folder_name=? WHERE id=?")
+                            ->execute([$spamFolderName ?: '', $iaId]);
+                    } catch (Exception $_cacheE) { /* non-fatal */ }
                 }
 
-                // Update spam UID tracking in DB
-                if ($fetchedSpam) {
-                    $curSpamUidV = (int)($fetchedSpam['uidValidity'] ?? 0);
-                    if ($newHighSpamUid > $lastSpamUid) {
-                        try {
-                            db()->prepare("UPDATE imap_accounts SET last_spam_uid=?, last_spam_uid_validity=? WHERE id=?")
-                                ->execute([$newHighSpamUid, $curSpamUidV ?: $prevSpamUidV, $iaId]);
-                        } catch (Exception $_spamUidE) { /* non-fatal */ }
-                    } elseif ($curSpamUidV > 0 && $curSpamUidV !== $prevSpamUidV) {
-                        try {
-                            db()->prepare("UPDATE imap_accounts SET last_spam_uid_validity=? WHERE id=?")
-                                ->execute([$curSpamUidV, $iaId]);
-                        } catch (Exception $_spamUidE) { /* non-fatal */ }
+                if ($spamFolderName) {
+                    $spamCap = min(50, max(1, (int)($effectiveCap / 4))); // Use 25% of INBOX cap for Spam, min 1 max 50
+
+                    if (function_exists('imap_open') && function_exists('imapExtFetchSpamSinceUid')) {
+                        $fetchedSpam    = imapExtFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
+                        $spamFolderMsgs = $fetchedSpam['messages'];
+                        $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
+                    } elseif (function_exists('imapFetchSpamSinceUid')) {
+                        $fetchedSpam    = imapFetchSpamSinceUid($iaHost, $iaPort, $iaUser, $iaPass, $iaSsl, $spamFolderName, $lastSpamUid, $prevSpamUidV, $spamCap);
+                        $spamFolderMsgs = $fetchedSpam['messages'];
+                        $newHighSpamUid = max($lastSpamUid, $fetchedSpam['highestUid']);
+                    }
+
+                    // Update spam UID tracking in DB
+                    if ($fetchedSpam) {
+                        $curSpamUidV = (int)($fetchedSpam['uidValidity'] ?? 0);
+                        if ($newHighSpamUid > $lastSpamUid) {
+                            try {
+                                db()->prepare("UPDATE imap_accounts SET last_spam_uid=?, last_spam_uid_validity=? WHERE id=?")
+                                    ->execute([$newHighSpamUid, $curSpamUidV ?: $prevSpamUidV, $iaId]);
+                            } catch (Exception $_spamUidE) { /* non-fatal */ }
+                        } elseif ($curSpamUidV > 0 && $curSpamUidV !== $prevSpamUidV) {
+                            try {
+                                db()->prepare("UPDATE imap_accounts SET last_spam_uid_validity=? WHERE id=?")
+                                    ->execute([$curSpamUidV, $iaId]);
+                            } catch (Exception $_spamUidE) { /* non-fatal */ }
+                        }
+                    }
+
+                    if (!empty($spamFolderMsgs)) {
+                        $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                            'message'=>"Spam folder ({$spamFolderName}): found " . count($spamFolderMsgs) . " new message(s) for filtering."];
                     }
                 }
-
-                if (!empty($spamFolderMsgs)) {
-                    $results[] = ['status'=>'imap_info','account'=>$iaUser,
-                        'message'=>"Spam folder ({$spamFolderName}): found " . count($spamFolderMsgs) . " new message(s) for filtering."];
-                }
+            } catch (Exception $spamEx) {
+                $results[] = ['status'=>'imap_warn','account'=>$iaUser,
+                    'message'=>'Spam folder scan failed (non-fatal): ' . $spamEx->getMessage()];
             }
-        } catch (Exception $spamEx) {
-            $results[] = ['status'=>'imap_warn','account'=>$iaUser,
-                'message'=>'Spam folder scan failed (non-fatal): ' . $spamEx->getMessage()];
         }
 
         // ── Domain Blacklist Filter — applied BEFORE inbound persistence ─────────────────────────

@@ -316,6 +316,7 @@ function db() {
             ['email_tracking',  'user_id',              "INT DEFAULT NULL"],
             ['imap_accounts',   'last_spam_uid',        "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
             ['imap_accounts',   'last_spam_uid_validity', "BIGINT UNSIGNED NOT NULL DEFAULT 0"],
+            ['imap_accounts',   'spam_folder_name',     "VARCHAR(100) DEFAULT NULL"],
         ];
         foreach ($arCols as [$tbl, $col, $def]) {
             try {
