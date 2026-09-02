@@ -338,8 +338,8 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
     foreach ($processBatch as $uid) {
         $tFetch = sprintf('A%03d', $tagNum++);
 
-        // UID FETCH — use BODY.PEEK so we don't alter \Seen flag, fetching threading headers
-        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT MESSAGE-ID IN-REPLY-TO REFERENCES DATE)])\r\n");
+        // UID FETCH — use BODY.PEEK so we don't alter \Seen flag, fetching threading and recipient headers
+        fwrite($sock, "{$tFetch} UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM TO CC BCC DELIVERED-TO ENVELOPE-TO X-ORIGINAL-TO X-ENVELOPE-TO SUBJECT MESSAGE-ID IN-REPLY-TO REFERENCES DATE)])\r\n");
 
         // Read response, handling IMAP literal blocks inline
         $fetchLines  = '';
@@ -381,6 +381,7 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
         $headerBlock = preg_replace("/\r?\n([ \t])/", ' $1', $headerBlock);
 
         $fromLine = ''; $subjectLine = ''; $msgIdLine = ''; $inReplyToLine = ''; $referencesLine = ''; $dateLine = '';
+        $toHeaders = []; $ccHeaders = []; $bccHeaders = []; $envToHeaders = [];
         foreach (explode("\n", $headerBlock) as $hLine) {
             $hLine = rtrim($hLine, "\r");
             if ($fromLine       === '' && preg_match('/^From\s*:/i',        $hLine)) $fromLine       = $hLine;
@@ -389,6 +390,10 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
             if ($inReplyToLine  === '' && preg_match('/^In-Reply-To\s*:/i', $hLine)) $inReplyToLine  = $hLine;
             if ($referencesLine === '' && preg_match('/^References\s*:/i',  $hLine)) $referencesLine = $hLine;
             if ($dateLine       === '' && preg_match('/^Date\s*:/i',        $hLine)) $dateLine       = $hLine;
+            if (preg_match('/^To\s*:\s*(.*)$/i', $hLine, $m)) $toHeaders[] = $m[1];
+            if (preg_match('/^Cc\s*:\s*(.*)$/i', $hLine, $m)) $ccHeaders[] = $m[1];
+            if (preg_match('/^Bcc\s*:\s*(.*)$/i', $hLine, $m)) $bccHeaders[] = $m[1];
+            if (preg_match('/^(Delivered-To|Envelope-To|X-Original-To|X-Envelope-To|X-Gm-Original-To)\s*:\s*(.*)$/i', $hLine, $m)) $envToHeaders[] = $m[2];
         }
 
         if ($fromLine === '') continue; // No FROM header found
@@ -403,14 +408,18 @@ function imapFetchSinceUid(string $host, int $port, string $user, string $pass, 
         if (!$parsed['email'] || !filter_var($parsed['email'], FILTER_VALIDATE_EMAIL)) continue;
 
         $messages[] = [
-            'from_email'  => $parsed['email'],
-            'from_name'   => $parsed['name'],
-            'subject'     => $subject,
-            'message_id'  => $msgId,
-            'in_reply_to' => $inReplyTo,
-            'references'  => $references,
-            'date_header' => $dateHeader,
-            'uid'         => $uid,
+            'from_email'          => $parsed['email'],
+            'from_name'           => $parsed['name'],
+            'subject'             => $subject,
+            'message_id'          => $msgId,
+            'in_reply_to'         => $inReplyTo,
+            'references'          => $references,
+            'date_header'         => $dateHeader,
+            'to_header'           => implode(', ', $toHeaders),
+            'cc_header'           => implode(', ', $ccHeaders),
+            'bcc_header'          => implode(', ', $bccHeaders),
+            'delivered_to_header' => implode(', ', $envToHeaders),
+            'uid'                 => $uid,
         ];
     }
 
@@ -593,10 +602,26 @@ function imapExtFetchSinceUid($mbox, int $lastUid, int $prevUidValidity = 0, str
                 if ($fs === '') $fs = $ov->subject;
             }
 
+            $toHdr = (string)($ov->to ?? '');
+            $ccHdr = '';
+            $bccHdr = '';
+            $seqNo = @imap_msgno($mbox, $ov->uid ?? 0);
+            if ($seqNo > 0) {
+                $hdr = @imap_headerinfo($mbox, $seqNo);
+                if ($hdr) {
+                    if (!empty($hdr->toaddress)) $toHdr = (string)$hdr->toaddress;
+                    if (!empty($hdr->ccaddress)) $ccHdr = (string)$hdr->ccaddress;
+                    if (!empty($hdr->bccaddress)) $bccHdr = (string)$hdr->bccaddress;
+                }
+            }
+
             $messages[] = [
                 'from_email' => $fe,
                 'from_name'  => $fn,
                 'subject'    => $fs,
+                'to_header'  => $toHdr,
+                'cc_header'  => $ccHdr,
+                'bcc_header' => $bccHdr,
                 'uid'        => (int)($ov->uid ?? 0),
             ];
         }
@@ -856,3 +881,61 @@ function imapMoveUids(array $srcCfg, array $dstCfg, array $uids): array {
         'message'  => $del['ok'] ? 'ok' : ('delete: '.$del['message']),
     ];
 }
+
+/**
+ * Detect whether an incoming IMAP message was received as a BCC (blind carbon copy).
+ *
+ * Requirements:
+ *  - To contains IMAP address  -> Process normally (returns false)
+ *  - CC contains IMAP address  -> Process normally (returns false)
+ *  - BCC contains IMAP address -> Skip completely (returns true)
+ *  - Neither To nor CC contains IMAP address -> Delivered as blind copy (returns true)
+ *
+ * Compatible with Gmail, Outlook/Office 365, Yahoo, Zoho, Mailcow/Dovecot, and custom IMAPs.
+ */
+function isImapMessageBcc(array $msg, string $imapAccountEmail): bool {
+    $imapEmail = strtolower(trim($imapAccountEmail));
+    if ($imapEmail === '') return false;
+
+    $extractEmails = function(?string $hdr): array {
+        if (!$hdr) return [];
+        preg_match_all('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $hdr, $m);
+        return array_unique(array_map('strtolower', $m[0] ?? []));
+    };
+
+    $toEmails  = $extractEmails($msg['to_header'] ?? '');
+    $ccEmails  = $extractEmails($msg['cc_header'] ?? '');
+    $bccEmails = $extractEmails($msg['bcc_header'] ?? '');
+
+    // Base email without plus addressing (e.g. user+tag@domain.com -> user@domain.com)
+    $imapBase = preg_replace('/\+[^@]+@/', '@', $imapEmail);
+
+    $matchesImap = function(array $list) use ($imapEmail, $imapBase): bool {
+        foreach ($list as $email) {
+            if ($email === $imapEmail || $email === $imapBase) return true;
+            $emailBase = preg_replace('/\+[^@]+@/', '@', $email);
+            if ($emailBase === $imapBase) return true;
+        }
+        return false;
+    };
+
+    // 1. If mailbox is in 'To', it is direct mail -> NOT BCC
+    if ($matchesImap($toEmails)) {
+        return false;
+    }
+
+    // 2. If mailbox is in 'Cc', it is carbon copy -> NOT BCC
+    if ($matchesImap($ccEmails)) {
+        return false;
+    }
+
+    // 3. If mailbox is in 'Bcc' -> IS BCC
+    if ($matchesImap($bccEmails)) {
+        return true;
+    }
+
+    // 4. If neither To nor Cc contains the IMAP mailbox address,
+    // the email arrived in this inbox as a blind copy (BCC).
+    return true;
+}
+

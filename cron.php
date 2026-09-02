@@ -641,6 +641,44 @@ try {
             }
         }
 
+        // ── Skip BCC Emails Filter — applied BEFORE inbound persistence & automation ──
+        // If the IMAP account has skip_bcc enabled (default: 1), emails where
+        // the mailbox received the message only via BCC are completely skipped:
+        // they are NOT stored in inbound_emails, do NOT create leads, do NOT trigger
+        // auto-reply, follow-up, or sequential sequences, and are recorded in the
+        // processing logs as 'Skipped (BCC Recipient)' for auditing.
+        $skipBccEnabled = !isset($ia['skip_bcc']) || (int)$ia['skip_bcc'] === 1;
+        if (!empty($msgs) && $skipBccEnabled && function_exists('isImapMessageBcc')) {
+            $bccSkippedCount = 0;
+            $msgs = array_filter($msgs, function($m) use ($iaUser, $iaOwnerId, $iaHost, &$bccSkippedCount) {
+                if (isImapMessageBcc($m, $iaUser)) {
+                    $bccSkippedCount++;
+                    $fe   = strtolower(trim((string)($m['from_email'] ?? '')));
+                    $subj = (string)($m['subject'] ?? '');
+                    if (function_exists('logSystemEvent')) {
+                        logSystemEvent(
+                            'skipped',
+                            $fe ?: $iaUser,
+                            'Skipped (BCC Recipient)' . ($subj !== '' ? ': ' . substr($subj, 0, 120) : ''),
+                            $iaOwnerId,
+                            null, // campaign_id
+                            null, // rule_id
+                            null, // queue_id
+                            null, // token
+                            $iaHost
+                        );
+                    }
+                    return false; // Skip completely!
+                }
+                return true;
+            });
+            $msgs = array_values($msgs);
+            if ($bccSkippedCount > 0) {
+                $results[] = ['status'=>'imap_info','account'=>$iaUser,
+                    'message'=>"Skip BCC: {$bccSkippedCount} message(s) delivered as BCC were skipped before processing."];
+            }
+        }
+
         // ── Mandatory persistence: every read message is written to inbound_emails ──
         // ON DUPLICATE KEY (imap_account_id, uid_validity, uid) keeps re-runs safe.
         // Per-message duplicate check added for extra safety: if a record already

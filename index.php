@@ -3139,6 +3139,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
           <button class="chip-btn" id="sys-chip-retry" onclick="setSysEventFilter('retry',this)">🔄 Retry</button>
           <button class="chip-btn" id="sys-chip-failed" onclick="setSysEventFilter('failed',this)">❌ Failed</button>
           <button class="chip-btn" id="sys-chip-unsub" onclick="setSysEventFilter('unsubscribed',this)">🛑 Unsubscribed</button>
+          <button class="chip-btn" id="sys-chip-skipped" onclick="setSysEventFilter('skipped',this)">🛡️ Skipped</button>
         </div>
         <!-- Hidden select element for compatibility -->
         <select class="fsel" id="sys-event-filter" style="display:none" onchange="loadSystemLogs(1)">
@@ -3150,6 +3151,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
           <option value="retry">retry</option>
           <option value="failed">failed</option>
           <option value="unsubscribed">unsubscribed</option>
+          <option value="skipped">skipped</option>
         </select>
         <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(1);loadSystemLogStats();" title="Refresh Live Logs">↺</button>
       </div>
@@ -3185,6 +3187,17 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
       </div>
       <div class="fg"><label class="fl">Username (Email) *</label><input class="fi" id="im-user" placeholder="inbox@example.com"></div>
       <div class="fg"><label class="fl">Password * <span class="flh">(blank = keep existing when editing)</span></label><input class="fi" id="im-pass" type="password" placeholder="App password or IMAP password"></div>
+      <!-- Skip BCC Emails setting (Default: ON) -->
+      <div class="fg" style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);padding:10px 14px;border-radius:8px;border:1px solid var(--border);margin-top:6px">
+        <div>
+          <label class="fl" style="margin-bottom:2px;cursor:pointer;font-weight:700" for="im-skip-bcc">Skip BCC Emails</label>
+          <div style="font-size:11px;color:var(--text3)">Ignore and skip auto-responder if this mailbox was only BCC'd</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="im-skip-bcc" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       <div class="info-box">💡 For Gmail: use an <strong>App Password</strong> (not your login). Enable 2FA → Google Account → Security → App Passwords.</div>
     </div>
     <div class="modal-foot">
@@ -7313,7 +7326,8 @@ function renderImapRows(){
     </td>
     <td class="mono" style="font-size:12px;font-weight:600">${esc(a.host)}:${a.port}</td>
     <td class="mono" style="font-size:12px;color:var(--text2)">${esc(a.username)}</td>
-    <td>${a.ssl=='1'||a.ssl===1?'<span class="badge b-green" style="font-weight:700">🔒 SSL</span>':'<span class="badge b-gray">No SSL</span>'}</td>
+    <td>${a.ssl=='1'||a.ssl===1?'<span class="badge b-green" style="font-weight:700">🔒 SSL</span>':'<span class="badge b-gray">No SSL</span>'}
+        ${(a.skip_bcc == null || a.skip_bcc == '1' || a.skip_bcc === 1) ? '<span class="badge b-purple" style="font-size:10px;margin-left:4px" title="BCC Filtering: Automatically skips emails where this mailbox was only BCC\'d">🛡️ Skip BCC</span>' : ''}</td>
     <td style="font-size:11px;color:var(--text2)">${a.last_check||'Never'}<br><small style="color:var(--text3);font-family:var(--mono)">UID: ${a.last_uid||0} | read: ${a.emails_read||0}</small></td>
     <td>${a.status==='active'?'<span class="badge b-green"><span class="live-dot" style="display:inline-block"></span> Active</span>':'<span class="badge b-amber">⏸ Paused</span>'}</td>
     <td style="text-align:right"><div class="act-group" style="justify-content:flex-end">
@@ -7338,6 +7352,8 @@ function openImapModal(id=null){
   sv('im-name',a?.name||''); sv('im-host',a?.host||'');
   sv('im-port',a?.port||993); $('im-ssl').value=String(a?.ssl??1);
   sv('im-user',a?.username||''); sv('im-pass','');
+  const skipBccEl = $('im-skip-bcc');
+  if (skipBccEl) skipBccEl.checked = a ? (a.skip_bcc == null || parseInt(a.skip_bcc) === 1) : true;
   showModal('imap-modal');
 }
 
@@ -7360,7 +7376,7 @@ async function saveImap(){
   if(!name||!host||!user){al('imap-al','Name, host and username required','err');return;}
   if(!imapEid&&!pass){al('imap-al','Password required for new account','err');return;}
   const btn=$('imap-save-btn');btn.disabled=true;btn.innerHTML='<span class="spin-ic"></span>';
-  const payload={name,host,port:parseInt(v('im-port'))||993,username:user,ssl:parseInt($('im-ssl').value)};
+  const payload={name,host,port:parseInt(v('im-port'))||993,username:user,ssl:parseInt($('im-ssl').value),skip_bcc:$('im-skip-bcc')?.checked?1:0};
   if(pass) payload.password=pass;
   const r=imapEid?await put('imap/'+imapEid,payload):await post('imap',payload);
   btn.disabled=false;btn.textContent='Save Account';
@@ -9441,20 +9457,29 @@ async function loadSystemLogs(page = 1, silent = false){
     queued: 'badge b-amber',
     retry: 'badge b-orange',
     failed: 'badge b-red',
-    unsubscribed: 'badge b-gray'
+    unsubscribed: 'badge b-gray',
+    skipped: 'badge b-amber'
   };
   const icons = {
-    sent: '📤', opened: '👁️', clicked: '🖱️', queued: '🕒', retry: '🔄', failed: '❌', unsubscribed: '🛑'
+    sent: '📤', opened: '👁️', clicked: '🖱️', queued: '🕒', retry: '🔄', failed: '❌', unsubscribed: '🛑', skipped: '🛡️'
   };
 
-  tb.innerHTML = r.rows.map(l => `
+  tb.innerHTML = r.rows.map(l => {
+    let reasonBadge = '';
+    let detailsText = esc(l.link_url || l.subject || l.error_message || l.details || '—');
+    if (l.event_type === 'skipped' || (l.details && l.details.includes('BCC Recipient'))) {
+      reasonBadge = '<span class="badge b-purple" style="font-weight:700;font-size:10px;margin-right:6px">BCC Recipient</span>';
+      detailsText = detailsText.replace(/^Skipped \(BCC Recipient\)(:\s*)?/i, '');
+      if (!detailsText) detailsText = '<span style="color:var(--text3)">Delivered as blind copy</span>';
+    }
+    return `
     <tr>
       <td><span class="${badges[l.event_type] || 'badge b-gray'}" style="font-weight:700">${icons[l.event_type] || '•'} ${esc(l.event_type.toUpperCase())}</span></td>
       <td>
         <span class="mono" style="font-size:12px;font-weight:600;color:var(--text)">${esc(l.recipient_email || '—')}</span>
       </td>
       <td style="font-size:11px;color:var(--text2);max-width:320px;word-break:break-word">
-        ${esc(l.link_url || l.subject || l.error_message || l.details || '—')}
+        ${reasonBadge}${detailsText}
       </td>
       <td>
         ${l.smtp_host ? `<span style="font-weight:600;color:var(--text);font-size:11px">🔌 ${esc(l.smtp_host)}</span>` : '<span style="color:var(--text3)">—</span>'}
@@ -9464,8 +9489,8 @@ async function loadSystemLogs(page = 1, silent = false){
       </td>
       <td style="font-size:10px;color:var(--text3);max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.user_agent || '')}">${esc(l.user_agent ? l.user_agent.substring(0,25)+'…' : '—')}</td>
       <td style="font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap;text-align:right">${l.created_at || '—'}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
   const pg = $('sys-logs-pager');
   if(pg){

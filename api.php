@@ -1495,8 +1495,8 @@ if ($res==='imap') {
         if (empty($b['host'])||empty($b['username'])||empty($b['password'])||empty($b['name']))
             jsonOut(['ok'=>false,'message'=>'Name, host, username and password are all required']);
         try {
-            db()->prepare("INSERT INTO imap_accounts (user_id,name,host,port,username,password,`ssl`) VALUES (?,?,?,?,?,?,?)")
-                ->execute([$UID, $b['name'], $b['host'], (int)($b['port']??993), $b['username'], $b['password'], (int)($b['ssl']??1)]);
+            db()->prepare("INSERT INTO imap_accounts (user_id,name,host,port,username,password,`ssl`,skip_bcc) VALUES (?,?,?,?,?,?,?,?)")
+                ->execute([$UID, $b['name'], $b['host'], (int)($b['port']??993), $b['username'], $b['password'], (int)($b['ssl']??1), (int)($b['skip_bcc']??1)]);
             jsonOut(['ok'=>true,'id'=>(int)db()->lastInsertId()]);
         } catch (Exception $e) {
             jsonOut(['ok'=>false,'message'=>'DB error: '.$e->getMessage()]);
@@ -1509,11 +1509,12 @@ if ($res==='imap') {
         // Non-admin can only edit their own IMAP accounts
         if (!$IS_ADMIN && (int)$acc['user_id'] !== $UID) jsonOut(['ok'=>false,'message'=>'You can only edit your own IMAP accounts.'], 403);
         $pass = !empty($b['password']) ? $b['password'] : $acc['password'];
+        $skipBcc = isset($b['skip_bcc']) ? (int)$b['skip_bcc'] : (int)($acc['skip_bcc'] ?? 1);
         try {
-            db()->prepare("UPDATE imap_accounts SET name=?,host=?,port=?,username=?,password=?,`ssl`=?,status=? WHERE id=?")
+            db()->prepare("UPDATE imap_accounts SET name=?,host=?,port=?,username=?,password=?,`ssl`=?,status=?,skip_bcc=? WHERE id=?")
                 ->execute([$b['name']??$acc['name'], $b['host']??$acc['host'], (int)($b['port']??$acc['port']),
                            $b['username']??$acc['username'], $pass, (int)($b['ssl']??$acc['ssl']),
-                           $b['status']??$acc['status'], $id]);
+                           $b['status']??$acc['status'], $skipBcc, $id]);
             jsonOut(['ok'=>true]);
         } catch (Exception $e) {
             jsonOut(['ok'=>false,'message'=>'DB error: '.$e->getMessage()]);

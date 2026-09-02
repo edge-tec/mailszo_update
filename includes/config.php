@@ -44,7 +44,7 @@ function db() {
         $migrations = [
             "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `remember_token` VARCHAR(64) DEFAULT NULL",
             "CREATE TABLE IF NOT EXISTS `images` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`filename` VARCHAR(255) NOT NULL,`original_name` VARCHAR(255),`mime` VARCHAR(100) DEFAULT 'image/jpeg',`url` VARCHAR(500),`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-            "CREATE TABLE IF NOT EXISTS `imap_accounts` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`host` VARCHAR(255) NOT NULL,`port` INT DEFAULT 993,`username` VARCHAR(255) NOT NULL,`password` VARCHAR(255) NOT NULL,`ssl` TINYINT(1) DEFAULT 1,`last_check` DATETIME DEFAULT NULL,`status` ENUM('active','disabled') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `imap_accounts` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`host` VARCHAR(255) NOT NULL,`port` INT DEFAULT 993,`username` VARCHAR(255) NOT NULL,`password` VARCHAR(255) NOT NULL,`ssl` TINYINT(1) DEFAULT 1,`last_check` DATETIME DEFAULT NULL,`status` ENUM('active','disabled') DEFAULT 'active',`skip_bcc` TINYINT(1) NOT NULL DEFAULT 1,`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS `autoreply_rules` (`id` INT AUTO_INCREMENT PRIMARY KEY,`user_id` INT NOT NULL DEFAULT 1,`name` VARCHAR(150) NOT NULL,`imap_id` INT DEFAULT NULL,`smtp_ids` TEXT DEFAULT NULL,`from_emails` TEXT DEFAULT NULL,`status` ENUM('active','paused') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS `autoreply_steps` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`step_number` INT NOT NULL DEFAULT 1,`delay_minutes` INT NOT NULL DEFAULT 1,`subject` TEXT DEFAULT NULL,`html_body` LONGTEXT DEFAULT NULL,`text_body` LONGTEXT DEFAULT NULL,`image_ids` TEXT DEFAULT NULL,`img_width` VARCHAR(20) DEFAULT '600',`img_align` VARCHAR(10) DEFAULT 'center',`img_position` VARCHAR(10) DEFAULT 'top') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "CREATE TABLE IF NOT EXISTS `autoreply_threads` (`id` INT AUTO_INCREMENT PRIMARY KEY,`rule_id` INT NOT NULL,`from_email` VARCHAR(255) NOT NULL,`from_name` VARCHAR(150) DEFAULT NULL,`subject_in` VARCHAR(255) DEFAULT NULL,`current_step` INT NOT NULL DEFAULT 1,`next_send_at` DATETIME DEFAULT NULL,`last_sent_at` DATETIME DEFAULT NULL,`reply_count` INT NOT NULL DEFAULT 0,`status` ENUM('active','completed') DEFAULT 'active',`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `uq_rule_email` (`rule_id`,`from_email`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
@@ -131,7 +131,7 @@ function db() {
                 `queue_id` BIGINT DEFAULT NULL,
                 `tracking_token` VARCHAR(64) DEFAULT NULL,
                 `recipient_email` VARCHAR(255) NOT NULL,
-                `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry') NOT NULL,
+                `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry','skipped') NOT NULL,
                 `smtp_server` VARCHAR(150) DEFAULT NULL,
                 `ip_address` VARCHAR(45) DEFAULT NULL,
                 `user_agent` VARCHAR(500) DEFAULT NULL,
@@ -254,6 +254,7 @@ function db() {
             ['inbound_emails',   'references_header',    "TEXT DEFAULT NULL"],
             ['inbound_emails',   'thread_id',            "VARCHAR(255) DEFAULT NULL"],
             ['inbound_emails',   'body',                 "LONGTEXT DEFAULT NULL"],
+            ['imap_accounts',    'skip_bcc',             "TINYINT(1) NOT NULL DEFAULT 1"],
         ];
         foreach ($arCols as [$tbl, $col, $def]) {
             try {
@@ -284,7 +285,8 @@ function db() {
             "ALTER TABLE `emails` ADD INDEX `idx_em_list_created` (`list_id`, `created_at`)",
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_rule_created` (`rule_id`, `created_at`)",
             "ALTER TABLE `followup_contacts` ADD INDEX `idx_fc_created` (`created_at`)",
-            "ALTER TABLE `autoreply_threads` MODIFY COLUMN `status` ENUM('active','completed','pending','scheduled','sending','sent','failed','cancelled') DEFAULT 'active'"
+            "ALTER TABLE `autoreply_threads` MODIFY COLUMN `status` ENUM('active','completed','pending','scheduled','sending','sent','failed','cancelled') DEFAULT 'active'",
+            "ALTER TABLE `system_logs` MODIFY COLUMN `event_type` ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry','skipped') NOT NULL"
         ];
         foreach ($idxSqls as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) {}

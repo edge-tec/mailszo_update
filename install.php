@@ -204,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     `ssl`        TINYINT(1) DEFAULT 1,
                     `last_check` DATETIME DEFAULT NULL,
                     `status`     ENUM('active','disabled') DEFAULT 'active',
+                    `skip_bcc`   TINYINT(1) NOT NULL DEFAULT 1,
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
@@ -395,7 +396,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     `queue_id`        BIGINT DEFAULT NULL,
                     `tracking_token`  VARCHAR(64) DEFAULT NULL,
                     `recipient_email` VARCHAR(255) NOT NULL,
-                    `event_type`      ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry') NOT NULL,
+                    `event_type`      ENUM('queued','sent','opened','clicked','bounced','complaint','unsubscribed','failed','retry','skipped') NOT NULL,
                     `smtp_server`     VARCHAR(150) DEFAULT NULL,
                     `ip_address`      VARCHAR(45) DEFAULT NULL,
                     `user_agent`      VARCHAR(500) DEFAULT NULL,
