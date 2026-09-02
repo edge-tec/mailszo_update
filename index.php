@@ -2241,37 +2241,67 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- ALL LOGS (admin) -->
   <div class="page" id="page-alllogs">
-    <div class="card">
-      <div class="card-hd">
-        <h3>📋 All Send Logs</h3>
-        <span id="alllogs-live" style="display:none;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite;display:inline-block"></span>Live · 5s</span>
-        <button class="btn btn-secondary btn-sm" onclick="loadAllLogs(1)">↺ Refresh</button>
-        <button class="btn btn-danger btn-sm" onclick="clearAllLogs()" style="margin-left:auto">🗑 Clear All Logs</button>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">📋</div>
+        <div class="feat-hero-text">
+          <h2>All Send Logs &amp; Delivery Stream <span class="badge b-purple" style="font-size:10px">System-Wide Audit</span></h2>
+          <p>Real-time delivery telemetry across Campaigns, Conversational Auto-Replies, and Scheduled Follow-Up drips.</p>
+        </div>
       </div>
-      <!-- Stats bar -->
-      <div id="alllogs-stats" style="display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--text3)">Total: <strong id="al-total">—</strong></span>
-        <span style="font-size:12px;color:var(--accent)">Sent: <strong id="al-sent">—</strong></span>
-        <span style="font-size:12px;color:var(--red)">Failed: <strong id="al-failed">—</strong></span>
+      <div class="feat-hero-stats">
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Total Logs</div><div class="feat-stat-val" id="al-total" style="color:var(--indigo)">—</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Sent Success</div><div class="feat-stat-val" id="al-sent" style="color:var(--accent)">—</div></div>
+        </div>
+        <div class="feat-stat-pill">
+          <div><div class="feat-stat-lbl">Failed</div><div class="feat-stat-val" id="al-failed" style="color:var(--red)">—</div></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:6px;align-items:center;flex-wrap:wrap">
+          <span id="alllogs-live" style="display:none;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em"><span class="live-dot"></span>Live · 5s</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadAllLogs(1)">↺ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="clearAllLogs()">🗑 Clear All Logs</button>
+        </div>
       </div>
-      <!-- Search / filter bar -->
-      <div style="display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
-        <input class="fi" id="al-search" placeholder="Search email, campaign, SMTP, source…" style="flex:1;min-width:160px;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')loadAllLogs(1)">
-        <select class="fsel" id="al-status" style="padding:6px 10px;font-size:12px" onchange="loadAllLogs(1)">
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap" style="flex:1;min-width:240px">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="al-search" placeholder="Search email, campaign, SMTP, error, user…" onkeydown="if(event.key==='Enter')loadAllLogs(1)">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="al-chip-src-all" onclick="setAllLogsSource('',this)">All Sources</button>
+          <button class="chip-btn" id="al-chip-src-camp" onclick="setAllLogsSource('campaign',this)">📧 Campaigns</button>
+          <button class="chip-btn" id="al-chip-src-ar" onclick="setAllLogsSource('autoreply',this)">⚡ Auto-Reply</button>
+          <button class="chip-btn" id="al-chip-src-fu" onclick="setAllLogsSource('followup',this)">📬 Follow-Up</button>
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="al-chip-st-all" onclick="setAllLogsStatus('',this)">All Status</button>
+          <button class="chip-btn" id="al-chip-st-sent" onclick="setAllLogsStatus('sent',this)">✓ Sent</button>
+          <button class="chip-btn" id="al-chip-st-failed" onclick="setAllLogsStatus('failed',this)">✗ Failed</button>
+        </div>
+        <!-- Hidden select elements kept for compatibility -->
+        <select class="fsel" id="al-status" style="display:none" onchange="loadAllLogs(1)">
           <option value="">All Status</option>
-          <option value="sent">✓ Sent only</option>
-          <option value="failed">✗ Failed only</option>
+          <option value="sent">sent</option>
+          <option value="failed">failed</option>
         </select>
-        <select class="fsel" id="al-source" style="padding:6px 10px;font-size:12px" onchange="loadAllLogs(1)">
+        <select class="fsel" id="al-source" style="display:none" onchange="loadAllLogs(1)">
           <option value="">All Sources</option>
-          <option value="campaign">📧 Campaign</option>
-          <option value="autoreply">⚡ Auto-Reply</option>
-          <option value="followup">📬 Follow-Up</option>
+          <option value="campaign">campaign</option>
+          <option value="autoreply">autoreply</option>
+          <option value="followup">followup</option>
         </select>
-        <button class="btn btn-primary btn-sm" onclick="loadAllLogs(1)">🔍 Search</button>
+        <button class="btn btn-primary btn-sm" onclick="loadAllLogs(1)">Search</button>
       </div>
       <div class="card-body" style="padding:0"><div class="tw"><table>
-        <thead><tr><th>Campaign / Source</th><th>User</th><th>Email</th><th>Status</th><th>SMTP</th><th>From</th><th>Variant</th><th>Error</th><th>Time</th></tr></thead>
+        <thead><tr><th>Campaign / Source</th><th>User Account</th><th>Recipient Email</th><th>Delivery Status</th><th>SMTP Server</th><th>From Address</th><th>Variant</th><th>Error Diagnostics</th><th style="text-align:right">Timestamp</th></tr></thead>
         <tbody id="alllogs-body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
       </table></div>
       <div id="alllogs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
@@ -6363,18 +6393,34 @@ async function loadCronLogs(){
   if(!rows?.length){tb.innerHTML='<tr class="empty-row"><td colspan="8">No logs yet</td></tr>';return;}
   tb.innerHTML=logRows(rows);
 }
+function setAllLogsSource(src, btn) {
+  const sel = $('al-source');
+  if (sel) sel.value = src;
+  document.querySelectorAll('#page-alllogs [id^="al-chip-src-"]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAllLogs(1);
+}
+
+function setAllLogsStatus(st, btn) {
+  const sel = $('al-status');
+  if (sel) sel.value = st;
+  document.querySelectorAll('#page-alllogs [id^="al-chip-st-"]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAllLogs(1);
+}
+
 let _alllogsCurrentPage=1;
 async function loadAllLogs(page=1,silent=false){
   _alllogsCurrentPage=page;
   const tb=$('alllogs-body');
-  if(!silent)tb.innerHTML='<tr class="empty-row"><td colspan="9"><span class="spin-ic"></span> Loading…</td></tr>';
+  if(!silent)tb.innerHTML='<tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center"><span class="spin-ic"></span> Loading live telemetry…</td></tr>';
   const search=encodeURIComponent(($('al-search')?.value||'').trim());
   const status=encodeURIComponent($('al-status')?.value||'');
   const source=encodeURIComponent($('al-source')?.value||'');
   // Build URL: route param 'r=sendlog' must be separate from other query params
   const qs='&page='+(page||1)+(search?'&q='+search:'')+(status?'&status='+status:'')+(source?'&source='+source:'');
   const rows=await fetch('api.php?r=sendlog'+qs,{credentials:'same-origin'}).then(r=>r.text()).then(t=>{const s=t.indexOf('{');if(s>=0){try{return JSON.parse(t.slice(s));}catch(e){}}return null;}).catch(()=>null);
-  if(!rows){tb.innerHTML='<tr class="empty-row"><td colspan="9">Error loading logs — check server connection</td></tr>';return;}
+  if(!rows){tb.innerHTML='<tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center;color:var(--red)">Error loading logs — check server connection</td></tr>';return;}
 
   // Update stats bar
   if(rows.stats){
@@ -6385,27 +6431,35 @@ async function loadAllLogs(page=1,silent=false){
   }
 
   const data=Array.isArray(rows)?rows:(rows.rows||[]);
-  if(!data.length){tb.innerHTML='<tr class="empty-row"><td colspan="9">No logs found — no emails have been sent yet, or no results match your search</td></tr>';return;}
+  if(!data.length){tb.innerHTML='<tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center;color:var(--text3)">No logs found — no emails have been sent yet, or no results match your search</td></tr>';return;}
 
   const srcBadge=s=>{
-    if(s==='autoreply') return '<span class="badge b-amber">⚡ Auto-Reply</span>';
-    if(s==='followup')  return '<span class="badge b-blue">📬 Follow-Up</span>';
-    return '<span class="badge b-purple">📧 Campaign</span>';
+    if(s==='autoreply') return '<span class="badge b-amber" style="font-weight:700">⚡ Auto-Reply</span>';
+    if(s==='followup')  return '<span class="badge b-blue" style="font-weight:700">📬 Follow-Up</span>';
+    return '<span class="badge b-purple" style="font-weight:700">📧 Campaign</span>';
   };
 
   tb.innerHTML=data.map(l=>`<tr>
-    <td style="font-size:11px">
-      <div>${esc(l.campaign_name||'—')}</div>
-      <div style="margin-top:3px">${srcBadge(l.log_source||'campaign')}</div>
+    <td>
+      <div style="font-weight:700;font-size:12px;color:var(--text)">${esc(l.campaign_name||'—')}</div>
+      <div style="margin-top:4px">${srcBadge(l.log_source||'campaign')}</div>
     </td>
-    <td style="font-size:10px;color:var(--text3)">${esc(l.owner||'—')}</td>
-    <td class="mono" style="font-size:10px">${esc(l.email||'—')}</td>
-    <td>${l.status==='sent'?'<span class="badge b-green">✓ sent</span>':'<span class="badge b-red">✗ failed</span>'}</td>
-    <td style="font-size:11px">${esc(l.smtp_name_used||'—')}</td>
-    <td class="mono" style="font-size:10px">${esc(l.from_email_used||'—')}</td>
-    <td style="font-size:11px">${l.variant_index!=null&&l.variant_index!==''?'<span class="badge b-purple">v'+(Number(l.variant_index)+1)+'</span>':'<span style="color:var(--text3)">—</span>'}</td>
-    <td style="color:var(--red);font-size:10px;max-width:220px;word-break:break-word">${esc(l.error||'')}</td>
-    <td style="font-size:10px;color:var(--text2);white-space:nowrap">${l.sent_at||'—'}</td>
+    <td>
+      <span class="owner-pill"><span class="owner-avatar">${esc(l.owner||'U').charAt(0).toUpperCase()}</span>@${esc(l.owner||'—')}</span>
+    </td>
+    <td>
+      <span class="mono" style="font-size:12px;font-weight:600;color:var(--text)">${esc(l.email||'—')}</span>
+    </td>
+    <td>${l.status==='sent'?'<span class="badge b-green" style="font-weight:700"><span class="live-dot" style="display:inline-block"></span> Sent</span>':'<span class="badge b-red" style="font-weight:700">✗ Failed</span>'}</td>
+    <td>
+      <span style="font-weight:600;color:var(--text);font-size:11px">🔌 ${esc(l.smtp_name_used||'—')}</span>
+    </td>
+    <td>
+      <span class="mono" style="font-size:11px;color:var(--text2)">${esc(l.from_email_used||'—')}</span>
+    </td>
+    <td>${l.variant_index!=null&&l.variant_index!==''?'<span class="badge b-purple" style="font-weight:700">v'+(Number(l.variant_index)+1)+'</span>':'<span style="color:var(--text3)">—</span>'}</td>
+    <td style="color:var(--red);font-size:11px;max-width:220px;word-break:break-word;font-weight:500">${l.error ? esc(l.error) : '<span style="color:var(--text3)">—</span>'}</td>
+    <td style="font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap;text-align:right">${l.sent_at||'—'}</td>
   </tr>`).join('');
 
   // Pagination
