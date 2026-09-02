@@ -35,9 +35,10 @@ if ($token === '' || strlen($token) > 64 || !preg_match('/^[a-zA-Z0-9_-]+$/', $t
 
 // Asynchronously record open event in database with location & device intelligence
 try {
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? ($_SERVER['HTTP_X_ORIGINAL_USER_AGENT'] ?? ($_SERVER['HTTP_X_FORWARDED_USER_AGENT'] ?? ($_SERVER['HTTP_USERAGENT'] ?? '')));
     recordTrackingOpenEvent($token, [
-        'ip'              => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-        'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
+        'ip'              => $_SERVER['REMOTE_ADDR'] ?? ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '127.0.0.1'),
+        'user_agent'      => $ua,
         'referer'         => $_SERVER['HTTP_REFERER'] ?? null,
         'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
     ]);
