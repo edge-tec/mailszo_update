@@ -207,25 +207,8 @@ function processAutoReplyQueue(): int {
                 $nextRow = $nr->fetch();
 
                 if ($nextRow) {
-                    // Check if sequential_mode is enabled — auto-schedule next step without waiting for reply
-                    $seqMode = (int)($job['sequential_mode'] ?? 0);
-                    if ($seqMode === 1) {
-                        // Sequential mode: auto-schedule next step with its delay
-                        $nextDelayVal  = max(1, (int)($nextRow['delay_value'] ?? $nextRow['delay_minutes'] ?? 1));
-                        $nextDelayUnit = in_array(strtolower($nextRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($nextRow['delay_unit']) : 'minutes';
-                        $nextDelayMins = match($nextDelayUnit) {
-                            'hours' => $nextDelayVal * 60,
-                            'days'  => $nextDelayVal * 1440,
-                            default => $nextDelayVal,
-                        };
-                        $nextSendTime = date('Y-m-d H:i:s', strtotime("+{$nextDelayMins} minutes"));
-                        db()->prepare("UPDATE autoreply_threads SET current_step=?, status='scheduled', scheduled_send_time=?, first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
-                          ->execute([$nextNum, $nextSendTime, $mc['id'] ?? null, $sentMsgId, $threadId]);
-                    } else {
-                        // Normal mode: wait for recipient to reply before next step
-                        db()->prepare("UPDATE autoreply_threads SET current_step=?, status='pending', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
-                          ->execute([$nextNum, $mc['id'] ?? null, $sentMsgId, $threadId]);
-                    }
+                    db()->prepare("UPDATE autoreply_threads SET current_step=?, status='pending', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
+                      ->execute([$nextNum, $mc['id'] ?? null, $sentMsgId, $threadId]);
                 } else {
                     db()->prepare("UPDATE autoreply_threads SET status='completed', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
                       ->execute([$mc['id'] ?? null, $sentMsgId, $threadId]);
