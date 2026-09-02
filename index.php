@@ -1088,9 +1088,9 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
   <div class="login-card">
     <div class="login-logo"><div class="ic">✉️</div><h1>Mails<span>Zo</span></h1><p>v4 · Multi-User Email Platform</p></div>
     <div id="login-al" class="al"></div>
-    <div class="fg"><label class="fl">Username</label><input class="fi" id="l-user" placeholder="admin" autofocus></div>
-    <div class="fg"><label class="fl">Password</label><input class="fi" id="l-pass" type="password" placeholder="••••••••"></div>
-    <button class="btn btn-primary" style="width:100%;padding:11px;font-size:14px;margin-top:4px" type="button" onclick="doLogin()" id="btn-login">Sign In →</button>
+    <div class="fg"><label class="fl">Username</label><input class="fi" id="l-user" placeholder="admin" autofocus onkeydown="if(event.key==='Enter')$('l-pass')?.focus()"></div>
+    <div class="fg"><label class="fl">Password</label><input class="fi" id="l-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:700;margin-top:6px;background:linear-gradient(135deg,#6366F1 0%,#7C3AED 100%) !important;color:#FFFFFF !important;border:none !important;border-radius:10px;box-shadow:0 4px 14px rgba(99,102,241,0.35);display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer" type="button" onclick="doLogin()" id="btn-login">Sign In &rarr;</button>
   </div>
 </div>
 
@@ -5323,7 +5323,7 @@ async function saveList(){
 async function delList(id){if(!confirm('Delete list?'))return;await del('lists/'+id);loadLists();}
 
 /* ─── Campaigns ─────────────────────────── */
-let allCamps=[], campStatusFilter='';
+let campStatusFilter='';
 
 async function loadCampaigns(){
   const rows=await get('campaigns');allCamps=rows||[];
@@ -8492,7 +8492,7 @@ async function clearArLogs(){
 /* ══════════════════════════════════════════════════════════════════
    FOLLOW-UP
    ══════════════════════════════════════════════════════════════════ */
-let allFu=[], fuStatusFilter='';
+let fuStatusFilter='';
 
 async function loadFollowup(){
   const rows=await get('followup'); allFu=rows||[];
