@@ -70,9 +70,9 @@ function parseTrackingUserAgent(?string $ua): array {
     $ua = trim((string)$ua);
     if ($ua === '') {
         return [
-            'device_type'      => 'Desktop',
-            'operating_system' => 'Windows 10/11',
-            'browser'          => 'Chrome',
+            'device_type'      => 'Unknown',
+            'operating_system' => 'Unknown',
+            'browser'          => 'Unknown',
             'is_bot'           => 0
         ];
     }
@@ -93,18 +93,8 @@ function parseTrackingUserAgent(?string $ua): array {
         }
     }
 
-    // 2. Device Type
-    $deviceType = 'Desktop';
-    if ($isBot) {
-        $deviceType = 'Bot';
-    } elseif (preg_match('/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i', $ua)) {
-        $deviceType = 'Tablet';
-    } elseif (preg_match('/(mobile|iphone|ipod|blackberry|opera mini|windows phone|iemobile|android.*mobile)/i', $ua)) {
-        $deviceType = 'Mobile';
-    }
-
-    // 3. Operating System
-    $os = 'Windows 10/11';
+    // 2. Operating System
+    $os = 'Unknown';
     if (stripos($ua, 'Windows NT 10.0') !== false)     $os = 'Windows 10/11';
     elseif (stripos($ua, 'Windows NT 6.3') !== false)  $os = 'Windows 8.1';
     elseif (stripos($ua, 'Windows NT 6.1') !== false)  $os = 'Windows 7';
@@ -115,14 +105,16 @@ function parseTrackingUserAgent(?string $ua): array {
     elseif (stripos($ua, 'CrOS') !== false)            $os = 'ChromeOS';
     elseif (stripos($ua, 'Linux') !== false)           $os = 'Linux';
 
-    // 4. Browser & Email Client
-    $browser = 'Chrome';
+    // 3. Browser & Email Client
+    $browser = 'Unknown';
     if (stripos($ua, 'Outlook') !== false || stripos($ua, 'Microsoft Office') !== false || stripos($ua, 'MSOffice') !== false) {
         $browser = 'Outlook';
     } elseif (stripos($ua, 'GoogleImageProxy') !== false) {
         $browser = 'Gmail App';
     } elseif (stripos($ua, 'Thunderbird') !== false) {
         $browser = 'Thunderbird';
+    } elseif (stripos($ua, 'Yahoo') !== false) {
+        $browser = 'Yahoo';
     } elseif (stripos($ua, 'Edg/') !== false || stripos($ua, 'Edge/') !== false) {
         $browser = 'Edge';
     } elseif (stripos($ua, 'Chrome') !== false || stripos($ua, 'CriOS') !== false) {
@@ -133,6 +125,18 @@ function parseTrackingUserAgent(?string $ua): array {
         $browser = 'Apple Mail';
     } elseif (stripos($ua, 'Safari') !== false) {
         $browser = 'Safari';
+    }
+
+    // 4. Device Type
+    $deviceType = 'Unknown';
+    if ($isBot) {
+        $deviceType = 'Bot';
+    } elseif (preg_match('/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i', $ua)) {
+        $deviceType = 'Tablet';
+    } elseif (preg_match('/(mobile|iphone|ipod|blackberry|opera mini|windows phone|iemobile|android.*mobile)/i', $ua)) {
+        $deviceType = 'Mobile';
+    } elseif ($os === 'Windows 10/11' || $os === 'Windows 8.1' || $os === 'Windows 7' || $os === 'Windows' || $os === 'macOS' || $os === 'Linux' || $os === 'ChromeOS') {
+        $deviceType = 'Desktop';
     }
 
     return [
@@ -182,54 +186,18 @@ function detectGoogleImageProxy(string $ip, string $ua): bool {
  * Operates 100% locally and offline (no external network latency or API rate limits).
  */
 function resolveTrackingIpLocation(string $ip): array {
-    // Localhost / private IP -> resolve to server timezone default location
+    // Localhost / private IP -> Do NOT fabricate fake public GPS coordinates
     if ($ip === '127.0.0.1' || $ip === '::1' || strncmp($ip, '192.168.', 8) === 0 || strncmp($ip, '10.', 3) === 0 || strncmp($ip, '172.', 4) === 0) {
-        $tz = date_default_timezone_get() ?: 'UTC';
-        if (stripos($tz, 'Dhaka') !== false || stripos($tz, 'Bangladesh') !== false) {
-            return [
-                'country'      => 'Bangladesh',
-                'country_code' => 'BD',
-                'city'         => 'Dhaka',
-                'region'       => 'Dhaka Division',
-                'timezone'     => 'Asia/Dhaka',
-                'latitude'     => 23.8103,
-                'longitude'    => 90.4125,
-                'isp'          => 'Local / Corporate Network'
-            ];
-        } elseif (stripos($tz, 'Kolkata') !== false || stripos($tz, 'India') !== false) {
-            return [
-                'country'      => 'India',
-                'country_code' => 'IN',
-                'city'         => 'Mumbai',
-                'region'       => 'Maharashtra',
-                'timezone'     => 'Asia/Kolkata',
-                'latitude'     => 19.0760,
-                'longitude'    => 72.8777,
-                'isp'          => 'Local / Corporate Network'
-            ];
-        } elseif (stripos($tz, 'London') !== false) {
-            return [
-                'country'      => 'United Kingdom',
-                'country_code' => 'GB',
-                'city'         => 'London',
-                'region'       => 'Greater London',
-                'timezone'     => 'Europe/London',
-                'latitude'     => 51.5074,
-                'longitude'    => -0.1278,
-                'isp'          => 'Local / Corporate Network'
-            ];
-        } else {
-            return [
-                'country'      => 'United States',
-                'country_code' => 'US',
-                'city'         => 'New York',
-                'region'       => 'New York',
-                'timezone'     => 'America/New_York',
-                'latitude'     => 40.7128,
-                'longitude'    => -74.0060,
-                'isp'          => 'Local / Corporate Network'
-            ];
-        }
+        return [
+            'country'      => 'Local / Private Network',
+            'country_code' => 'LOC',
+            'city'         => 'Local Network',
+            'region'       => 'Private Network',
+            'timezone'     => date_default_timezone_get() ?: 'UTC',
+            'latitude'     => null,
+            'longitude'    => null,
+            'isp'          => 'Private IP Address'
+        ];
     }
 
     // Check Cloudflare CDN IP headers if present
@@ -786,9 +754,6 @@ function syncHistoricalTrackingData(): void {
 
         foreach ($opRows as $op) {
             $ip = '127.0.0.1';
-            $ua = '';
-            $locInfo = resolveTrackingIpLocation($ip);
-            $uaInfo  = parseTrackingUserAgent($ua);
             $openTime = $op['last_open_at'] ?: ($op['first_open_at'] ?: ($op['sent_at'] ?: date('Y-m-d H:i:s')));
             
             $pdo->prepare("
@@ -796,22 +761,20 @@ function syncHistoricalTrackingData(): void {
                     tracking_token, ip_address, country, country_code, city, region, timezone,
                     latitude, longitude, isp, device_type, operating_system, browser,
                     user_agent, privacy_proxy, proxy_open, confidence, is_bot, opened_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'high', 0, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 'low', 0, ?)
             ")->execute([
                 $op['tracking_token'],
                 $ip,
-                $locInfo['country'],
-                $locInfo['country_code'],
-                $locInfo['city'],
-                $locInfo['region'],
-                $locInfo['timezone'],
-                $locInfo['latitude'],
-                $locInfo['longitude'],
-                $locInfo['isp'],
-                $uaInfo['device_type'],
-                $uaInfo['operating_system'],
-                $uaInfo['browser'],
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Historical / Telemetry Unavailable',
+                'XX',
+                'Unavailable',
+                'Unavailable',
+                'UTC',
+                'Historical Open Record',
+                'Unknown',
+                'Unknown',
+                'Unknown',
+                'Historical Telemetry (Pre-Tracking Send)',
                 $op['apple_privacy_count'] > 0 ? 1 : 0,
                 $op['gmail_proxy_count'] > 0 ? 1 : 0,
                 $openTime
