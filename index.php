@@ -430,6 +430,20 @@ code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padd
 .mr-kpi-val{font-size:26px;font-weight:800;font-family:var(--font);color:var(--text);letter-spacing:-0.02em;line-height:1.1}
 .mr-kpi-sub{font-size:11px;color:var(--text2);margin-top:8px;display:flex;align-items:center;gap:5px;font-weight:500}
 
+.sys-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-bottom:20px}
+.sys-kpi-card{
+  background:#FFFFFF;border:1px solid var(--border);border-radius:12px;
+  padding:14px 16px;box-shadow:0 2px 6px rgba(16,24,40,0.03);position:relative;
+  overflow:hidden;transition:all .2s cubic-bezier(.16,1,.3,1);
+}
+.sys-kpi-card:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(16,24,40,0.06);border-color:var(--border2)}
+.sys-kpi-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-c,var(--indigo));
+}
+.sys-kpi-lbl{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;display:flex;align-items:center;gap:4px}
+.sys-kpi-val{font-size:24px;font-weight:800;font-family:var(--font);color:var(--text);letter-spacing:-0.02em;line-height:1.1}
+.sys-kpi-sub{font-size:10px;color:var(--text3);margin-top:6px;font-weight:600;font-family:var(--mono)}
+
 .pipeline-box{
   background:#FFFFFF;border:1px solid var(--border);border-radius:14px;
   padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(16,24,40,0.03);
@@ -3053,37 +3067,96 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   <!-- ══ SYSTEM & ACTIVITY LOGS PAGE ══ -->
   <div class="page" id="page-systemlogs">
-    <!-- Stat row -->
-    <div id="sys-stats-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
-      <div class="sc" style="--sc-c:var(--accent);flex:1;min-width:130px"><div class="sc-lbl">📤 Sent Today</div><div class="sc-val" id="sys-stat-sent-today" style="color:var(--accent)">—</div></div>
-      <div class="sc" style="--sc-c:var(--accent2);flex:1;min-width:130px"><div class="sc-lbl">👁️ Opened</div><div class="sc-val" id="sys-stat-opened" style="color:var(--accent2)">—</div><div class="sc-sub" id="sys-stat-open-rate">—% open rate</div></div>
-      <div class="sc" style="--sc-c:var(--purple);flex:1;min-width:130px"><div class="sc-lbl">🖱️ Clicked</div><div class="sc-val" id="sys-stat-clicked" style="color:var(--purple)">—</div><div class="sc-sub" id="sys-stat-click-rate">—% CTR</div></div>
-      <div class="sc" style="--sc-c:var(--accent3);flex:1;min-width:130px"><div class="sc-lbl">🕒 Scheduled FU</div><div class="sc-val" id="sys-stat-sched-fu" style="color:var(--accent3)">—</div></div>
-      <div class="sc" style="--sc-c:#fb923c;flex:1;min-width:130px"><div class="sc-lbl">🔄 Retry Queue</div><div class="sc-val" id="sys-stat-retry-queue" style="color:#fb923c">—</div></div>
-      <div class="sc" style="--sc-c:var(--red);flex:1;min-width:130px"><div class="sc-lbl">❌ Failed Today</div><div class="sc-val" id="sys-stat-failed-today" style="color:var(--red)">—</div></div>
-      <div class="sc" style="--sc-c:#94a3b8;flex:1;min-width:130px"><div class="sc-lbl">🛑 Unsubscribed</div><div class="sc-val" id="sys-stat-unsub" style="color:#94a3b8">—</div></div>
+    <!-- Top KPI Feature Hero Banner -->
+    <div class="feat-hero">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon">🛰️</div>
+        <div class="feat-hero-text">
+          <h2>System Activity &amp; Live Telemetry Stream <span class="badge b-purple" style="font-size:10px">Real-Time Ingestion</span> <span id="sys-live-badge" class="live-badge" style="display:inline-flex;padding:3px 9px;border-radius:20px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;font-size:10px;font-weight:700"><span class="live-dot" style="display:inline-block"></span>Live · 3s</span></h2>
+          <p>Real-time delivery telemetry tracking outgoing emails, recipient opens, click-through rates, and queue retries.</p>
+        </div>
+      </div>
+      <div class="feat-hero-stats">
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(1);loadSystemLogStats();">↺ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="clearSystemLogs()">🗑 Clear Logs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modern 7-Stat Grid -->
+    <div class="sys-kpi-grid">
+      <div class="sys-kpi-card" style="--kpi-c:var(--accent)">
+        <div class="sys-kpi-lbl"><span>📤</span> Sent Today</div>
+        <div class="sys-kpi-val" id="sys-stat-sent-today" style="color:var(--accent)">—</div>
+        <div class="sys-kpi-sub">Delivered Today</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:var(--accent2)">
+        <div class="sys-kpi-lbl"><span>👁️</span> Opened</div>
+        <div class="sys-kpi-val" id="sys-stat-opened" style="color:var(--accent2)">—</div>
+        <div class="sys-kpi-sub" id="sys-stat-open-rate">—% open rate</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:var(--purple)">
+        <div class="sys-kpi-lbl"><span>🖱️</span> Clicked</div>
+        <div class="sys-kpi-val" id="sys-stat-clicked" style="color:var(--purple)">—</div>
+        <div class="sys-kpi-sub" id="sys-stat-click-rate">—% CTR</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:var(--accent3)">
+        <div class="sys-kpi-lbl"><span>🕒</span> Scheduled FU</div>
+        <div class="sys-kpi-val" id="sys-stat-sched-fu" style="color:var(--accent3)">—</div>
+        <div class="sys-kpi-sub">Armed Sequence</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:#fb923c">
+        <div class="sys-kpi-lbl"><span>🔄</span> Retry Queue</div>
+        <div class="sys-kpi-val" id="sys-stat-retry-queue" style="color:#fb923c">—</div>
+        <div class="sys-kpi-sub">Next Interval</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:var(--red)">
+        <div class="sys-kpi-lbl"><span>❌</span> Failed Today</div>
+        <div class="sys-kpi-val" id="sys-stat-failed-today" style="color:var(--red)">—</div>
+        <div class="sys-kpi-sub">Undelivered</div>
+      </div>
+      <div class="sys-kpi-card" style="--kpi-c:#94a3b8">
+        <div class="sys-kpi-lbl"><span>🛑</span> Unsubscribed</div>
+        <div class="sys-kpi-val" id="sys-stat-unsub" style="color:#94a3b8">—</div>
+        <div class="sys-kpi-sub">Opt-Out List</div>
+      </div>
     </div>
 
     <div class="card" style="margin-bottom:18px">
-      <div class="card-hd" style="flex-wrap:wrap;gap:8px">
-        <h3>🛰️ System Activity Logs</h3>
-        <select class="fsel" id="sys-event-filter" style="width:auto;padding:5px 10px;font-size:12px" onchange="loadSystemLogs(1)">
+      <!-- Real-time Filter & Search Toolbar -->
+      <div class="tbl-toolbar">
+        <div class="tbl-search-wrap" style="flex:1;min-width:220px">
+          <span class="tbl-search-icon">🔍</span>
+          <input class="tbl-search-inp" id="sys-email-filter" placeholder="Search recipient email, subject, or reason…" oninput="sysLogDebounce()">
+        </div>
+        <div class="tbl-filter-chips">
+          <button class="chip-btn active" id="sys-chip-all" onclick="setSysEventFilter('',this)">All Events</button>
+          <button class="chip-btn" id="sys-chip-sent" onclick="setSysEventFilter('sent',this)">📤 Sent</button>
+          <button class="chip-btn" id="sys-chip-opened" onclick="setSysEventFilter('opened',this)">👁️ Opened</button>
+          <button class="chip-btn" id="sys-chip-clicked" onclick="setSysEventFilter('clicked',this)">🖱️ Clicked</button>
+          <button class="chip-btn" id="sys-chip-queued" onclick="setSysEventFilter('queued',this)">🕒 Queued</button>
+          <button class="chip-btn" id="sys-chip-retry" onclick="setSysEventFilter('retry',this)">🔄 Retry</button>
+          <button class="chip-btn" id="sys-chip-failed" onclick="setSysEventFilter('failed',this)">❌ Failed</button>
+          <button class="chip-btn" id="sys-chip-unsub" onclick="setSysEventFilter('unsubscribed',this)">🛑 Unsubscribed</button>
+        </div>
+        <!-- Hidden select element for compatibility -->
+        <select class="fsel" id="sys-event-filter" style="display:none" onchange="loadSystemLogs(1)">
           <option value="">All Events</option>
-          <option value="sent">📤 Sent</option>
-          <option value="opened">👁️ Opened</option>
-          <option value="clicked">🖱️ Clicked</option>
-          <option value="queued">🕒 Queued</option>
-          <option value="retry">🔄 Retry</option>
-          <option value="failed">❌ Failed</option>
-          <option value="unsubscribed">🛑 Unsubscribed</option>
+          <option value="sent">sent</option>
+          <option value="opened">opened</option>
+          <option value="clicked">clicked</option>
+          <option value="queued">queued</option>
+          <option value="retry">retry</option>
+          <option value="failed">failed</option>
+          <option value="unsubscribed">unsubscribed</option>
         </select>
-        <input class="fi" id="sys-email-filter" placeholder="Search email…" style="width:180px;padding:5px 10px;font-size:12px" oninput="sysLogDebounce()">
-        <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(1)">↺ Refresh</button>
-        <button class="btn btn-danger btn-sm" onclick="clearSystemLogs()">🗑 Clear Logs</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(1);loadSystemLogStats();" title="Refresh Live Logs">↺</button>
       </div>
+
       <div class="card-body" style="padding:0">
         <div class="tw"><table>
-          <thead><tr><th>Event</th><th>Recipient Email</th><th>Details / Link / Reason</th><th>SMTP</th><th>IP Address</th><th>User Agent</th><th>Time</th></tr></thead>
+          <thead><tr><th>Event</th><th>Recipient Email</th><th>Details / Link / Reason</th><th>SMTP Server</th><th>IP Address</th><th>User Agent</th><th style="text-align:right">Timestamp</th></tr></thead>
           <tbody id="sys-logs-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
         </table></div>
         <div id="sys-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
@@ -5014,10 +5087,11 @@ function nav(p){
     loadSystemLogStats();
     _liveRefreshTimer=setInterval(()=>{
       if(document.getElementById('page-systemlogs')?.classList.contains('active')){
-        loadSystemLogs(_sysLogsCurrentPage||1);
+        loadSystemLogs(_sysLogsCurrentPage||1, true);
         loadSystemLogStats();
       }
-    },10000);
+    },3000);
+    const liveEl=$('sys-live-badge');if(liveEl)liveEl.style.display='inline-flex';
   }
 }
 function showLiveIndicator(id){
@@ -9333,27 +9407,41 @@ function sysLogDebounce(){
   _sysLogTimer = setTimeout(() => loadSystemLogs(1), 350);
 }
 
-async function loadSystemLogs(page = 1){
+function setSysEventFilter(ev, btn){
+  const sel = $('sys-event-filter');
+  if (sel) sel.value = ev;
+  document.querySelectorAll('#page-systemlogs [id^="sys-chip-"]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadSystemLogs(1);
+}
+
+async function loadSystemLogs(page = 1, silent = false){
   _sysLogsCurrentPage = page;
   const event = $('sys-event-filter')?.value || '';
   const search = $('sys-email-filter')?.value || '';
   const qs = '&page=' + page + (event ? '&event=' + encodeURIComponent(event) : '') + (search ? '&search=' + encodeURIComponent(search) : '');
-  const r = await get('system-logs?' + qs);
+  
   const tb = $('sys-logs-body');
   if(!tb) return;
+  if(!silent && (!tb.children.length || tb.querySelector('.empty-row'))) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center"><span class="spin-ic"></span> Ingesting real-time stream…</td></tr>';
+  }
+
+  const r = await get('system-logs?' + qs);
   if(!r?.rows?.length){
-    tb.innerHTML = '<tr class="empty-row"><td colspan="7">No activity logged yet</td></tr>';
-    $('sys-logs-pager').innerHTML = '';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center;color:var(--text3)">No activity logged yet</td></tr>';
+    const pg = $('sys-logs-pager');
+    if(pg) pg.innerHTML = '';
     return;
   }
   const badges = {
-    sent: 'sys-badge sys-badge-sent',
-    opened: 'sys-badge sys-badge-opened',
-    clicked: 'sys-badge sys-badge-clicked',
-    queued: 'sys-badge sys-badge-queued',
-    retry: 'sys-badge sys-badge-retry',
-    failed: 'sys-badge sys-badge-failed',
-    unsubscribed: 'sys-badge sys-badge-unsubscribed'
+    sent: 'badge b-green',
+    opened: 'badge b-blue',
+    clicked: 'badge b-purple',
+    queued: 'badge b-amber',
+    retry: 'badge b-orange',
+    failed: 'badge b-red',
+    unsubscribed: 'badge b-gray'
   };
   const icons = {
     sent: '📤', opened: '👁️', clicked: '🖱️', queued: '🕒', retry: '🔄', failed: '❌', unsubscribed: '🛑'
@@ -9361,27 +9449,35 @@ async function loadSystemLogs(page = 1){
 
   tb.innerHTML = r.rows.map(l => `
     <tr>
-      <td><span class="${badges[l.event_type] || 'badge b-gray'}">${icons[l.event_type] || '•'} ${esc(l.event_type.toUpperCase())}</span></td>
-      <td class="mono" style="font-size:11px;font-weight:600">${esc(l.recipient_email || '—')}</td>
-      <td style="font-size:11px;color:var(--text2);max-width:280px;overflow:hidden;text-overflow:ellipsis">
+      <td><span class="${badges[l.event_type] || 'badge b-gray'}" style="font-weight:700">${icons[l.event_type] || '•'} ${esc(l.event_type.toUpperCase())}</span></td>
+      <td>
+        <span class="mono" style="font-size:12px;font-weight:600;color:var(--text)">${esc(l.recipient_email || '—')}</span>
+      </td>
+      <td style="font-size:11px;color:var(--text2);max-width:320px;word-break:break-word">
         ${esc(l.link_url || l.subject || l.error_message || l.details || '—')}
       </td>
-      <td style="font-size:10px;color:var(--text3)">${esc(l.smtp_host || '—')}</td>
-      <td class="mono" style="font-size:10px">${esc(l.ip_address || '—')}</td>
+      <td>
+        ${l.smtp_host ? `<span style="font-weight:600;color:var(--text);font-size:11px">🔌 ${esc(l.smtp_host)}</span>` : '<span style="color:var(--text3)">—</span>'}
+      </td>
+      <td>
+        <span class="mono" style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 6px;border-radius:4px">${esc(l.ip_address || '—')}</span>
+      </td>
       <td style="font-size:10px;color:var(--text3);max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.user_agent || '')}">${esc(l.user_agent ? l.user_agent.substring(0,25)+'…' : '—')}</td>
-      <td style="font-size:10px;color:var(--text2);white-space:nowrap">${l.created_at || '—'}</td>
+      <td style="font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap;text-align:right">${l.created_at || '—'}</td>
     </tr>
   `).join('');
 
   const pg = $('sys-logs-pager');
-  if(r.pages > 1){
-    let h = '';
-    if(page > 1) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page-1})">← Prev</button>`;
-    h += `<span style="font-size:11px;color:var(--text3)">Page ${page} of ${r.pages} (${fmt(r.total)} events)</span>`;
-    if(page < r.pages) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page+1})">Next →</button>`;
-    pg.innerHTML = h;
-  } else {
-    pg.innerHTML = `<span style="font-size:11px;color:var(--text3)">${fmt(r.total)} total events</span>`;
+  if(pg){
+    if(r.pages > 1){
+      let h = '';
+      if(page > 1) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page-1})">← Prev</button>`;
+      h += `<span style="font-size:11px;color:var(--text3)">Page ${page} of ${r.pages} (${fmt(r.total)} events)</span>`;
+      if(page < r.pages) h += `<button class="btn btn-secondary btn-sm" onclick="loadSystemLogs(${page+1})">Next →</button>`;
+      pg.innerHTML = h;
+    } else {
+      pg.innerHTML = `<span style="font-size:11px;color:var(--text3)">${fmt(r.total)} total events</span>`;
+    }
   }
 }
 
