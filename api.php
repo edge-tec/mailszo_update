@@ -215,6 +215,17 @@ if ($res === 'track') {
                         db()->prepare("UPDATE followup_contacts SET open_count = open_count + 1 WHERE id = ?")->execute([$fcRow['id']]);
                     }
                 }
+
+                // Also update master email_tracking & email_open_events
+                if (!function_exists('recordTrackingOpenEvent')) {
+                    require_once __DIR__ . '/includes/tracking_engine.php';
+                }
+                recordTrackingOpenEvent($token, [
+                    'ip'              => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    'referer'         => $_SERVER['HTTP_REFERER'] ?? null,
+                    'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
+                ]);
             } catch (Throwable $_tEx) {}
         }
         exit;
@@ -3784,6 +3795,253 @@ if ($res === 'mail-routing') {
         logMailRoutingEvent((int)$th['r_uid'], (int)$th['rule_id'], $th['thread_id'], $th['from_email'], 'mailbox_migrated', null, null, null, $th['conversation_stage'], $targetStg, 'success', "Manual mailbox migration to " . ucfirst($targetMb) . " by operator");
 
         jsonOut(['ok' => true, 'message' => "Thread #{$thId} migrated to " . ucfirst($targetMb)]);
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── EMAIL OPEN TRACKING & READ REPORT (Features 9–20) ───────────────
+if ($res === 'email-tracking') {
+    require_once __DIR__ . '/includes/tracking_engine.php';
+
+    // 1. STATS (8 KPI Cards)
+    if ($method === 'GET' && $id === 'stats') {
+        $totalSent = 0; $totalOpened = 0; $uniqueOpens = 0; $totalOpens = 0;
+        $appleOpens = 0; $gmailOpens = 0;
+
+        try {
+            $totalSent   = (int)db()->query("SELECT COUNT(*) FROM email_tracking")->fetchColumn();
+            $totalOpened = (int)db()->query("SELECT COUNT(*) FROM email_tracking WHERE is_opened = 1")->fetchColumn();
+            $uniqueOpens = (int)db()->query("SELECT SUM(unique_open_count) FROM email_tracking")->fetchColumn() ?: $totalOpened;
+            $totalOpens  = (int)db()->query("SELECT SUM(open_count) FROM email_tracking")->fetchColumn();
+            $appleOpens  = (int)db()->query("SELECT COUNT(*) FROM email_open_events WHERE privacy_proxy = 1")->fetchColumn();
+            $gmailOpens  = (int)db()->query("SELECT COUNT(*) FROM email_open_events WHERE proxy_open = 1")->fetchColumn();
+        } catch (Exception $e) {}
+
+        if ($totalSent === 0) {
+            try {
+                $totalSent = (int)db()->query("SELECT COUNT(*) FROM send_logs WHERE status='sent'")->fetchColumn();
+            } catch (Exception $e) {}
+        }
+        if ($totalOpens === 0) {
+            try {
+                $totalOpens = (int)db()->query("SELECT COUNT(*) FROM email_open_events WHERE is_bot = 0")->fetchColumn();
+            } catch (Exception $e) {}
+        }
+
+        $delivered = max(0, $totalSent);
+        $openRate  = $totalSent > 0 ? round(($totalOpened / $totalSent) * 100, 1) : 0;
+
+        jsonOut([
+            'ok' => true,
+            'stats' => [
+                'total_sent'          => $totalSent,
+                'delivered'           => $delivered,
+                'total_opened'        => $totalOpened,
+                'open_rate'           => $openRate,
+                'unique_opens'        => $uniqueOpens,
+                'total_opens'         => $totalOpens,
+                'apple_privacy_opens' => $appleOpens,
+                'gmail_proxy_opens'   => $gmailOpens,
+            ]
+        ]);
+    }
+
+    // 2. CAMPAIGNS PERFORMANCE TABLE
+    if ($method === 'GET' && $id === 'campaigns') {
+        $cWhere = $IS_ADMIN ? "1=1" : "c.user_id = {$UID}";
+        try {
+            $rows = db()->query(
+                "SELECT c.id, c.name,
+                        COUNT(t.id) as sent_count,
+                        SUM(CASE WHEN t.is_opened = 1 THEN 1 ELSE 0 END) as opened_count,
+                        SUM(t.unique_open_count) as unique_opens,
+                        SUM(t.open_count) as total_opens,
+                        MAX(t.last_open_at) as last_open_at
+                 FROM campaigns c
+                 LEFT JOIN email_tracking t ON t.campaign_id = c.id
+                 WHERE {$cWhere}
+                 GROUP BY c.id, c.name
+                 ORDER BY opened_count DESC, sent_count DESC"
+            )->fetchAll();
+            foreach ($rows as &$r) {
+                $s = (int)$r['sent_count'];
+                $o = (int)$r['opened_count'];
+                $r['open_rate'] = $s > 0 ? round(($o / $s) * 100, 1) : 0;
+            }
+            jsonOut(['ok' => true, 'rows' => $rows]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'rows' => []]);
+        }
+    }
+
+    // 3. COUNTRIES BREAKDOWN
+    if ($method === 'GET' && $id === 'countries') {
+        try {
+            $rows = db()->query(
+                "SELECT country, country_code,
+                        COUNT(*) as total_opens,
+                        COUNT(DISTINCT tracking_token) as unique_opens
+                 FROM email_open_events
+                 WHERE is_bot = 0 AND country != '' AND country != 'Unknown'
+                 GROUP BY country, country_code
+                 ORDER BY total_opens DESC
+                 LIMIT 50"
+            )->fetchAll();
+            $grandTotal = (int)db()->query("SELECT COUNT(*) FROM email_open_events WHERE is_bot = 0")->fetchColumn() ?: 1;
+            foreach ($rows as &$r) {
+                $r['open_rate'] = round(((int)$r['total_opens'] / $grandTotal) * 100, 1);
+            }
+            jsonOut(['ok' => true, 'rows' => $rows]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'rows' => []]);
+        }
+    }
+
+    // 4. DEVICES, OS & BROWSERS BREAKDOWN
+    if ($method === 'GET' && $id === 'devices') {
+        try {
+            $devices  = db()->query("SELECT device_type, COUNT(*) as count FROM email_open_events GROUP BY device_type ORDER BY count DESC")->fetchAll();
+            $oss      = db()->query("SELECT operating_system as os, COUNT(*) as count FROM email_open_events WHERE is_bot = 0 GROUP BY operating_system ORDER BY count DESC LIMIT 8")->fetchAll();
+            $browsers = db()->query("SELECT browser, COUNT(*) as count FROM email_open_events WHERE is_bot = 0 GROUP BY browser ORDER BY count DESC LIMIT 8")->fetchAll();
+            jsonOut(['ok' => true, 'devices' => $devices, 'os' => $oss, 'browsers' => $browsers]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'devices' => [], 'os' => [], 'browsers' => []]);
+        }
+    }
+
+    // 5. TIMELINE (Hourly & Daily opens)
+    if ($method === 'GET' && $id === 'timeline') {
+        try {
+            $hourly = db()->query(
+                "SELECT DATE_FORMAT(opened_at, '%Y-%m-%d %H:00') as time_label, COUNT(*) as count
+                 FROM email_open_events
+                 WHERE opened_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) AND is_bot = 0
+                 GROUP BY time_label ORDER BY time_label ASC"
+            )->fetchAll();
+            $daily = db()->query(
+                "SELECT DATE_FORMAT(opened_at, '%Y-%m-%d') as time_label, COUNT(*) as count
+                 FROM email_open_events
+                 WHERE opened_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) AND is_bot = 0
+                 GROUP BY time_label ORDER BY time_label ASC"
+            )->fetchAll();
+            jsonOut(['ok' => true, 'hourly' => $hourly, 'daily' => $daily]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'hourly' => [], 'daily' => []]);
+        }
+    }
+
+    // 6. WORLD MAP DATA (Pins & Lat/Lng)
+    if ($method === 'GET' && $id === 'map') {
+        try {
+            $pins = db()->query(
+                "SELECT latitude, longitude, city, country, country_code, COUNT(*) as open_count, MAX(opened_at) as last_opened
+                 FROM email_open_events
+                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != 0 AND longitude != 0 AND is_bot = 0
+                 GROUP BY latitude, longitude, city, country, country_code
+                 ORDER BY open_count DESC
+                 LIMIT 300"
+            )->fetchAll();
+            jsonOut(['ok' => true, 'pins' => $pins]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'pins' => []]);
+        }
+    }
+
+    // 7. EXPORT DATA (CSV / Excel)
+    if (($method === 'POST' || $method === 'GET') && $id === 'export') {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="email_tracking_export_' . date('Y-m-d_His') . '.csv"');
+        $out = fopen('php://output', 'w');
+        // UTF-8 BOM for Excel
+        fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+        fputcsv($out, ['Recipient Email', 'Campaign', 'Sequence Step', 'Open Status', 'Open Count', 'Unique Opens', 'First Open', 'Last Open', 'Sent At']);
+        
+        $cStmt = db()->query("SELECT t.*, c.name as campaign_name FROM email_tracking t LEFT JOIN campaigns c ON c.id = t.campaign_id ORDER BY t.id DESC LIMIT 5000");
+        while ($r = $cStmt->fetch()) {
+            fputcsv($out, [
+                $r['recipient_email'],
+                $r['campaign_name'] ?: 'Direct / Auto-Reply',
+                $r['sequence_step'] ? '#' . $r['sequence_step'] : 'Initial',
+                $r['is_opened'] ? 'Opened' : 'Unopened',
+                $r['open_count'],
+                $r['unique_open_count'],
+                $r['first_open_at'] ?: '—',
+                $r['last_open_at'] ?: '—',
+                $r['sent_at']
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+
+    // 8. RECIPIENT DETAILS MODAL
+    if ($method === 'GET' && $id && ctype_digit((string)$id)) {
+        $idVal = (int)$id;
+        $rec = db()->query("SELECT t.*, c.name as campaign_name, s.name as smtp_name FROM email_tracking t LEFT JOIN campaigns c ON c.id = t.campaign_id LEFT JOIN smtp_providers s ON s.id = t.smtp_account_id WHERE t.id = {$idVal}")->fetch();
+        if (!$rec) jsonOut(['ok' => false, 'message' => 'Tracking record not found'], 404);
+        
+        $evStmt = db()->prepare("SELECT * FROM email_open_events WHERE tracking_token = ? ORDER BY id DESC LIMIT 50");
+        $evStmt->execute([$rec['tracking_token']]);
+        $events = $evStmt->fetchAll();
+
+        jsonOut(['ok' => true, 'tracking' => $rec, 'events' => $events]);
+    }
+
+    // 9. RECIPIENTS LOG TABLE
+    if ($method === 'GET') {
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $limit = 50;
+        $offset = ($page - 1) * $limit;
+        $where = "1=1";
+        $params = [];
+
+        $q = trim($_GET['q'] ?? '');
+        if ($q) {
+            $where .= " AND (t.recipient_email LIKE ? OR c.name LIKE ?)";
+            $params[] = "%{$q}%";
+            $params[] = "%{$q}%";
+        }
+        $campId = (int)($_GET['campaign_id'] ?? 0);
+        if ($campId > 0) {
+            $where .= " AND t.campaign_id = ?";
+            $params[] = $campId;
+        }
+        $status = trim($_GET['status'] ?? '');
+        if ($status === 'opened') {
+            $where .= " AND t.is_opened = 1";
+        } elseif ($status === 'unopened') {
+            $where .= " AND t.is_opened = 0";
+        }
+
+        $totalStmt = db()->prepare("SELECT COUNT(*) FROM email_tracking t LEFT JOIN campaigns c ON c.id = t.campaign_id WHERE {$where}");
+        $totalStmt->execute($params);
+        $totalCount = (int)$totalStmt->fetchColumn();
+
+        $sql = "SELECT t.*, c.name as campaign_name,
+                       (SELECT country FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_country,
+                       (SELECT country_code FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_country_code,
+                       (SELECT city FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_city,
+                       (SELECT device_type FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_device,
+                       (SELECT browser FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_browser,
+                       (SELECT privacy_proxy FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_privacy_proxy,
+                       (SELECT proxy_open FROM email_open_events WHERE tracking_token = t.tracking_token ORDER BY id DESC LIMIT 1) as latest_gmail_proxy
+                FROM email_tracking t
+                LEFT JOIN campaigns c ON c.id = t.campaign_id
+                WHERE {$where}
+                ORDER BY t.last_open_at DESC, t.id DESC
+                LIMIT {$limit} OFFSET {$offset}";
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        jsonOut([
+            'ok' => true,
+            'rows' => $rows,
+            'total' => $totalCount,
+            'page' => $page,
+            'pages' => (int)ceil($totalCount / $limit)
+        ]);
     }
 
     jsonOut(['error' => 'Not found'], 404);

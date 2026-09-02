@@ -1,0 +1,9 @@
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+
+# Email Open Tracking Pixel Rewrite
+RewriteRule ^track/open/([a-zA-Z0-9_-]+)\.png$ track.php?token=$1 [L,QSA]
+RewriteRule ^track/open/([a-zA-Z0-9_-]+)$ track.php?token=$1 [L,QSA]
+
+</IfModule>

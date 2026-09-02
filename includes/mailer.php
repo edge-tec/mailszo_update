@@ -199,13 +199,46 @@ class Mailer {
         $mid  = '<' . md5(uniqid('', true)) . '@' . $fromDomain . '>';
         $date = date('r');
 
-        // Tracking token & Unsubscribe processing
+        // Tracking token & Open Pixel processing (FEATURE 1)
         $trackingToken = trim($options['tracking_token'] ?? '');
         $baseUrl = getAppBaseUrl();
 
-        if ($trackingToken) {
-            $pixelUrl = $baseUrl . '/api.php?r=track/open&t=' . urlencode($trackingToken);
-            $pixelTag = '<img src="' . htmlspecialchars($pixelUrl) . '" width="1" height="1" style="display:none!important;width:1px!important;height:1px!important;max-height:0!important;max-width:0!important;opacity:0!important;border:0!important;" alt="" />';
+        if ($html) {
+            if (!function_exists('generateTrackingUuid')) {
+                require_once __DIR__ . '/tracking_engine.php';
+            }
+            if (!$trackingToken) {
+                $trackingToken = generateTrackingUuid();
+            }
+
+            // Ensure master record in email_tracking table
+            try {
+                if (function_exists('db')) {
+                    $etIns = db()->prepare(
+                        "INSERT INTO email_tracking (
+                            tracking_token, email_log_id, campaign_id, lead_id, smtp_account_id, sequence_step, recipient_email, sent_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                        ON DUPLICATE KEY UPDATE
+                            campaign_id = COALESCE(campaign_id, VALUES(campaign_id)),
+                            lead_id = COALESCE(lead_id, VALUES(lead_id)),
+                            smtp_account_id = COALESCE(smtp_account_id, VALUES(smtp_account_id)),
+                            sequence_step = COALESCE(sequence_step, VALUES(sequence_step))"
+                    );
+                    $etIns->execute([
+                        $trackingToken,
+                        $options['email_log_id'] ?? null,
+                        $options['campaign_id'] ?? null,
+                        $options['lead_id'] ?? null,
+                        $this->cfg['id'] ?? ($options['smtp_account_id'] ?? null),
+                        $options['sequence_step'] ?? null,
+                        $to
+                    ]);
+                }
+            } catch (\Throwable $e) {}
+
+            // Production Open Tracking Pixel: {{APP_URL}}/track/open/{{tracking_token}}.png
+            $pixelUrl = rtrim($baseUrl, '/') . '/track/open/' . urlencode($trackingToken) . '.png';
+            $pixelTag = '<img src="' . htmlspecialchars($pixelUrl, ENT_QUOTES, 'UTF-8') . '" width="1" height="1" style="display:none !important;width:1px;height:1px;border:0;outline:none" alt="" />';
             if (stripos($html, '</body>') !== false) {
                 $html = preg_replace('/<\/body>/i', $pixelTag . "\n</body>", $html, 1);
             } else {
@@ -216,8 +249,7 @@ class Mailer {
             if (!empty($options['track_clicks'])) {
                 $html = preg_replace_callback('/<a\s+([^>]*?)href=["\'](https?:\/\/[^"\']+)["\']([^>]*)>/i', function($m) use ($baseUrl, $trackingToken) {
                     $originalUrl = $m[2];
-                    // Skip tracking our own tracking links or mailto
-                    if (strpos($originalUrl, 'r=track') !== false) return $m[0];
+                    if (strpos($originalUrl, 'track/open') !== false || strpos($originalUrl, 'r=track') !== false) return $m[0];
                     $trackUrl = $baseUrl . '/api.php?r=track/click&t=' . urlencode($trackingToken) . '&url=' . urlencode($originalUrl);
                     return '<a ' . $m[1] . 'href="' . htmlspecialchars($trackUrl) . '"' . $m[3] . '>';
                 }, $html);

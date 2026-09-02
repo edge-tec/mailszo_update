@@ -13,6 +13,8 @@ if (!isInstalled()) { header('Location: install.php'); exit; }
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1219,6 +1221,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
     <div class="ni" onclick="nav('followup')" id="nav-followup"><span class="ni-ic">📬</span>Follow-Up</div>
     <div class="ni" onclick="nav('blacklist')" id="nav-blacklist"><span class="ni-ic">🚫</span>Blacklist</div>
     <span class="nsec">Logs & Activity</span>
+    <div class="ni" onclick="nav('openanalytics')" id="nav-openanalytics"><span class="ni-ic">👁️</span>Email Open Analytics <span class="badge b-purple" style="font-size:9px;padding:2px 5px;margin-left:auto">LIVE</span></div>
     <div class="ni" onclick="nav('systemlogs')" id="nav-systemlogs"><span class="ni-ic">🛰️</span>System Activity Logs</div>
     <span class="nsec">Leads</span>
     <div class="ni" onclick="nav('leads')" id="nav-leads"><span class="ni-ic">🗄️</span>Leads Manager</div>
@@ -3164,12 +3167,270 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
         <div id="sys-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
-  </div>
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- ══ PAGE: EMAIL OPEN ANALYTICS & READ REPORT (Features 9-26) ══ -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-openanalytics">
+    <!-- Hero Header -->
+    <div class="feat-hero" style="margin-bottom:18px;background:linear-gradient(135deg,rgba(99,102,241,0.06) 0%,rgba(16,185,129,0.04) 100%);border-color:rgba(99,102,241,0.2)">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon" style="background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%);box-shadow:0 8px 16px -4px rgba(99,102,241,0.3)">👁️</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <h1 class="feat-hero-title" style="margin:0;font-size:22px">Email Open Analytics & Read Intelligence</h1>
+            <span class="live-pulse-badge" id="oa-live-badge" style="display:inline-flex;align-items:center;gap:5px;background:rgba(99,102,241,0.1);color:#6366F1;font-weight:700;font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid rgba(99,102,241,0.25)">
+              <span class="live-dot" style="background:#6366F1"></span> LIVE · 15S
+            </span>
+            <span class="badge b-green" style="font-size:10px">🛡️ Privacy Aware</span>
+          </div>
+          <div class="feat-hero-sub" style="margin-top:4px">
+            Production-grade open rate tracking, approximate geolocation mapping, device telemetry, and Apple/Gmail privacy detection.
+          </div>
+        </div>
+      </div>
+      <div class="feat-hero-right" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="loadOpenAnalyticsData()" title="Refresh telemetry">↺ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="exportTrackingCsv()" style="background:#4F46E5;border-color:#4F46E5" title="Export CSV dataset">📥 Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()" title="Print report or export PDF">📄 Print / PDF</button>
+      </div>
+    </div>
+
+    <!-- 8 Summary KPI Cards -->
+    <div class="sys-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:18px">
+      <div class="sys-kpi-card" style="border-top:3px solid #6366F1">
+        <div class="sys-kpi-lbl">📤 EMAILS SENT</div>
+        <div class="sys-kpi-val" id="oa-stat-sent" style="color:#6366F1">—</div>
+        <div class="sys-kpi-sub">Total Dispatched</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #0284C7">
+        <div class="sys-kpi-lbl">📬 DELIVERED</div>
+        <div class="sys-kpi-val" id="oa-stat-delivered" style="color:#0284C7">—</div>
+        <div class="sys-kpi-sub">Inboxes Ready</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #10B981">
+        <div class="sys-kpi-lbl">👁️ OPENED</div>
+        <div class="sys-kpi-val" id="oa-stat-opened" style="color:#10B981">—</div>
+        <div class="sys-kpi-sub" id="oa-stat-openrate">—% Open Rate</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #8B5CF6">
+        <div class="sys-kpi-lbl">👤 UNIQUE OPENS</div>
+        <div class="sys-kpi-val" id="oa-stat-unique" style="color:#8B5CF6">—</div>
+        <div class="sys-kpi-sub">Distinct People</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #EC4899">
+        <div class="sys-kpi-lbl">🔄 TOTAL OPENS</div>
+        <div class="sys-kpi-val" id="oa-stat-total" style="color:#EC4899">—</div>
+        <div class="sys-kpi-sub">All Read Hits</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #F59E0B">
+        <div class="sys-kpi-lbl">🛡️ APPLE PRIVACY</div>
+        <div class="sys-kpi-val" id="oa-stat-apple" style="color:#F59E0B">—</div>
+        <div class="sys-kpi-sub">iCloud Proxy Pre-fetch</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #06B6D4">
+        <div class="sys-kpi-lbl">🖼️ GMAIL PROXY</div>
+        <div class="sys-kpi-val" id="oa-stat-gmail" style="color:#06B6D4">—</div>
+        <div class="sys-kpi-sub">Google Image Cache</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #64748B">
+        <div class="sys-kpi-lbl">⚡ SPEED & UPTIME</div>
+        <div class="sys-kpi-val" style="color:#10B981;font-size:18px">100%</div>
+        <div class="sys-kpi-sub">0ms Sending Impact</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tab Bar -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px;border-bottom:1px solid var(--border)">
+      <button class="chip-btn active" id="oa-tabbtn-overview" onclick="switchOaTab('overview')">📊 Overview & Trends</button>
+      <button class="chip-btn" id="oa-tabbtn-map" onclick="switchOaTab('map')">🗺️ World Open Map</button>
+      <button class="chip-btn" id="oa-tabbtn-campaigns" onclick="switchOaTab('campaigns')">📤 Campaigns</button>
+      <button class="chip-btn" id="oa-tabbtn-recipients" onclick="switchOaTab('recipients')">👤 Recipient Open Log</button>
+      <button class="chip-btn" id="oa-tabbtn-countries" onclick="switchOaTab('countries')">🌍 Countries</button>
+      <button class="chip-btn" id="oa-tabbtn-devices" onclick="switchOaTab('devices')">📱 Devices & Clients</button>
+    </div>
+
+    <!-- Tab 1: Overview & Trends -->
+    <div id="oa-view-overview">
+      <div class="frow fc2" style="margin-bottom:18px;gap:18px">
+        <div class="card" style="margin:0">
+          <div class="card-head" style="display:flex;align-items:center;justify-content:space-between">
+            <span class="card-title">📈 Open Activity Timeline</span>
+            <div class="filter-chips" style="gap:4px">
+              <button class="chip-btn active" id="oa-timeline-24h" onclick="setOaTimelineMode('24h')">24 Hours</button>
+              <button class="chip-btn" id="oa-timeline-30d" onclick="setOaTimelineMode('30d')">30 Days</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="oa-timeline-container" style="min-height:220px;display:flex;align-items:flex-end;gap:6px;padding:12px 0">
+              <div style="margin:auto;color:var(--text3);font-size:12px">Loading timeline trend…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin:0">
+          <div class="card-head">
+            <span class="card-title">📱 Device & Client Breakdown</span>
+          </div>
+          <div class="card-body">
+            <div id="oa-device-breakdown-bars" style="display:flex;flex-direction:column;gap:12px">
+              <div style="margin:auto;color:var(--text3);font-size:12px">Loading devices…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: World Open Map -->
+    <div id="oa-view-map" style="display:none">
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <span class="card-title">🗺️ Global Recipient Geo Map</span>
+            <div style="font-size:11px;color:var(--text3)">Live coordinates extracted from recipient IP addresses</div>
+          </div>
+          <div style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:12px">
+            <span>🔴 High density</span>
+            <span>🟣 Apple Privacy</span>
+            <span>🔵 Verified Open</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:12px">
+          <div id="oa-world-map" style="height:480px;border-radius:10px;border:1px solid var(--border);position:relative;z-index:1;background:var(--bg3)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Campaigns Performance Table -->
+    <div id="oa-view-campaigns" style="display:none">
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between">
+          <span class="card-title">📤 Campaign Open Performance</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadOpenCampaigns()">↺ Refresh</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tw"><table>
+            <thead><tr><th>Campaign Name</th><th>Emails Sent</th><th>Opened</th><th>Open Rate</th><th>Unique Opens</th><th>Total Opens</th><th style="text-align:right">Last Open</th></tr></thead>
+            <tbody id="oa-campaigns-body"><tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center">Loading campaigns…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Recipient Open Log Table -->
+    <div id="oa-view-recipients" style="display:none">
+      <div class="card" style="margin-bottom:18px">
+        <!-- Filter Toolbar -->
+        <div class="tbl-toolbar" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <input class="fi" id="oa-search-input" placeholder="🔍 Search recipient, campaign or country…" style="max-width:280px" onkeyup="filterOaRecipientsDebounced()">
+          <select class="fsel" id="oa-campaign-filter" style="max-width:180px" onchange="filterOaRecipients()"><option value="">All Campaigns</option></select>
+          <select class="fsel" id="oa-status-filter" style="max-width:140px" onchange="filterOaRecipients()">
+            <option value="">All Status</option>
+            <option value="opened">Opened Only</option>
+            <option value="unopened">Unopened Only</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadOpenRecipients(1)">↺ Filter</button>
+        </div>
+
+        <div class="card-body" style="padding:0">
+          <div class="tw"><table>
+            <thead><tr><th>Recipient Email</th><th>Campaign / Step</th><th>Status</th><th>Open Count</th><th>First Open</th><th>Last Open</th><th>Location</th><th>Device & Client</th><th style="text-align:right">Action</th></tr></thead>
+            <tbody id="oa-recipients-body"><tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center">Loading recipient log…</td></tr></tbody>
+          </table></div>
+          <div id="oa-recipients-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: Country Intelligence -->
+    <div id="oa-view-countries" style="display:none">
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-head" style="display:flex;align-items:center;justify-content:space-between">
+          <span class="card-title">🌍 Country Distribution & Read Share</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadOpenCountries()">↺ Refresh</button>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tw"><table>
+            <thead><tr><th>Country</th><th>Country Code</th><th>Unique Opens</th><th>Total Opens</th><th>Volume Share</th></tr></thead>
+            <tbody id="oa-countries-body"><tr class="empty-row"><td colspan="5" style="padding:28px;text-align:center">Loading country data…</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 6: Devices & Clients -->
+    <div id="oa-view-devices" style="display:none">
+      <div class="frow fc3" style="gap:16px;margin-bottom:18px">
+        <div class="card" style="margin:0">
+          <div class="card-head"><span class="card-title">💻 Device Types</span></div>
+          <div class="card-body" id="oa-dev-types-list">Loading…</div>
+        </div>
+        <div class="card" style="margin:0">
+          <div class="card-head"><span class="card-title">🖥️ Operating Systems</span></div>
+          <div class="card-body" id="oa-dev-os-list">Loading…</div>
+        </div>
+        <div class="card" style="margin:0">
+          <div class="card-head"><span class="card-title">🌐 Browsers & Mail Clients</span></div>
+          <div class="card-body" id="oa-dev-browsers-list">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /#page-openanalytics -->
 
 </div><!-- /#main -->
 
 <!-- ══ MODALS ══ -->
 
+
+<!-- ══ RECIPIENT OPEN TRACKING DETAILS MODAL (Feature 12) ══ -->
+<div class="modal-bg" id="oa-recipient-modal">
+  <div class="modal modal-lg" style="max-width:860px">
+    <div class="modal-hd">
+      <h3 id="oa-modal-title">👁️ Recipient Open Intelligence</h3>
+      <span class="modal-x" onclick="closeModal('oa-recipient-modal')">✕</span>
+    </div>
+    <div class="modal-body">
+      <!-- Summary Info Strip -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;background:var(--bg3);padding:12px 14px;border-radius:10px;border:1px solid var(--border)">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700">Recipient Email</div>
+          <div id="oa-modal-email" class="mono" style="font-weight:700;font-size:13px;color:var(--text);word-break:break-all">—</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700">Campaign / Step</div>
+          <div id="oa-modal-campaign" style="font-weight:600;font-size:12px;color:var(--text)">—</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700">Open Stats</div>
+          <div id="oa-modal-stats" style="font-weight:700;font-size:12px;color:var(--accent)">—</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700">First / Last Read</div>
+          <div id="oa-modal-dates" style="font-size:11px;color:var(--text2)">—</div>
+        </div>
+      </div>
+
+      <!-- Mini Leaflet Map -->
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:700;color:var(--text)">📍 Recipient Approximate Location</span>
+          <span id="oa-modal-location-text" style="font-size:11px;color:var(--text3)">Resolving…</span>
+        </div>
+        <div id="oa-modal-map" style="height:210px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);position:relative;z-index:1"></div>
+      </div>
+
+      <!-- Open History Events Timeline -->
+      <h4 style="font-size:13px;margin-bottom:8px;color:var(--text);font-weight:700">Event History Timeline</h4>
+      <div class="tw"><table>
+        <thead><tr><th>Time</th><th>IP Address</th><th>Location</th><th>Device & OS</th><th>Client</th><th>Confidence / Proxy</th></tr></thead>
+        <tbody id="oa-modal-events-body"><tr class="empty-row"><td colspan="6" style="padding:16px;text-align:center">No events recorded</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('oa-recipient-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ IMAP MODAL ══ -->
 <div class="modal-bg" id="imap-modal">
@@ -5038,7 +5299,7 @@ async function doLogout(){
 }
 
 /* ─── Nav ───────────────────────────────── */
-const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',flowchart:'AR & FU Flow Chart',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs'};
+const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',flowchart:'AR & FU Flow Chart',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs',openanalytics:'Email Open Analytics & Read Reports'};
 function nav(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(x=>x.classList.remove('active'));
@@ -5105,6 +5366,16 @@ function nav(p){
       }
     },3000);
     const liveEl=$('sys-live-badge');if(liveEl)liveEl.style.display='inline-flex';
+  }
+  if(p==='openanalytics'){
+    loadOpenAnalyticsData();
+    _liveRefreshTimer=setInterval(()=>{
+      if(document.getElementById('page-openanalytics')?.classList.contains('active')){
+        loadOpenAnalyticsStats();
+        loadOpenAnalyticsActiveTab(true);
+      }
+    },15000);
+    const liveEl=$('oa-live-badge');if(liveEl)liveEl.style.display='inline-flex';
   }
 }
 function showLiveIndicator(id){
@@ -9530,7 +9801,465 @@ async function clearSystemLogs(){
     loadSystemLogStats();
   } else {
     alert('Clear failed: ' + (r?.message || 'Error'));
+}
+
+/* ─── EMAIL OPEN ANALYTICS & READ REPORT (Features 9-26) ────────── */
+let _oaCurrentTab = 'overview';
+let _oaMap = null;
+let _oaModalMap = null;
+let _oaCurrentRecipientsPage = 1;
+let _oaTimelineMode = '24h';
+let _oaTimelineData = null;
+let _oaRecipientsFilterTimeout = null;
+
+function switchOaTab(tab) {
+  _oaCurrentTab = tab;
+  ['overview', 'map', 'campaigns', 'recipients', 'countries', 'devices'].forEach(t => {
+    const v = $('oa-view-' + t);
+    const b = $('oa-tabbtn-' + t);
+    if (v) v.style.display = (t === tab) ? 'block' : 'none';
+    if (b) b.classList.toggle('active', t === tab);
+  });
+  loadOpenAnalyticsActiveTab();
+}
+
+function setOaTimelineMode(mode) {
+  _oaTimelineMode = mode;
+  $('oa-timeline-24h')?.classList.toggle('active', mode === '24h');
+  $('oa-timeline-30d')?.classList.toggle('active', mode === '30d');
+  renderOaTimeline();
+}
+
+async function loadOpenAnalyticsData() {
+  loadOpenAnalyticsStats();
+  loadOpenCampaignOptions();
+  loadOpenAnalyticsActiveTab();
+}
+
+async function loadOpenAnalyticsStats() {
+  const s = await get('email-tracking/stats');
+  if (!s || !s.stats) return;
+  const st = s.stats;
+  set('oa-stat-sent', fmt(st.total_sent));
+  set('oa-stat-delivered', fmt(st.delivered));
+  set('oa-stat-opened', fmt(st.total_opened));
+  set('oa-stat-openrate', (st.open_rate || 0) + '% Open Rate');
+  set('oa-stat-unique', fmt(st.unique_opens));
+  set('oa-stat-total', fmt(st.total_opens));
+  set('oa-stat-apple', fmt(st.apple_privacy_opens));
+  set('oa-stat-gmail', fmt(st.gmail_proxy_opens));
+}
+
+async function loadOpenCampaignOptions() {
+  const sel = $('oa-campaign-filter');
+  if (!sel || sel.options.length > 1) return;
+  const r = await get('campaigns');
+  if (r && r.rows) {
+    r.rows.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
   }
+}
+
+function loadOpenAnalyticsActiveTab(silent = false) {
+  if (_oaCurrentTab === 'overview') {
+    loadOpenTimeline();
+    loadOpenDevices();
+  } else if (_oaCurrentTab === 'map') {
+    renderOaWorldMap();
+  } else if (_oaCurrentTab === 'campaigns') {
+    loadOpenCampaigns();
+  } else if (_oaCurrentTab === 'recipients') {
+    loadOpenRecipients(_oaCurrentRecipientsPage, silent);
+  } else if (_oaCurrentTab === 'countries') {
+    loadOpenCountries();
+  } else if (_oaCurrentTab === 'devices') {
+    loadOpenDevices();
+  }
+}
+
+async function renderOaWorldMap() {
+  const container = $('oa-world-map');
+  if (!container || typeof L === 'undefined') return;
+
+  if (!_oaMap) {
+    _oaMap = L.map('oa-world-map', {
+      center: [20, 0],
+      zoom: 2,
+      minZoom: 1,
+      maxZoom: 14,
+      scrollWheelZoom: false
+    });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(_oaMap);
+  }
+
+  setTimeout(() => { _oaMap?.invalidateSize(); }, 200);
+
+  const res = await get('email-tracking/map');
+  if (!res || !res.pins) return;
+
+  // Clear previous markers
+  if (_oaMap._oaMarkersLayer) {
+    _oaMap.removeLayer(_oaMap._oaMarkersLayer);
+  }
+  _oaMap._oaMarkersLayer = L.layerGroup().addTo(_oaMap);
+
+  res.pins.forEach(p => {
+    const lat = parseFloat(p.latitude);
+    const lng = parseFloat(p.longitude);
+    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+
+    const count = parseInt(p.open_count, 10) || 1;
+    const radius = Math.min(22, Math.max(7, Math.round(Math.log2(count + 1) * 5)));
+    const color = count > 10 ? '#E11D48' : (count > 3 ? '#6366F1' : '#10B981');
+
+    const marker = L.circleMarker([lat, lng], {
+      radius: radius,
+      fillColor: color,
+      color: '#FFFFFF',
+      weight: 1.5,
+      opacity: 0.9,
+      fillOpacity: 0.75
+    });
+
+    const popupHtml = `
+      <div style="font-family:var(--font);padding:4px">
+        <div style="font-weight:700;font-size:13px;color:#0F172A">${esc(p.city || 'Unknown')}, ${esc(p.country || '')}</div>
+        <div style="font-size:11px;color:#64748B;margin-top:2px">Total Opens: <b style="color:${color}">${count}</b></div>
+        <div style="font-size:10px;color:#94A3B8;margin-top:2px">Latest: ${p.last_opened || '—'}</div>
+      </div>
+    `;
+    marker.bindPopup(popupHtml);
+    _oaMap._oaMarkersLayer.addLayer(marker);
+  });
+}
+
+async function loadOpenTimeline() {
+  const r = await get('email-tracking/timeline');
+  if (!r) return;
+  _oaTimelineData = r;
+  renderOaTimeline();
+}
+
+function renderOaTimeline() {
+  const c = $('oa-timeline-container');
+  if (!c || !_oaTimelineData) return;
+
+  const data = (_oaTimelineMode === '24h') ? (_oaTimelineData.hourly || []) : (_oaTimelineData.daily || []);
+  if (!data.length) {
+    c.innerHTML = '<div style="margin:auto;color:var(--text3);font-size:12px;padding:30px">No open activity recorded in this period</div>';
+    return;
+  }
+
+  let maxVal = 1;
+  data.forEach(d => {
+    const v = parseInt(d.count, 10) || 0;
+    if (v > maxVal) maxVal = v;
+  });
+
+  c.innerHTML = data.map(d => {
+    const cnt = parseInt(d.count, 10) || 0;
+    const pct = Math.round((cnt / maxVal) * 160);
+    const h = Math.max(6, pct);
+    const shortLabel = (_oaTimelineMode === '24h') ? d.time_label.substring(11, 16) : d.time_label.substring(5, 10);
+    return `
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:18px" title="${d.time_label}: ${cnt} opens">
+        <div style="font-size:10px;font-weight:700;color:var(--text2)">${cnt > 0 ? cnt : ''}</div>
+        <div style="width:100%;height:${h}px;background:linear-gradient(180deg,#6366F1 0%,#4F46E5 100%);border-radius:4px 4px 0 0;opacity:${cnt > 0 ? '0.9' : '0.2'};transition:all 0.2s"></div>
+        <div style="font-size:9px;color:var(--text3);writing-mode:horizontal-tb;white-space:nowrap">${shortLabel}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadOpenDevices() {
+  const r = await get('email-tracking/devices');
+  if (!r) return;
+
+  // 1. Overview mini bars
+  const ovb = $('oa-device-breakdown-bars');
+  if (ovb && r.devices) {
+    let tot = r.devices.reduce((acc, d) => acc + parseInt(d.count, 10), 0) || 1;
+    ovb.innerHTML = r.devices.map(d => {
+      const c = parseInt(d.count, 10);
+      const pct = Math.round((c / tot) * 100);
+      const ic = d.device_type === 'Mobile' ? '📱' : (d.device_type === 'Tablet' ? '📟' : (d.device_type === 'Bot' ? '🤖' : '💻'));
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;font-weight:600">
+            <span>${ic} ${esc(d.device_type)}</span>
+            <span>${fmt(c)} (${pct}%)</span>
+          </div>
+          <div style="height:8px;background:var(--bg3);border-radius:6px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#6366F1,#10B981);border-radius:6px"></div>
+          </div>
+        </div>
+      `;
+    }).join('') || '<div style="color:var(--text3);font-size:12px">No device data yet</div>';
+  }
+
+  // 2. Devices tab detailed cards
+  const renderList = (elId, list, key) => {
+    const el = $(elId);
+    if (!el) return;
+    if (!list || !list.length) {
+      el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px">No telemetry data</div>';
+      return;
+    }
+    let tot = list.reduce((acc, x) => acc + parseInt(x.count, 10), 0) || 1;
+    el.innerHTML = list.map(x => {
+      const c = parseInt(x.count, 10);
+      const pct = Math.round((c / tot) * 100);
+      return `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px">
+            <span>${esc(x[key] || 'Unknown')}</span>
+            <span class="mono" style="font-size:11px">${fmt(c)} (${pct}%)</span>
+          </div>
+          <div style="height:6px;background:var(--bg4);border-radius:4px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:#4F46E5;border-radius:4px"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  };
+
+  renderList('oa-dev-types-list', r.devices, 'device_type');
+  renderList('oa-dev-os-list', r.os, 'os');
+  renderList('oa-dev-browsers-list', r.browsers, 'browser');
+}
+
+async function loadOpenCampaigns() {
+  const tb = $('oa-campaigns-body');
+  if (!tb) return;
+  const r = await get('email-tracking/campaigns');
+  if (!r || !r.rows || !r.rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center">No campaigns tracked yet</td></tr>';
+    return;
+  }
+  tb.innerHTML = r.rows.map(c => `
+    <tr>
+      <td><b>${esc(c.name)}</b></td>
+      <td><span class="mono">${fmt(c.sent_count)}</span></td>
+      <td><span class="mono" style="color:var(--accent);font-weight:700">${fmt(c.opened_count)}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-weight:700;font-size:12px">${c.open_rate}%</span>
+          <div style="width:50px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden">
+            <div style="width:${Math.min(100, c.open_rate)}%;height:100%;background:#10B981"></div>
+          </div>
+        </div>
+      </td>
+      <td><span class="mono">${fmt(c.unique_opens || c.opened_count)}</span></td>
+      <td><span class="mono">${fmt(c.total_opens || c.opened_count)}</span></td>
+      <td style="font-size:11px;color:var(--text3);text-align:right">${c.last_open_at || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function filterOaRecipients() {
+  loadOpenRecipients(1);
+}
+
+function filterOaRecipientsDebounced() {
+  if (_oaRecipientsFilterTimeout) clearTimeout(_oaRecipientsFilterTimeout);
+  _oaRecipientsFilterTimeout = setTimeout(() => {
+    loadOpenRecipients(1);
+  }, 300);
+}
+
+async function loadOpenRecipients(page = 1, silent = false) {
+  _oaCurrentRecipientsPage = page;
+  const tb = $('oa-recipients-body');
+  if (!tb) return;
+
+  const q = encodeURIComponent($('oa-search-input')?.value.trim() || '');
+  const camp = encodeURIComponent($('oa-campaign-filter')?.value || '');
+  const st = encodeURIComponent($('oa-status-filter')?.value || '');
+
+  let url = `email-tracking?page=${page}`;
+  if (q) url += `&q=${q}`;
+  if (camp) url += `&campaign_id=${camp}`;
+  if (st) url += `&status=${st}`;
+
+  const r = await get(url);
+  if (!r || !r.rows || !r.rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="9" style="padding:28px;text-align:center">No recipient tracking logs found</td></tr>';
+    $('oa-recipients-pager').innerHTML = '';
+    return;
+  }
+
+  tb.innerHTML = r.rows.map(t => {
+    const isOp = parseInt(t.is_opened, 10) === 1;
+    const statusBadge = isOp ? '<span class="badge b-green">Opened</span>' : '<span class="badge b-gray">Unopened</span>';
+    
+    let proxyBadges = '';
+    if (parseInt(t.latest_privacy_proxy, 10) === 1) {
+      proxyBadges += '<span class="badge" style="background:rgba(245,158,11,0.12);color:#D97706;border:1px solid rgba(245,158,11,0.3);font-size:9px">Apple Privacy</span> ';
+    }
+    if (parseInt(t.latest_gmail_proxy, 10) === 1) {
+      proxyBadges += '<span class="badge" style="background:rgba(6,182,212,0.12);color:#0891B2;border:1px solid rgba(6,182,212,0.3);font-size:9px">Gmail Proxy</span> ';
+    }
+    if (!proxyBadges && isOp) {
+      proxyBadges = '<span class="badge b-blue" style="font-size:9px">Direct Read</span>';
+    }
+
+    const loc = t.latest_city ? `${esc(t.latest_city)}, ${esc(t.latest_country || '')}` : (t.latest_country ? esc(t.latest_country) : '—');
+    const dev = t.latest_device ? `${esc(t.latest_device)} · ${esc(t.latest_browser || '')}` : '—';
+
+    return `
+      <tr>
+        <td class="mono" style="font-weight:700;font-size:12px">${esc(t.recipient_email)}</td>
+        <td>
+          <div style="font-weight:600;font-size:12px">${esc(t.campaign_name || 'Direct / Auto-Reply')}</div>
+          ${t.sequence_step ? `<span class="badge b-purple" style="font-size:9px">Step #${t.sequence_step}</span>` : ''}
+        </td>
+        <td>${statusBadge}</td>
+        <td><span class="mono" style="font-weight:700;color:var(--accent)">${fmt(t.open_count)}</span></td>
+        <td style="font-size:11px;color:var(--text2)">${t.first_open_at || '—'}</td>
+        <td style="font-size:11px;color:var(--text3)">${t.last_open_at || '—'}</td>
+        <td style="font-size:11px">📍 ${loc}</td>
+        <td style="font-size:11px">${dev}</td>
+        <td style="text-align:right">
+          <button class="btn btn-secondary btn-sm" onclick="openRecipientTrackingModal(${t.id})" title="View full history and geo intelligence">🔍 Details</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const pg = $('oa-recipients-pager');
+  if (pg) {
+    if (r.pages > 1) {
+      let h = '';
+      if (page > 1) h += `<button class="btn btn-secondary btn-sm" onclick="loadOpenRecipients(${page-1})">← Prev</button>`;
+      h += `<span style="font-size:11px;color:var(--text3)">Page ${page} of ${r.pages} (${fmt(r.total)} recipients)</span>`;
+      if (page < r.pages) h += `<button class="btn btn-secondary btn-sm" onclick="loadOpenRecipients(${page+1})">Next →</button>`;
+      pg.innerHTML = h;
+    } else {
+      pg.innerHTML = `<span style="font-size:11px;color:var(--text3)">${fmt(r.total)} total recipients</span>`;
+    }
+  }
+}
+
+async function loadOpenCountries() {
+  const tb = $('oa-countries-body');
+  if (!tb) return;
+  const r = await get('email-tracking/countries');
+  if (!r || !r.rows || !r.rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="5" style="padding:28px;text-align:center">No country intelligence recorded</td></tr>';
+    return;
+  }
+  tb.innerHTML = r.rows.map(c => `
+    <tr>
+      <td><b>🌍 ${esc(c.country)}</b></td>
+      <td><span class="badge b-gray">${esc(c.country_code)}</span></td>
+      <td><span class="mono" style="font-weight:700">${fmt(c.unique_opens)}</span></td>
+      <td><span class="mono" style="color:var(--accent);font-weight:700">${fmt(c.total_opens)}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-weight:700;font-size:12px">${c.open_rate}%</span>
+          <div style="width:60px;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+            <div style="width:${Math.min(100, c.open_rate)}%;height:100%;background:#6366F1"></div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openRecipientTrackingModal(id) {
+  const r = await get('email-tracking/' + id);
+  if (!r || !r.tracking) {
+    alert('Tracking details could not be loaded');
+    return;
+  }
+
+  const t = r.tracking;
+  const events = r.events || [];
+
+  set('oa-modal-email', t.recipient_email);
+  set('oa-modal-campaign', (t.campaign_name || 'Direct / Auto-Reply') + (t.sequence_step ? ` (Step #${t.sequence_step})` : ''));
+  set('oa-modal-stats', `${t.open_count} total opens (${t.unique_open_count} unique)`);
+  set('oa-modal-dates', `First: ${t.first_open_at || '—'} · Last: ${t.last_open_at || '—'}`);
+
+  const tb = $('oa-modal-events-body');
+  if (tb) {
+    if (!events.length) {
+      tb.innerHTML = '<tr class="empty-row"><td colspan="6" style="padding:16px;text-align:center">No open events recorded yet</td></tr>';
+    } else {
+      tb.innerHTML = events.map(e => {
+        let pBadge = '<span class="badge b-blue" style="font-size:9px">Standard</span>';
+        if (parseInt(e.privacy_proxy, 10) === 1) {
+          pBadge = '<span class="badge" style="background:rgba(245,158,11,0.12);color:#D97706;border:1px solid rgba(245,158,11,0.3);font-size:9px">Apple Privacy</span>';
+        } else if (parseInt(e.proxy_open, 10) === 1) {
+          pBadge = '<span class="badge" style="background:rgba(6,182,212,0.12);color:#0891B2;border:1px solid rgba(6,182,212,0.3);font-size:9px">Gmail Proxy</span>';
+        }
+
+        const loc = e.city ? `${esc(e.city)}, ${esc(e.country)}` : esc(e.country || 'Unknown');
+        return `
+          <tr>
+            <td style="font-size:11px;font-family:var(--mono);color:var(--text2)">${e.opened_at}</td>
+            <td><span class="mono" style="font-size:11px;background:var(--bg4);padding:2px 5px;border-radius:4px">${esc(e.ip_address)}</span></td>
+            <td style="font-size:11px">📍 ${loc}</td>
+            <td style="font-size:11px">${esc(e.device_type)} (${esc(e.operating_system)})</td>
+            <td style="font-size:11px">${esc(e.browser)}</td>
+            <td>${pBadge}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  // Mini Modal Map
+  showModal('oa-recipient-modal');
+
+  setTimeout(() => {
+    const mapContainer = $('oa-modal-map');
+    if (!mapContainer || typeof L === 'undefined') return;
+
+    if (!_oaModalMap) {
+      _oaModalMap = L.map('oa-modal-map', {
+        center: [20, 0],
+        zoom: 3,
+        scrollWheelZoom: false
+      });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 18
+      }).addTo(_oaModalMap);
+    }
+
+    _oaModalMap.invalidateSize();
+
+    if (_oaModalMap._singleMarker) {
+      _oaModalMap.removeLayer(_oaModalMap._singleMarker);
+    }
+
+    const firstEv = events[0];
+    if (firstEv && firstEv.latitude && firstEv.longitude && parseFloat(firstEv.latitude) !== 0) {
+      const lat = parseFloat(firstEv.latitude);
+      const lng = parseFloat(firstEv.longitude);
+      _oaModalMap.setView([lat, lng], 8);
+      _oaModalMap._singleMarker = L.marker([lat, lng]).addTo(_oaModalMap)
+        .bindPopup(`<b>${esc(firstEv.city)}, ${esc(firstEv.country)}</b><br>${esc(firstEv.ip_address)}`).openPopup();
+      set('oa-modal-location-text', `${firstEv.city}, ${firstEv.country} (${firstEv.timezone || 'UTC'})`);
+    } else {
+      _oaModalMap.setView([20, 0], 2);
+      set('oa-modal-location-text', 'Location approximate or not yet resolved');
+    }
+  }, 250);
+}
+
+function exportTrackingCsv() {
+  window.location.href = 'api.php?r=email-tracking/export';
 }
 
 /* FU Contacts */
