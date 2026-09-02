@@ -3507,23 +3507,79 @@ if ($res === 'system-logs' || $res === 'logs') {
         $where = $IS_ADMIN ? '1=1' : "user_id = {$UID}";
         $today = date('Y-m-d');
         
+        $totalQueued = 0; $totalSent = 0; $sentToday = 0; $failedToday = 0;
+        $totalOpened = 0; $totalClicked = 0; $totalBounced = 0; $totalUnsub = 0;
+        $pendingFu = 0; $schedFu = 0; $retryQueue = 0;
+
+        try {
+            $totalQueued  = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='queued'")->fetchColumn();
+            $totalSent    = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent'")->fetchColumn();
+            $sentToday    = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent' AND DATE(created_at)='{$today}'")->fetchColumn();
+            $failedToday  = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='failed' AND DATE(created_at)='{$today}'")->fetchColumn();
+            $totalOpened  = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='opened'")->fetchColumn();
+            $totalClicked = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='clicked'")->fetchColumn();
+            $totalBounced = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='bounced'")->fetchColumn();
+            $totalUnsub   = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='unsubscribed'")->fetchColumn();
+        } catch (Exception $e) {}
+
+        // Fallback checks from send_logs for sent/failed today
+        try {
+            $slWhere = $IS_ADMIN ? '1=1' : "user_id = {$UID}";
+            $slSentToday = (int)db()->query("SELECT COUNT(*) FROM send_logs WHERE {$slWhere} AND status='sent' AND DATE(sent_at)='{$today}'")->fetchColumn();
+            if ($slSentToday > $sentToday) $sentToday = $slSentToday;
+            $slFailedToday = (int)db()->query("SELECT COUNT(*) FROM send_logs WHERE {$slWhere} AND status='failed' AND DATE(sent_at)='{$today}'")->fetchColumn();
+            if ($slFailedToday > $failedToday) $failedToday = $slFailedToday;
+            if ($totalSent === 0) {
+                $totalSent = (int)db()->query("SELECT COUNT(*) FROM send_logs WHERE {$slWhere} AND status='sent'")->fetchColumn();
+            }
+        } catch (Exception $e) {}
+
+        // Scheduled FU & retry queue from email_followup_queue
+        try {
+            $pendingFu   = (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='pending'")->fetchColumn();
+            $schedFu     = (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled'")->fetchColumn();
+            $retryQueue  = (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled' AND retry_count > 0")->fetchColumn();
+        } catch (Exception $e) {}
+
+        // Fallback for scheduled FU from followup_contacts
+        if ($schedFu === 0) {
+            try {
+                $fcWhere = $IS_ADMIN ? "status='active' AND next_send_at IS NOT NULL" : "rule_id IN (SELECT id FROM followup_rules WHERE user_id={$UID}) AND status='active' AND next_send_at IS NOT NULL";
+                $schedFu = (int)db()->query("SELECT COUNT(*) FROM followup_contacts WHERE {$fcWhere}")->fetchColumn();
+            } catch (Exception $e) {}
+        }
+        if ($retryQueue === 0) {
+            try {
+                $retryQueue = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='retry'")->fetchColumn();
+            } catch (Exception $e) {}
+        }
+
+        $sentTotal = max(1, $totalSent ?: $sentToday);
+        $openRate   = round(($totalOpened / $sentTotal) * 100, 1);
+        $clickRate  = round(($totalClicked / $sentTotal) * 100, 1);
+        $bounceRate = round(($totalBounced / $sentTotal) * 100, 1);
+
         $stats = [
-            'total_queued'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='queued'")->fetchColumn(),
-            'total_sent'     => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent'")->fetchColumn(),
-            'sent_today'     => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='sent' AND DATE(created_at)='{$today}'")->fetchColumn(),
-            'failed_today'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='failed' AND DATE(created_at)='{$today}'")->fetchColumn(),
-            'total_opened'   => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='opened'")->fetchColumn(),
-            'total_clicked'  => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='clicked'")->fetchColumn(),
-            'total_bounced'  => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='bounced'")->fetchColumn(),
-            'total_unsub'    => (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$where} AND event_type='unsubscribed'")->fetchColumn(),
-            'pending_followups' => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='pending'")->fetchColumn(),
-            'scheduled_followups' => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled'")->fetchColumn(),
-            'retry_queue'    => (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE {$where} AND status='scheduled' AND retry_count > 0")->fetchColumn(),
+            'total_queued'        => $totalQueued,
+            'total_sent'          => $totalSent,
+            'sent_today'          => $sentToday,
+            'failed_today'        => $failedToday,
+            'total_opened'        => $totalOpened,
+            'opened'              => $totalOpened,
+            'total_clicked'       => $totalClicked,
+            'clicked'             => $totalClicked,
+            'total_bounced'       => $totalBounced,
+            'total_unsub'         => $totalUnsub,
+            'unsubscribed'        => $totalUnsub,
+            'pending_followups'   => $pendingFu,
+            'scheduled_followups' => $schedFu,
+            'retry_queue'         => $retryQueue,
+            'open_rate'           => $openRate,
+            'click_rate'          => $clickRate,
+            'bounce_rate'         => $bounceRate,
         ];
-        $sentTotal = max(1, $stats['total_sent']);
-        $stats['open_rate'] = round(($stats['total_opened'] / $sentTotal) * 100, 1);
-        $stats['click_rate'] = round(($stats['total_clicked'] / $sentTotal) * 100, 1);
-        $stats['bounce_rate'] = round(($stats['total_bounced'] / $sentTotal) * 100, 1);
+        // Support both direct object access and .stats property
+        $stats['stats'] = $stats;
         jsonOut($stats);
     }
     if ($method === 'GET') {

@@ -9442,6 +9442,7 @@ async function loadSystemLogs(page = 1, silent = false){
   if(!silent && (!tb.children.length || tb.querySelector('.empty-row'))) {
     tb.innerHTML = '<tr class="empty-row"><td colspan="7" style="padding:28px;text-align:center"><span class="spin-ic"></span> Ingesting real-time stream…</td></tr>';
   }
+  loadSystemLogStats();
 
   const r = await get('system-logs?' + qs);
   if(!r?.rows?.length){
@@ -9508,17 +9509,17 @@ async function loadSystemLogs(page = 1, silent = false){
 
 async function loadSystemLogStats(){
   const s = await get('system-logs/stats');
-  if(!s?.stats) return;
-  const st = s.stats;
-  set('sys-stat-sent-today', fmt(st.sent_today || 0));
-  set('sys-stat-opened', fmt(st.opened || 0));
+  if(!s) return;
+  const st = s.stats || s;
+  set('sys-stat-sent-today', fmt(st.sent_today != null ? st.sent_today : (st.total_sent ?? 0)));
+  set('sys-stat-opened', fmt(st.opened != null ? st.opened : (st.total_opened ?? 0)));
   set('sys-stat-open-rate', (st.open_rate || 0) + '% open rate');
-  set('sys-stat-clicked', fmt(st.clicked || 0));
+  set('sys-stat-clicked', fmt(st.clicked != null ? st.clicked : (st.total_clicked ?? 0)));
   set('sys-stat-click-rate', (st.click_rate || 0) + '% CTR');
-  set('sys-stat-sched-fu', fmt(st.scheduled_followups || 0));
-  set('sys-stat-retry-queue', fmt(st.retry_queue || 0));
-  set('sys-stat-failed-today', fmt(st.failed_today || 0));
-  set('sys-stat-unsub', fmt(st.unsubscribed || 0));
+  set('sys-stat-sched-fu', fmt(st.scheduled_followups != null ? st.scheduled_followups : (st.pending_followups ?? 0)));
+  set('sys-stat-retry-queue', fmt(st.retry_queue ?? 0));
+  set('sys-stat-failed-today', fmt(st.failed_today ?? 0));
+  set('sys-stat-unsub', fmt(st.unsubscribed != null ? st.unsubscribed : (st.total_unsub ?? 0)));
 }
 
 async function clearSystemLogs(){
