@@ -1222,6 +1222,7 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
     <div class="ni" onclick="nav('blacklist')" id="nav-blacklist"><span class="ni-ic">🚫</span>Blacklist</div>
     <span class="nsec">Logs & Activity</span>
     <div class="ni" onclick="nav('openanalytics')" id="nav-openanalytics"><span class="ni-ic">👁️</span>Email Open Analytics <span class="badge b-purple" style="font-size:9px;padding:2px 5px;margin-left:auto">LIVE</span></div>
+    <div class="ni" onclick="nav('blockedskipped')" id="nav-blockedskipped"><span class="ni-ic">🛡️</span>Blocked &amp; Skipped <span class="badge b-amber" style="font-size:9px;padding:2px 5px;margin-left:auto">REPORT</span></div>
     <div class="ni" onclick="nav('systemlogs')" id="nav-systemlogs"><span class="ni-ic">🛰️</span>System Activity Logs</div>
     <span class="nsec">Leads</span>
     <div class="ni" onclick="nav('leads')" id="nav-leads"><span class="ni-ic">🗄️</span>Leads Manager</div>
@@ -3377,10 +3378,142 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
 
   </div><!-- /#page-openanalytics -->
 
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- ══ PAGE: BLOCKED & SKIPPED EMAIL REPORTS ══════════════════ -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-blockedskipped">
+    <!-- Hero Header -->
+    <div class="feat-hero" style="margin-bottom:18px;background:linear-gradient(135deg,rgba(239,68,68,0.06) 0%,rgba(245,158,11,0.05) 100%);border-color:rgba(239,68,68,0.2)">
+      <div class="feat-hero-left">
+        <div class="feat-hero-icon" style="background:linear-gradient(135deg,#EF4444 0%,#DC2626 100%);box-shadow:0 8px 16px -4px rgba(239,68,68,0.3)">🛡️</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <h1 class="feat-hero-title" style="margin:0;font-size:22px">Blocked &amp; Skipped Email Reports</h1>
+            <span class="badge b-amber" style="font-size:10px;font-weight:700">AUDIT LOG</span>
+            <span class="badge b-blue" style="font-size:10px">Live Filtering</span>
+          </div>
+          <div class="feat-hero-sub" style="margin-top:4px">
+            Unified list and report of all blocked, blacklisted, unsubscribed, bounced, and skipped emails across IMAP auto-responders and campaigns.
+          </div>
+        </div>
+      </div>
+      <div class="feat-hero-right" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="loadBlockedSkipped(1);loadBlockedSkippedStats();" title="Refresh report">↺ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="exportBlockedSkippedCsv()" style="background:#EF4444;border-color:#EF4444" title="Export CSV dataset">📥 Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="openQuickBlacklistModal()" title="Add an email to blacklist">+ Block Email</button>
+      </div>
+    </div>
+
+    <!-- 6 KPI Telemetry Cards -->
+    <div class="sys-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px">
+      <div class="sys-kpi-card" style="border-top:3px solid #EF4444">
+        <div class="sys-kpi-lbl">🚫 TOTAL BLOCKED</div>
+        <div class="sys-kpi-val" id="bs-stat-blocked" style="color:#EF4444">—</div>
+        <div class="sys-kpi-sub">Blacklist + Unsub + Bounce</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #F59E0B">
+        <div class="sys-kpi-lbl">⏭️ TOTAL SKIPPED</div>
+        <div class="sys-kpi-val" id="bs-stat-skipped" style="color:#F59E0B">—</div>
+        <div class="sys-kpi-sub">BCC + Queue + Sequence</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #6366F1">
+        <div class="sys-kpi-lbl">🛡️ SKIPPED (BCC)</div>
+        <div class="sys-kpi-val" id="bs-stat-bcc" style="color:#6366F1">—</div>
+        <div class="sys-kpi-sub">Delivered as Blind Copy</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #DC2626">
+        <div class="sys-kpi-lbl">⛔ BLACKLISTED</div>
+        <div class="sys-kpi-val" id="bs-stat-blacklisted" style="color:#DC2626">—</div>
+        <div class="sys-kpi-sub">Explicit Block Rules</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #64748B">
+        <div class="sys-kpi-lbl">🛑 UNSUBSCRIBED</div>
+        <div class="sys-kpi-val" id="bs-stat-unsub" style="color:#64748B">—</div>
+        <div class="sys-kpi-sub">Opt-Out List</div>
+      </div>
+      <div class="sys-kpi-card" style="border-top:3px solid #EA580C">
+        <div class="sys-kpi-lbl">⚠️ BOUNCED / FAILED</div>
+        <div class="sys-kpi-val" id="bs-stat-bounced" style="color:#EA580C">—</div>
+        <div class="sys-kpi-sub">Delivery Rejections</div>
+      </div>
+    </div>
+
+    <!-- Main Report Card -->
+    <div class="card">
+      <!-- Toolbar & Category Chips -->
+      <div class="card-head" style="flex-direction:column;align-items:stretch;gap:12px;padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div class="filter-chips" style="gap:6px;flex-wrap:wrap">
+            <button class="chip-btn active" id="bs-chip-all" onclick="setBsCategory('all',this)">All Records</button>
+            <button class="chip-btn" id="bs-chip-skipped_bcc" onclick="setBsCategory('skipped_bcc',this)">🛡️ Skipped (BCC)</button>
+            <button class="chip-btn" id="bs-chip-blacklisted" onclick="setBsCategory('blacklisted',this)">🚫 Blacklisted</button>
+            <button class="chip-btn" id="bs-chip-unsubscribed" onclick="setBsCategory('unsubscribed',this)">🛑 Unsubscribed</button>
+            <button class="chip-btn" id="bs-chip-bounced" onclick="setBsCategory('bounced',this)">⚠️ Bounced / Failed</button>
+            <button class="chip-btn" id="bs-chip-skipped_queue" onclick="setBsCategory('skipped_queue',this)">⏭️ Skipped (Queue)</button>
+          </div>
+          <div style="font-size:12px;color:var(--text3)" id="bs-total-counter">— records found</div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="position:relative;flex:1;min-width:240px">
+            <input class="fi" id="bs-search-input" placeholder="🔍 Search email address, reason or source..." onkeyup="filterBlockedSkippedDebounced()">
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadBlockedSkipped(1)">Filter</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBsFilters()">Clear</button>
+        </div>
+      </div>
+
+      <!-- Report Table -->
+      <div class="card-body" style="padding:0">
+        <div class="tw"><table>
+          <thead>
+            <tr>
+              <th>Recipient / Email Address</th>
+              <th>Category</th>
+              <th>Reason / Details</th>
+              <th>Source / Provider</th>
+              <th>Date &amp; Time</th>
+              <th style="text-align:right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="bs-table-body">
+            <tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center">Loading blocked &amp; skipped records…</td></tr>
+          </tbody>
+        </table></div>
+        <div id="bs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
+      </div>
+    </div>
+  </div><!-- /#page-blockedskipped -->
+
 </div><!-- /#main -->
 
 <!-- ══ MODALS ══ -->
 
+
+<!-- ══ QUICK BLOCK EMAIL MODAL ══ -->
+<div class="modal-bg" id="bs-quick-block-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hd">
+      <h3>🚫 Block Email Address</h3>
+      <span class="modal-x" onclick="closeModal('bs-quick-block-modal')">✕</span>
+    </div>
+    <div class="modal-body">
+      <div id="bs-block-al" class="al"></div>
+      <div class="fg">
+        <label class="fl">Email Address to Block *</label>
+        <input class="fi" id="bs-block-email" placeholder="e.g. spammer@example.com">
+      </div>
+      <div class="fg">
+        <label class="fl">Reason</label>
+        <input class="fi" id="bs-block-reason" placeholder="e.g. Unwanted incoming messages" value="Manual block via Blocked & Skipped Report">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('bs-quick-block-modal')">Cancel</button>
+      <button class="btn btn-danger" onclick="submitQuickBlacklist()">Confirm Block</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ RECIPIENT OPEN TRACKING DETAILS MODAL (Feature 12) ══ -->
 <div class="modal-bg" id="oa-recipient-modal">
@@ -5299,7 +5432,7 @@ async function doLogout(){
 }
 
 /* ─── Nav ───────────────────────────────── */
-const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',flowchart:'AR & FU Flow Chart',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs',openanalytics:'Email Open Analytics & Read Reports'};
+const TITLES={dashboard:'Live Reporting Dashboard',stepreporting:'Step-by-Step Reporting',flowchart:'AR & FU Flow Chart',campaigns:'Campaigns',templates:'Email Templates',images:'Image Library',lists:'Email Lists',smtp:'SMTP Servers',account:'My Account',displayname:'Sender Display Name',users:'User Management',cron:'Cron Manager',alllogs:'All Send Logs',imap:'IMAP Accounts',autoreply:'Auto-Reply',mailrouting:'Smart Mail Routing Studio',followup:'Follow-Up',leads:'Leads Manager',blacklist:'Blacklist',systemlogs:'System Activity Logs',openanalytics:'Email Open Analytics & Read Reports',blockedskipped:'Blocked & Skipped Email Reports'};
 function nav(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(x=>x.classList.remove('active'));
@@ -5376,6 +5509,16 @@ function nav(p){
       }
     },15000);
     const liveEl=$('oa-live-badge');if(liveEl)liveEl.style.display='inline-flex';
+  }
+  if(p==='blockedskipped'){
+    loadBlockedSkipped(1);
+    loadBlockedSkippedStats();
+    _liveRefreshTimer=setInterval(()=>{
+      if(document.getElementById('page-blockedskipped')?.classList.contains('active')){
+        loadBlockedSkipped(_bsCurrentPage||1, true);
+        loadBlockedSkippedStats();
+      }
+    },8000);
   }
 }
 function showLiveIndicator(id){
@@ -10261,6 +10404,164 @@ async function openRecipientTrackingModal(id) {
 
 function exportTrackingCsv() {
   window.location.href = 'api.php?r=email-tracking/export';
+}
+
+/* ─── BLOCKED & SKIPPED EMAIL REPORTS ─────────────────────────── */
+let _bsCurrentCategory = 'all';
+let _bsCurrentPage = 1;
+let _bsFilterTimeout = null;
+
+function setBsCategory(cat, btn) {
+  _bsCurrentCategory = cat;
+  document.querySelectorAll('#page-blockedskipped .filter-chips .chip-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadBlockedSkipped(1);
+}
+
+function filterBlockedSkippedDebounced() {
+  if (_bsFilterTimeout) clearTimeout(_bsFilterTimeout);
+  _bsFilterTimeout = setTimeout(() => {
+    loadBlockedSkipped(1);
+  }, 300);
+}
+
+function clearBsFilters() {
+  const inp = $('bs-search-input');
+  if (inp) inp.value = '';
+  setBsCategory('all', $('bs-chip-all'));
+}
+
+async function loadBlockedSkippedStats() {
+  const s = await get('blocked-skipped/stats');
+  if (!s || !s.stats) return;
+  const st = s.stats;
+  set('bs-stat-blocked', fmt(st.total_blocked));
+  set('bs-stat-skipped', fmt(st.total_skipped));
+  set('bs-stat-bcc', fmt(st.skipped_bcc));
+  set('bs-stat-blacklisted', fmt(st.blacklisted));
+  set('bs-stat-unsub', fmt(st.unsubscribed));
+  set('bs-stat-bounced', fmt(st.bounced));
+}
+
+async function loadBlockedSkipped(page = 1, silent = false) {
+  _bsCurrentPage = page;
+  const tb = $('bs-table-body');
+  if (!tb) return;
+
+  if (!silent) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center"><span class="spin-ic"></span> Loading blocked &amp; skipped records…</td></tr>';
+  }
+
+  const q = encodeURIComponent($('bs-search-input')?.value.trim() || '');
+  let url = `blocked-skipped?page=${page}&category=${encodeURIComponent(_bsCurrentCategory)}`;
+  if (q) url += `&q=${q}`;
+
+  const r = await get(url);
+  if (!r || !r.rows || !r.rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6" style="padding:28px;text-align:center;color:var(--text3)">No blocked or skipped emails found matching your filters</td></tr>';
+    $('bs-pager').innerHTML = '';
+    set('bs-total-counter', '0 records found');
+    return;
+  }
+
+  set('bs-total-counter', `${fmt(r.total)} records found`);
+
+  const categoryBadge = cat => {
+    switch (cat) {
+      case 'skipped_bcc':
+        return '<span class="badge" style="background:rgba(245,158,11,0.12);color:#D97706;border:1px solid rgba(245,158,11,0.3);font-weight:700">🛡️ Skipped (BCC)</span>';
+      case 'blacklisted':
+        return '<span class="badge b-red" style="font-weight:700">🚫 Blacklisted</span>';
+      case 'unsubscribed':
+        return '<span class="badge" style="background:rgba(100,116,139,0.12);color:#475569;border:1px solid rgba(100,116,139,0.3);font-weight:700">🛑 Unsubscribed</span>';
+      case 'bounced':
+        return '<span class="badge b-red" style="font-weight:700">⚠️ Bounced / Failed</span>';
+      case 'skipped_queue':
+        return '<span class="badge b-purple" style="font-weight:700">⏭️ Skipped (Queue)</span>';
+      case 'skipped_other':
+        return '<span class="badge b-amber" style="font-weight:700">⏭️ Skipped</span>';
+      default:
+        return '<span class="badge b-gray">Notice</span>';
+    }
+  };
+
+  tb.innerHTML = r.rows.map(row => {
+    const isBl = row.category === 'blacklisted';
+    const actionBtn = isBl
+      ? `<button class="btn btn-secondary btn-sm" onclick="quickRemoveBlacklist(${row.id}, '${esc(row.email)}')">Unblock</button>`
+      : `<button class="btn btn-danger btn-sm" onclick="openQuickBlacklistModal('${esc(row.email)}')">+ Blacklist</button>`;
+
+    return `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="mono" style="font-weight:700;font-size:13px;color:var(--text)">${esc(row.email || '—')}</span>
+            <button class="btn btn-secondary btn-sm" style="padding:2px 6px;font-size:10px" onclick="navigator.clipboard.writeText('${esc(row.email)}');this.textContent='Copied!';" title="Copy email">📋</button>
+          </div>
+        </td>
+        <td>${categoryBadge(row.category)}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:320px;word-break:break-word">${esc(row.reason || '—')}</td>
+        <td style="font-size:11px;color:var(--text3)">${esc(row.source || 'System')}</td>
+        <td style="font-size:11px;font-family:var(--mono);color:var(--text3);white-space:nowrap">${row.created_at || '—'}</td>
+        <td style="text-align:right">${actionBtn}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const pg = $('bs-pager');
+  if (pg) {
+    if (r.pages > 1) {
+      let h = '';
+      if (page > 1) h += `<button class="btn btn-secondary btn-sm" onclick="loadBlockedSkipped(${page-1})">← Prev</button>`;
+      h += `<span style="font-size:11px;color:var(--text3)">Page ${page} of ${r.pages} (${fmt(r.total)} items)</span>`;
+      if (page < r.pages) h += `<button class="btn btn-secondary btn-sm" onclick="loadBlockedSkipped(${page+1})">Next →</button>`;
+      pg.innerHTML = h;
+    } else {
+      pg.innerHTML = `<span style="font-size:11px;color:var(--text3)">${fmt(r.total)} total records</span>`;
+    }
+  }
+}
+
+function exportBlockedSkippedCsv() {
+  window.location.href = 'api.php?r=blocked-skipped/export';
+}
+
+function openQuickBlacklistModal(prefillEmail = '') {
+  const em = $('bs-block-email');
+  if (em) em.value = prefillEmail || '';
+  al2('bs-block-al');
+  showModal('bs-quick-block-modal');
+  if (em && !prefillEmail) setTimeout(() => em.focus(), 150);
+}
+
+async function submitQuickBlacklist() {
+  const email = $('bs-block-email')?.value.trim();
+  const reason = $('bs-block-reason')?.value.trim() || 'Manual block via Blocked & Skipped Report';
+  if (!email) {
+    al('bs-block-al', 'Enter an email address to block', 'err');
+    return;
+  }
+  const r = await post('blocked-skipped/blacklist', { email, reason });
+  if (r && (r.ok || r.success)) {
+    closeModal('bs-quick-block-modal');
+    loadBlockedSkipped(1);
+    loadBlockedSkippedStats();
+    if (typeof loadBlacklistStats === 'function') loadBlacklistStats();
+  } else {
+    al('bs-block-al', r?.message || 'Failed to blacklist email', 'err');
+  }
+}
+
+async function quickRemoveBlacklist(id, email) {
+  if (!confirm(`Are you sure you want to unblock ${email}?`)) return;
+  const r = await del('blacklist/' + id);
+  if (r && (r.ok || r.success)) {
+    loadBlockedSkipped(_bsCurrentPage || 1);
+    loadBlockedSkippedStats();
+    if (typeof loadBlacklistStats === 'function') loadBlacklistStats();
+  } else {
+    alert('Failed to unblock: ' + (r?.message || 'Error'));
+  }
 }
 
 /* FU Contacts */

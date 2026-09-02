@@ -4047,6 +4047,177 @@ if ($res === 'email-tracking') {
     jsonOut(['error' => 'Not found'], 404);
 }
 
+// ── BLOCKED & SKIPPED EMAIL REPORT ──────────────────────────────────
+if ($res === 'blocked-skipped') {
+    $whereUser = $IS_ADMIN ? "1=1" : "user_id = {$UID}";
+
+    // 1. STATS
+    if ($method === 'GET' && $id === 'stats') {
+        $skippedBcc = 0; $skippedQueue = 0; $skippedOther = 0;
+        $blacklisted = 0; $unsubscribed = 0; $bounced = 0;
+
+        try {
+            $skippedBcc = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'")->fetchColumn();
+            $skippedOther = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND (details NOT LIKE '%BCC%' OR details IS NULL)")->fetchColumn();
+        } catch (Exception $e) {}
+
+        try {
+            $skippedQueue = (int)db()->query("SELECT COUNT(*) FROM email_followup_queue WHERE status = 'skipped'")->fetchColumn();
+        } catch (Exception $e) {}
+
+        try {
+            $blacklisted = (int)db()->query("SELECT COUNT(*) FROM blacklist WHERE {$whereUser}")->fetchColumn();
+        } catch (Exception $e) {}
+
+        try {
+            $unsubscribed = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'")->fetchColumn();
+            $bounced = (int)db()->query("SELECT COUNT(*) FROM system_logs WHERE {$whereUser} AND event_type IN ('bounced', 'failed')")->fetchColumn();
+        } catch (Exception $e) {}
+
+        $totalSkipped = $skippedBcc + $skippedQueue + $skippedOther;
+        $totalBlocked = $blacklisted + $unsubscribed + $bounced;
+
+        jsonOut([
+            'ok' => true,
+            'stats' => [
+                'total_blocked'  => $totalBlocked,
+                'total_skipped'  => $totalSkipped,
+                'skipped_bcc'    => $skippedBcc,
+                'skipped_queue'  => $skippedQueue,
+                'skipped_other'  => $skippedOther,
+                'blacklisted'    => $blacklisted,
+                'unsubscribed'   => $unsubscribed,
+                'bounced'        => $bounced,
+            ]
+        ]);
+    }
+
+    // 2. EXPORT CSV
+    if (($method === 'POST' || $method === 'GET') && $id === 'export') {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="blocked_and_skipped_emails_' . date('Y-m-d_His') . '.csv"');
+        $out = fopen('php://output', 'w');
+        fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
+        fputcsv($out, ['Email Address', 'Category', 'Reason / Details', 'Source / Provider', 'Date & Time']);
+
+        $unionSql = "
+            SELECT recipient_email as email, 'Skipped (BCC)' as category, details as reason, smtp_server as source, created_at
+            FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'
+            UNION ALL
+            SELECT email, 'Blacklisted' as category, COALESCE(reason, CONCAT('Blacklisted (', type, ')')) as reason, 'Blacklist' as source, created_at
+            FROM blacklist WHERE {$whereUser} AND email IS NOT NULL AND email != ''
+            UNION ALL
+            SELECT recipient_email as email, 'Unsubscribed' as category, details as reason, smtp_server as source, created_at
+            FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'
+            UNION ALL
+            SELECT recipient_email as email, 'Bounced / Failed' as category, details as reason, smtp_server as source, created_at
+            FROM system_logs WHERE {$whereUser} AND event_type IN ('bounced', 'failed')
+            UNION ALL
+            SELECT recipient_email as email, 'Skipped (Queue)' as category, COALESCE(last_error, 'Follow-up step skipped') as reason, 'Follow-Up Queue' as source, created_at
+            FROM email_followup_queue WHERE status = 'skipped'
+            ORDER BY created_at DESC LIMIT 5000
+        ";
+
+        try {
+            $stmt = db()->query($unionSql);
+            while ($r = $stmt->fetch()) {
+                fputcsv($out, [$r['email'], $r['category'], $r['reason'], $r['source'], $r['created_at']]);
+            }
+        } catch (Exception $e) {}
+
+        fclose($out);
+        exit;
+    }
+
+    // 3. PAGINATED LIST
+    if ($method === 'GET') {
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $limit = 50;
+        $offset = ($page - 1) * $limit;
+        $category = trim($_GET['category'] ?? 'all');
+        $q = trim($_GET['q'] ?? '');
+
+        $unions = [];
+
+        if ($category === 'all' || $category === 'skipped_bcc') {
+            $unions[] = "SELECT id, 'skipped_bcc' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND details LIKE '%BCC%'";
+        }
+        if ($category === 'all' || $category === 'blacklisted') {
+            $unions[] = "SELECT id, 'blacklisted' as category, email, COALESCE(reason, CONCAT('Blacklisted (', type, ')')) as reason, 'Blacklist' as source, created_at FROM blacklist WHERE {$whereUser} AND email IS NOT NULL AND email != ''";
+        }
+        if ($category === 'all' || $category === 'unsubscribed') {
+            $unions[] = "SELECT id, 'unsubscribed' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'unsubscribed'";
+        }
+        if ($category === 'all' || $category === 'bounced') {
+            $unions[] = "SELECT id, 'bounced' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type IN ('bounced', 'failed')";
+        }
+        if ($category === 'all' || $category === 'skipped_queue') {
+            $unions[] = "SELECT id, 'skipped_queue' as category, recipient_email as email, COALESCE(last_error, 'Follow-up sequence skipped') as reason, 'Follow-Up Queue' as source, created_at FROM email_followup_queue WHERE status = 'skipped'";
+        }
+        if ($category === 'all' || $category === 'skipped_other') {
+            $unions[] = "SELECT id, 'skipped_other' as category, recipient_email as email, details as reason, smtp_server as source, created_at FROM system_logs WHERE {$whereUser} AND event_type = 'skipped' AND (details NOT LIKE '%BCC%' OR details IS NULL)";
+        }
+
+        if (empty($unions)) {
+            jsonOut(['ok' => true, 'rows' => [], 'total' => 0, 'page' => 1, 'pages' => 1]);
+        }
+
+        $baseSql = "(" . implode(") UNION ALL (", $unions) . ")";
+        $whereClause = "1=1";
+        $params = [];
+
+        if ($q !== '') {
+            $whereClause .= " AND (email LIKE ? OR reason LIKE ? OR source LIKE ?)";
+            $params[] = "%{$q}%";
+            $params[] = "%{$q}%";
+            $params[] = "%{$q}%";
+        }
+
+        try {
+            $countStmt = db()->prepare("SELECT COUNT(*) FROM ({$baseSql}) as t WHERE {$whereClause}");
+            $countStmt->execute($params);
+            $totalCount = (int)$countStmt->fetchColumn();
+
+            $dataStmt = db()->prepare("SELECT * FROM ({$baseSql}) as t WHERE {$whereClause} ORDER BY created_at DESC LIMIT {$limit} OFFSET {$offset}");
+            $dataStmt->execute($params);
+            $rows = $dataStmt->fetchAll();
+
+            jsonOut([
+                'ok' => true,
+                'rows' => $rows,
+                'total' => $totalCount,
+                'page' => $page,
+                'pages' => (int)ceil($totalCount / $limit)
+            ]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => true, 'rows' => [], 'total' => 0, 'page' => 1, 'pages' => 1, 'error' => $e->getMessage()]);
+        }
+    }
+
+    // 4. QUICK ADD TO BLACKLIST
+    if ($method === 'POST' && $id === 'blacklist') {
+        $b = body();
+        $email = strtolower(trim($b['email'] ?? ''));
+        $reason = trim($b['reason'] ?? 'Blocked via Blocked & Skipped Report');
+        if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonOut(['ok' => false, 'message' => 'Invalid email address'], 400);
+        }
+        try {
+            $check = db()->prepare("SELECT id FROM blacklist WHERE user_id = ? AND type = 'email' AND email = ?");
+            $check->execute([$UID, $email]);
+            if ($check->fetch()) {
+                jsonOut(['ok' => false, 'message' => 'Email is already blacklisted']);
+            }
+            db()->prepare("INSERT INTO blacklist (user_id, type, email, reason) VALUES (?, 'email', ?, ?)")->execute([$UID, $email, $reason]);
+            jsonOut(['ok' => true, 'message' => "Email {$email} added to Blacklist"]);
+        } catch (Exception $e) {
+            jsonOut(['ok' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
 jsonOut(['error'=>'Not found'],404);
 
 // Safely encode image_ids — accepts array or JSON string, always stores valid JSON
