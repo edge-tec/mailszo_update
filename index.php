@@ -3168,6 +3168,8 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
         <div id="sys-logs-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
+  </div><!-- /#page-systemlogs -->
+
   <!-- ══════════════════════════════════════════════════════════ -->
   <!-- ══ PAGE: EMAIL OPEN ANALYTICS & READ REPORT (Features 9-26) ══ -->
   <!-- ══════════════════════════════════════════════════════════ -->
