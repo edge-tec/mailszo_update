@@ -175,6 +175,27 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                 );
             }
         }
+
+        // ── SIMULTANEOUS ACTION: AUTOMATICALLY ENROLL IN FOLLOW-UP ──────
+        $preferredFuId = 0;
+        $primaryUid = 1;
+        foreach ($rules as $r) {
+            $primaryUid = (int)($r['user_id'] ?? $primaryUid);
+            if (!empty($r['followup_rule_id'])) {
+                $preferredFuId = (int)$r['followup_rule_id'];
+                break;
+            }
+        }
+        $fuResults = autoEnrollInFollowup($fromEmail, $fromName, $primaryUid, $accountId, $preferredFuId);
+        if (!empty($fuResults)) {
+            foreach ($fuResults as $fu) {
+                echo sprintf("  📬 [Follow-Up Enrolled] Lead <%s> enrolled in Follow-Up '%s' (Step #1 scheduled for %s)\n",
+                    $fromEmail,
+                    $fu['rule_name'],
+                    $fu['scheduled_at']
+                );
+            }
+        }
     }
 };
 

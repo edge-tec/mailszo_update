@@ -1553,34 +1553,9 @@ try {
                     logSystemEvent('queued', $fe, "Auto Reply #1 scheduled for {$step1at}", $userId, null, $ruleId, null, '');
 
                     // ── SIMULTANEOUS ACTION: SCHEDULE FOLLOW-UP SEQUENCE ─────
-                    if ($fuRuleId > 0) {
-                        try {
-                            $fs1Query = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id = ? ORDER BY step_number ASC LIMIT 1");
-                            $fs1Query->execute([$fuRuleId]);
-                            $fs1Data = $fs1Query->fetch();
-                            if ($fs1Data) {
-                                $fuVal = max(0, (int)($fs1Data['delay_value'] ?? $fs1Data['delay_minutes'] ?? 30));
-                                $fuUnit = in_array(strtolower($fs1Data['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($fs1Data['delay_unit']) : 'minutes';
-                                $fuMins = delayToMinutes($fuVal, $fuUnit);
-                                $fuSchedAt = date('Y-m-d H:i:s', strtotime("+{$fuMins} minutes"));
-                                $fuTok = generateTrackingToken();
-
-                                $insFu = db()->prepare(
-                                    "INSERT INTO email_followup_queue
-                                     (user_id, campaign_id, rule_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
-                                     VALUES (?, NULL, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?)"
-                                );
-                                $insFu->execute([$userId, $fuRuleId, $fe, $fn, $fuVal, $fuUnit, $fuMins, $fuSchedAt, $fuTok]);
-                                $fuQId = db()->lastInsertId();
-
-                                db()->prepare("UPDATE autoreply_threads SET followup_status = 'running', followup_next_run = ? WHERE rule_id = ? AND from_email = ?")
-                                    ->execute([$fuSchedAt, $ruleId, $fe]);
-
-                                logMailRoutingEvent($userId, $ruleId, $thId, $fe, 'followup_scheduled', null, null, null, 'NEW_LEAD', 'FOLLOWUP_RUNNING', 'success', "Follow-up sequence started simultaneously with lead creation (+{$fuVal} {$fuUnit})");
-                                logSystemEvent('queued', $fe, "Follow-up #1 scheduled simultaneously with lead creation for {$fuSchedAt}", $userId, null, $fuRuleId, $fuQId, $fuTok);
-                            }
-                        } catch (Throwable $_fuSimEx) {}
-                    }
+                    try {
+                        autoEnrollInFollowup($fe, $fn, $userId, $srcId, $fuRuleId);
+                    } catch (Throwable $_fuSimEx) {}
                 }
             } else if($thread['status']==='completed') {
                 // Completed, do nothing unless restarted via UI
@@ -1690,6 +1665,7 @@ try {
                                 WHERE id=?")
                                 ->execute([$nc, $unlockAt, $inUid>0?$inUid:null, $inIaId>0?$inIaId:null, $inMsgId?:null, $newRefs, $pTh['id']]);
                             logSystemEvent('queued', $pEmail, "Auto Reply #" . $pTh['current_step'] . " scheduled for {$unlockAt} (via inbound sync)", $userId, null, $ruleId, null, '');
+                            autoEnrollInFollowup($pEmail, $pTh['from_name'] ?? '', $userId, $inIaId, $fuRuleId);
                         }
                     }
                 }
@@ -2090,11 +2066,20 @@ try {
                     "INSERT INTO followup_contacts (rule_id, email, name, current_step, next_send_at, tracking_token, status)
                      VALUES (?, ?, ?, 1, ?, ?, 'active')"
                 )->execute([$ruleId, $fuE, $fuN, $nextSend, $tTok]);
+                $cId = (int)db()->lastInsertId();
                 $enrolledFU++;
+                try {
+                    db()->prepare("INSERT INTO email_followup_queue (user_id, campaign_id, rule_id, contact_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token) VALUES (?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?)")
+                        ->execute([$userId, $ruleId, $cId, $fuE, $fuN, $delay1Val, $delay1Unit, $delay1Mins, $nextSend, $tTok]);
+                } catch (Throwable $_qe) {}
             } elseif ($exRow['status'] === 'completed') {
                 db()->prepare("UPDATE followup_contacts SET current_step=1, next_send_at=?, tracking_token=?, status='active', last_sent_at=NULL, opened_at=NULL WHERE id=?")
                     ->execute([$nextSend, $tTok, $exRow['id']]);
                 $enrolledFU++;
+                try {
+                    db()->prepare("INSERT INTO email_followup_queue (user_id, campaign_id, rule_id, contact_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token) VALUES (?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?) ON DUPLICATE KEY UPDATE scheduled_at=VALUES(scheduled_at), status='scheduled'")
+                        ->execute([$userId, $ruleId, (int)$exRow['id'], $fuE, $fuN, $delay1Val, $delay1Unit, $delay1Mins, $nextSend, $tTok]);
+                } catch (Throwable $_qe) {}
             }
         }
 

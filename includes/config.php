@@ -1067,3 +1067,149 @@ function resolveConversationThreadId(
     return 'th_' . substr(md5($fromEmail . '|' . $cleanSub . '|' . microtime(true)), 0, 16);
 }
 
+/**
+ * Automatically enroll an incoming lead/email into Follow-Up sequence simultaneously.
+ * Can be triggered from IMAP IDLE push, cron inbound check, or manual inbound sync.
+ *
+ * @param string $email Recipient/lead email address
+ * @param string $name Recipient/lead name
+ * @param int $userId Owner user ID
+ * @param int $imapId Source IMAP account ID
+ * @param int $preferredFuRuleId Optional specific linked Follow-Up Rule ID
+ * @return array List of enrolled rule IDs/details
+ */
+function autoEnrollInFollowup(string $email, string $name = '', int $userId = 1, int $imapId = 0, int $preferredFuRuleId = 0): array {
+    $email = strtolower(trim($email));
+    if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) return [];
+    
+    if (function_exists('isBlacklisted') && isBlacklisted($email, $userId)) {
+        return [];
+    }
+
+    $enrolled = [];
+
+    try {
+        $pdo = db();
+        $rules = [];
+
+        // 1. If preferred rule ID is provided and active
+        if ($preferredFuRuleId > 0) {
+            $stmt = $pdo->prepare("SELECT r.* FROM followup_rules r JOIN users u ON u.id = r.user_id WHERE r.id = ? AND r.status = 'active' AND u.status = 'active'");
+            $stmt->execute([$preferredFuRuleId]);
+            $r = $stmt->fetch();
+            if ($r) $rules[] = $r;
+        }
+
+        // 2. If no preferred rule or it didn't match, look for active rules for this user & IMAP
+        if (empty($rules)) {
+            $sql = "SELECT r.* FROM followup_rules r 
+                    JOIN users u ON u.id = r.user_id 
+                    WHERE r.user_id = ? AND r.status = 'active' AND u.status = 'active'";
+            if ($imapId > 0) {
+                $sql .= " AND (r.imap_id IS NULL OR r.imap_id = 0 OR r.imap_id = ?)";
+                $stmt = $pdo->prepare($sql . " ORDER BY (r.imap_id = ?) DESC, r.id ASC");
+                $stmt->execute([$userId, $imapId, $imapId]);
+            } else {
+                $stmt = $pdo->prepare($sql . " ORDER BY r.id ASC");
+                $stmt->execute([$userId]);
+            }
+            $rules = $stmt->fetchAll();
+        }
+
+        if (empty($rules)) {
+            return [];
+        }
+
+        foreach ($rules as $rule) {
+            $ruleId = (int)$rule['id'];
+            $rUserId = (int)$rule['user_id'];
+
+            // Check if contact already enrolled in this rule
+            $cCheck = $pdo->prepare("SELECT id, status, current_step, next_send_at FROM followup_contacts WHERE rule_id = ? AND LOWER(email) = ?");
+            $cCheck->execute([$ruleId, $email]);
+            $contact = $cCheck->fetch();
+
+            // If already active, do not overwrite unless completed
+            if ($contact && $contact['status'] === 'active') {
+                continue;
+            }
+
+            // Determine Step 1 delay
+            $delayVal = 30;
+            $delayUnit = 'minutes';
+            try {
+                $sStmt = $pdo->prepare("SELECT delay_value, delay_unit, delay_minutes FROM followup_steps WHERE rule_id = ? ORDER BY step_number ASC LIMIT 1");
+                $sStmt->execute([$ruleId]);
+                $sRow = $sStmt->fetch();
+                if ($sRow) {
+                    $delayVal = max(0, (int)($sRow['delay_value'] ?? $sRow['delay_minutes'] ?? 30));
+                    $delayUnit = in_array(strtolower($sRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($sRow['delay_unit']) : 'minutes';
+                }
+            } catch (Throwable $_dle) {}
+
+            $delayMins = delayToMinutes($delayVal, $delayUnit);
+            $nextSendAt = date('Y-m-d H:i:s', strtotime("+{$delayMins} minutes"));
+            $trackingToken = generateTrackingToken();
+
+            // Insert or Re-activate in followup_contacts
+            if (!$contact) {
+                $insContact = $pdo->prepare(
+                    "INSERT INTO followup_contacts 
+                     (rule_id, email, name, current_step, next_send_at, tracking_token, status, enrolled_at)
+                     VALUES (?, ?, ?, 1, ?, ?, 'active', NOW())"
+                );
+                $insContact->execute([$ruleId, $email, $name, $nextSendAt, $trackingToken]);
+                $contactId = (int)$pdo->lastInsertId();
+            } else {
+                $contactId = (int)$contact['id'];
+                $pdo->prepare(
+                    "UPDATE followup_contacts 
+                     SET current_step = 1, next_send_at = ?, tracking_token = ?, status = 'active', 
+                         last_sent_at = NULL, opened_at = NULL, enrolled_at = NOW() 
+                     WHERE id = ?"
+                )->execute([$nextSendAt, $trackingToken, $contactId]);
+            }
+
+            // Also register in email_followup_queue for worker dispatching
+            try {
+                $insQ = $pdo->prepare(
+                    "INSERT INTO email_followup_queue 
+                     (user_id, campaign_id, rule_id, contact_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
+                     VALUES (?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'scheduled', ?)
+                     ON DUPLICATE KEY UPDATE scheduled_at = VALUES(scheduled_at), status = 'scheduled'"
+                );
+                $insQ->execute([
+                    $rUserId, $ruleId, $contactId, $email, $name,
+                    $delayVal, $delayUnit, $delayMins, $nextSendAt, $trackingToken
+                ]);
+                $qId = (int)$pdo->lastInsertId();
+            } catch (Throwable $_qe) {
+                $qId = null;
+            }
+
+            // Sync with autoreply_threads if exists
+            try {
+                $pdo->prepare("UPDATE autoreply_threads SET followup_status = 'running', followup_next_run = ? WHERE from_email = ?")
+                    ->execute([$nextSendAt, $email]);
+            } catch (Throwable $_te) {}
+
+            // Log event
+            if (function_exists('logSystemEvent')) {
+                logSystemEvent('queued', $email, "Follow-up #1 scheduled for {$nextSendAt} (+{$delayVal} {$delayUnit}) [via Inbound Lead]", $rUserId, null, $ruleId, $qId, $trackingToken);
+            }
+
+            $enrolled[] = [
+                'rule_id' => $ruleId,
+                'rule_name' => $rule['name'] ?? '',
+                'contact_id' => $contactId,
+                'scheduled_at' => $nextSendAt
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log("autoEnrollInFollowup error: " . $e->getMessage());
+    }
+
+    return $enrolled;
+}
+
+
