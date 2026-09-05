@@ -15,6 +15,7 @@ function getConfig() {
 }
 function isInstalled() { return !empty(getConfig()['installed']); }
 
+if (!function_exists('db')) {
 function db() {
     static $pdo = null;
     if ($pdo) return $pdo;
@@ -37,7 +38,7 @@ function db() {
     // Runs once per request process to ensure all required tables and columns exist
     static $migrated = false;
     $markerFile = __DIR__ . '/../.migration_done';
-    $migrationVersion = '17'; // bump this when adding new migrations
+    $migrationVersion = '20'; // bump this when adding new migrations
     $currentVersion = @file_get_contents($markerFile);
     if (!$migrated && trim($currentVersion) !== $migrationVersion) {
         $migrated = true;
@@ -236,7 +237,83 @@ function db() {
                 INDEX `idx_eoe_bot` (`is_bot`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
             "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `image_upload` TINYINT(1) DEFAULT 1",
-            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `lead_delete` TINYINT(1) DEFAULT 1"
+            "ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `lead_delete` TINYINT(1) DEFAULT 1",
+            "CREATE TABLE IF NOT EXISTS `dkim_keys` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL DEFAULT 1,
+                `domain` VARCHAR(255) NOT NULL,
+                `selector` VARCHAR(64) NOT NULL DEFAULT 'mailpro',
+                `private_key` TEXT NOT NULL,
+                `public_key` TEXT NOT NULL,
+                `dns_record` TEXT DEFAULT NULL,
+                `dns_verified` TINYINT(1) DEFAULT 0,
+                `last_verified_at` DATETIME DEFAULT NULL,
+                `is_active` TINYINT(1) DEFAULT 1,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY `uq_dkim_dom_sel` (`domain`, `selector`),
+                INDEX `idx_dkim_user` (`user_id`),
+                INDEX `idx_dkim_domain` (`domain`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `soft_bounces` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT DEFAULT NULL,
+                `email` VARCHAR(255) NOT NULL,
+                `bounce_count` INT NOT NULL DEFAULT 1,
+                `last_bounce_code` VARCHAR(32) DEFAULT NULL,
+                `last_diagnostic` TEXT DEFAULT NULL,
+                `first_bounced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `last_bounced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY `uq_sb_user_email` (`user_id`, `email`),
+                INDEX `idx_sb_email` (`email`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `bounce_mailboxes` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL DEFAULT 1,
+                `name` VARCHAR(150) NOT NULL,
+                `host` VARCHAR(255) NOT NULL,
+                `port` INT DEFAULT 993,
+                `secure` TINYINT(1) DEFAULT 1,
+                `username` VARCHAR(255) NOT NULL,
+                `password` VARCHAR(255) NOT NULL,
+                `delete_after_processing` TINYINT(1) DEFAULT 0,
+                `is_active` TINYINT(1) DEFAULT 1,
+                `last_polled_at` DATETIME DEFAULT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_bm_user` (`user_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `dkim_domain` VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `dkim_selector` VARCHAR(64) DEFAULT NULL",
+            "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `bounce_domain` VARCHAR(255) DEFAULT NULL",
+            "ALTER TABLE `emails` MODIFY COLUMN `status` ENUM('active','unsubscribed','bounced') DEFAULT 'active'",
+            "CREATE TABLE IF NOT EXISTS `queue_jobs` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `queue` VARCHAR(64) NOT NULL DEFAULT 'default',
+                `priority` INT NOT NULL DEFAULT 50,
+                `status` ENUM('pending','reserved','completed','failed') NOT NULL DEFAULT 'pending',
+                `payload` LONGTEXT NOT NULL,
+                `attempts` INT NOT NULL DEFAULT 0,
+                `max_attempts` INT NOT NULL DEFAULT 3,
+                `reserved_at` DATETIME DEFAULT NULL,
+                `reserved_by` VARCHAR(64) DEFAULT NULL,
+                `available_at` DATETIME NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `last_error` TEXT DEFAULT NULL,
+                INDEX `idx_qj_fetch` (`queue`, `status`, `available_at`, `priority` DESC, `id` ASC),
+                INDEX `idx_qj_status` (`status`),
+                INDEX `idx_qj_avail` (`available_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `failed_jobs` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `job_id` BIGINT NOT NULL,
+                `queue` VARCHAR(64) NOT NULL,
+                `payload` LONGTEXT NOT NULL,
+                `exception` LONGTEXT NOT NULL,
+                `failed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_fj_queue` (`queue`),
+                INDEX `idx_fj_failed` (`failed_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         ];
         foreach ($migrations as $sql) {
             try { $pdo->exec($sql); } catch (Exception $e) { /* ignore */ }
@@ -365,6 +442,16 @@ function db() {
         // Add index on emails.created_at for faster today/month leads queries
         try { $pdo->exec("ALTER TABLE `emails` ADD INDEX `idx_em_created` (`created_at`)"); } catch (Exception $e) {}
 
+        // Phase 5: High-Volume Composite Indexes & Archive Tables
+        try {
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `system_logs_archive` LIKE `system_logs`");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `send_logs_archive` LIKE `send_logs`");
+        } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `send_logs` ADD INDEX `idx_sl_user_sent_status` (`user_id`, `sent_at`, `status`)"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `system_logs` ADD INDEX `idx_slog_user_type_created` (`user_id`, `event_type`, `created_at`)"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `queue_jobs` ADD INDEX `idx_qj_sched_prio` (`status`, `available_at`, `priority`)"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `email_open_events` ADD INDEX `idx_eoe_token_created` (`tracking_token`, `created_at`)"); } catch (\Throwable $e) {}
+
         // Automatic historical sync for email tracking
         try {
             if (file_exists(__DIR__ . '/tracking_engine.php')) {
@@ -378,6 +465,7 @@ function db() {
         @file_put_contents($markerFile, $migrationVersion);
     }
     return $pdo;
+}
 }
 
 function startSecureSession() {

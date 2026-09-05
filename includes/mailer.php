@@ -153,24 +153,48 @@ class Mailer {
      * $inlineImages = [['cid'=>'img1','path'=>'/full/path.jpg','mime'=>'image/jpeg'], ...]
      */
     public function send($to, $toName, $subject, $html, $text = '', $inlineImages = [], array $options = []) {
-        $sock = $this->connect();
+        $userId = (int)($options['user_id'] ?? ($this->cfg['user_id'] ?? 1));
+
+        // ── DELIVERABILITY GATEKEEPER (Pre-send suppression check) ───────
+        if (!isset($options['check_blacklist']) || !empty($options['check_blacklist'])) {
+            if (function_exists('isBlacklisted') && isBlacklisted($to, $userId)) {
+                throw new Exception("Recipient <{$to}> is blacklisted or suppressed (Hard Bounce or Opt-out). Sending aborted to protect domain reputation.");
+            }
+        }
+
         $from = $this->cfg['from_email'];
 
         // Normalise from address — strip any display-name wrapping if present
         if (preg_match('/<([^>]+)>/', $from, $m)) $from = trim($m[1]);
         $from = trim($from);
 
-        // MAIL FROM — envelope sender must exactly match the authenticated from_email.
-        // Using a mismatched or non-existent address causes Exim/cPanel shared hosting
-        // to do a "sender callout verification" and reject with:
-        //   "Sender verify failed — No Such User Here"
-        // The envelope MAIL FROM must be the real, deliverable mailbox on this SMTP.
-        $this->cmd($sock, "MAIL FROM:<{$from}>");
+        // ── VERP ENVELOPE SENDER RESOLUTION ───────────────────────────────
+        $bounceDomain = $options['bounce_domain'] ?? ($this->cfg['bounce_domain'] ?? '');
+        $envelopeSender = $from;
+        if (!empty($bounceDomain)) {
+            if (!class_exists('BounceProcessor')) {
+                require_once __DIR__ . '/bounce_processor.php';
+            }
+            $envelopeSender = BounceProcessor::generateVerpAddress(
+                $bounceDomain,
+                $userId,
+                $options['campaign_id'] ?? null,
+                $options['lead_id'] ?? null,
+                $to
+            );
+        } elseif (!empty($options['return_path'])) {
+            $envelopeSender = trim($options['return_path']);
+        }
+
+        $sock = $this->connect();
+
+        // MAIL FROM — envelope sender (uses VERP when enabled, otherwise sender mailbox)
+        $this->cmd($sock, "MAIL FROM:<{$envelopeSender}>");
         $mfr = $this->read($sock);
         if (strpos($mfr, '250') === false) {
             $clean = trim(preg_replace('/^\d+[\s-]*/m', '', $mfr));
             @fclose($sock);
-            throw new Exception("Sender rejected: {$clean} — Ensure '{$from}' is authorised to send via this SMTP and SPF/DKIM are configured.");
+            throw new Exception("Sender rejected: {$clean} — Ensure '{$envelopeSender}' is authorised to send via this SMTP.");
         }
 
         // RCPT TO
@@ -324,8 +348,7 @@ class Mailer {
         $unsubHdrs = '';
 
         // Deliverability compliance headers
-        $returnPathVal = !empty($options['return_path']) ? trim($options['return_path']) : $from;
-        $deliverabilityHdrs  = "Return-Path: <{$returnPathVal}>\r\n";
+        $deliverabilityHdrs  = "Return-Path: <{$envelopeSender}>\r\n";
         $deliverabilityHdrs .= "X-Mailer: Mailpro/4.0\r\n";
         $deliverabilityHdrs .= "Feedback-ID: mailpro:campaign:user{$this->cfg['user_id']}:general\r\n";
 
@@ -443,6 +466,43 @@ class Mailer {
             $msg .= "\r\n";
 
             $msg .= "--{$bAlt}--\r\n";
+        }
+
+        // ── IN-APP DKIM CRYPTOGRAPHIC SIGNING (RFC 6376) ──────────────────
+        try {
+            if (!class_exists('DkimSigner')) {
+                require_once __DIR__ . '/dkim.php';
+            }
+
+            $dkimKey = null;
+            if (!empty($options['dkim']['private_key'])) {
+                $dkimKey = $options['dkim'];
+            } elseif (!empty($this->cfg['dkim']['private_key'])) {
+                $dkimKey = $this->cfg['dkim'];
+            } else {
+                $dkimKey = DkimSigner::getActiveKeyForDomain($fromDomain, $userId);
+            }
+
+            if ($dkimKey && !empty($dkimKey['private_key'])) {
+                $parts = explode("\r\n\r\n", $msg, 2);
+                if (count($parts) === 2) {
+                    $rawHdrs = $parts[0];
+                    $rawBody = $parts[1];
+                    $dkimDomain = $dkimKey['domain'] ?? $fromDomain;
+                    $dkimSelector = $dkimKey['selector'] ?? 'mailpro';
+
+                    $dkimHeader = DkimSigner::signMessage(
+                        $rawHdrs,
+                        $rawBody,
+                        $dkimDomain,
+                        $dkimSelector,
+                        $dkimKey['private_key']
+                    );
+                    $msg = $dkimHeader . $msg;
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("[Mailer DKIM Warning] Signing failed: " . $e->getMessage());
         }
 
         // SMTP dot-stuffing: lines starting with "." must be doubled.

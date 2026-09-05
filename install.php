@@ -507,6 +507,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INDEX `idx_eoe_country` (`country_code`),
                     INDEX `idx_eoe_opened` (`opened_at`),
                     INDEX `idx_eoe_bot` (`is_bot`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+                // 25. DKIM KEYS
+                "CREATE TABLE IF NOT EXISTS `dkim_keys` (
+                    `id`               INT AUTO_INCREMENT PRIMARY KEY,
+                    `user_id`          INT NOT NULL DEFAULT 1,
+                    `domain`           VARCHAR(255) NOT NULL,
+                    `selector`         VARCHAR(64) NOT NULL DEFAULT 'mailpro',
+                    `private_key`      TEXT NOT NULL,
+                    `public_key`       TEXT NOT NULL,
+                    `dns_record`       TEXT DEFAULT NULL,
+                    `dns_verified`     TINYINT(1) DEFAULT 0,
+                    `last_verified_at` DATETIME DEFAULT NULL,
+                    `is_active`        TINYINT(1) DEFAULT 1,
+                    `created_at`       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at`       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uq_dkim_dom_sel` (`domain`, `selector`),
+                    INDEX `idx_dkim_user` (`user_id`),
+                    INDEX `idx_dkim_domain` (`domain`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+                // 26. SOFT BOUNCES
+                "CREATE TABLE IF NOT EXISTS `soft_bounces` (
+                    `id`               BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    `user_id`          INT DEFAULT NULL,
+                    `email`            VARCHAR(255) NOT NULL,
+                    `bounce_count`     INT NOT NULL DEFAULT 1,
+                    `last_bounce_code` VARCHAR(32) DEFAULT NULL,
+                    `last_diagnostic`  TEXT DEFAULT NULL,
+                    `first_bounced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `last_bounced_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uq_sb_user_email` (`user_id`, `email`),
+                    INDEX `idx_sb_email` (`email`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+                // 27. BOUNCE MAILBOXES
+                "CREATE TABLE IF NOT EXISTS `bounce_mailboxes` (
+                    `id`                      INT AUTO_INCREMENT PRIMARY KEY,
+                    `user_id`                 INT NOT NULL DEFAULT 1,
+                    `name`                    VARCHAR(150) NOT NULL,
+                    `host`                    VARCHAR(255) NOT NULL,
+                    `port`                    INT DEFAULT 993,
+                    `secure`                  TINYINT(1) DEFAULT 1,
+                    `username`                VARCHAR(255) NOT NULL,
+                    `password`                VARCHAR(255) NOT NULL,
+                    `delete_after_processing` TINYINT(1) DEFAULT 0,
+                    `is_active`               TINYINT(1) DEFAULT 1,
+                    `last_polled_at`          DATETIME DEFAULT NULL,
+                    `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_bm_user` (`user_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+                // 28. ASYNCHRONOUS QUEUE JOBS
+                "CREATE TABLE IF NOT EXISTS `queue_jobs` (
+                    `id`           BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    `queue`        VARCHAR(64) NOT NULL DEFAULT 'default',
+                    `priority`     INT NOT NULL DEFAULT 50,
+                    `status`       ENUM('pending','reserved','completed','failed') NOT NULL DEFAULT 'pending',
+                    `payload`      LONGTEXT NOT NULL,
+                    `attempts`     INT NOT NULL DEFAULT 0,
+                    `max_attempts` INT NOT NULL DEFAULT 3,
+                    `reserved_at`  DATETIME DEFAULT NULL,
+                    `reserved_by`  VARCHAR(64) DEFAULT NULL,
+                    `available_at` DATETIME NOT NULL,
+                    `created_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    `last_error`   TEXT DEFAULT NULL,
+                    INDEX `idx_qj_fetch` (`queue`, `status`, `available_at`, `priority` DESC, `id` ASC),
+                    INDEX `idx_qj_status` (`status`),
+                    INDEX `idx_qj_avail` (`available_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+                // 29. DEAD-LETTER QUEUE (FAILED JOBS)
+                "CREATE TABLE IF NOT EXISTS `failed_jobs` (
+                    `id`        BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    `job_id`    BIGINT NOT NULL,
+                    `queue`     VARCHAR(64) NOT NULL,
+                    `payload`   LONGTEXT NOT NULL,
+                    `exception` LONGTEXT NOT NULL,
+                    `failed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_fj_queue` (`queue`),
+                    INDEX `idx_fj_failed` (`failed_at`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             ];
 
@@ -594,6 +676,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "ALTER TABLE `followup_contacts` ADD COLUMN IF NOT EXISTS `open_count` INT NOT NULL DEFAULT 0",
                 "ALTER TABLE `followup_contacts` ADD COLUMN IF NOT EXISTS `click_count` INT NOT NULL DEFAULT 0",
                 "CREATE TABLE IF NOT EXISTS `backup_emails` (`id` INT AUTO_INCREMENT PRIMARY KEY, `user_id` INT NOT NULL DEFAULT 1, `email` VARCHAR(255) NOT NULL, `name` VARCHAR(150) DEFAULT NULL, `source` ENUM('autoreply','followup') NOT NULL DEFAULT 'autoreply', `rule_id` INT DEFAULT NULL, `first_seen` TIMESTAMP DEFAULT CURRENT_TIMESTAMP, `last_replied_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY `uq_backup_user_email` (`user_id`,`email`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `dkim_domain` VARCHAR(255) DEFAULT NULL",
+                "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `dkim_selector` VARCHAR(64) DEFAULT NULL",
+                "ALTER TABLE `smtp_providers` ADD COLUMN IF NOT EXISTS `bounce_domain` VARCHAR(255) DEFAULT NULL",
+                "ALTER TABLE `emails` MODIFY COLUMN `status` ENUM('active','unsubscribed','bounced') DEFAULT 'active'"
             ];
 
             foreach ($migrations as $sql) {

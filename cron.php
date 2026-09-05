@@ -16,6 +16,7 @@
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/mailer.php';
 require_once __DIR__ . '/includes/imap.php';
+require_once __DIR__ . '/includes/queue.php';
 
 if (php_sapi_name() !== 'cli') {
     $cfg = getConfig();
@@ -2255,6 +2256,81 @@ try {
     $results[] = ['status'=>'error', 'message'=>'FollowUp error: ' . $e->getMessage()];
 }
 
+// ─────────────────────────────────────────────────────────────────
+// SECTION 5: AUTOMATED BOUNCE PROCESSING (ENTERPRISE VERP & DSN)
+// ─────────────────────────────────────────────────────────────────
+try {
+    require_once __DIR__ . '/includes/bounce_processor.php';
+    $bounceBoxes = db()->query("SELECT * FROM bounce_mailboxes WHERE is_active = 1")->fetchAll();
+    if (!empty($bounceBoxes)) {
+        foreach ($bounceBoxes as $mb) {
+            $bRes = BounceProcessor::processImapBounceMailbox($mb);
+            if ($bRes['total_checked'] > 0 || !empty($bRes['errors'])) {
+                $results[] = [
+                    'status'       => 'bounce_proc',
+                    'mailbox'      => $mb['name'] ?? $mb['username'],
+                    'processed'    => $bRes['processed'],
+                    'hard_bounces' => $bRes['hard_bounces'],
+                    'soft_bounces' => $bRes['soft_bounces'],
+                    'skipped'      => $bRes['skipped'],
+                    'errors'       => $bRes['errors']
+                ];
+            }
+        }
+    }
+} catch (Throwable $e) {
+    $results[] = ['status' => 'bounce_warn', 'message' => 'Bounce processor notice: ' . $e->getMessage()];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SECTION 6: INLINE ASYNC QUEUE RUNNER (ZERO-FAIL BACKWARD COMPAT)
+// ─────────────────────────────────────────────────────────────────
+try {
+    if (class_exists('QueueManager')) {
+        $processedQueueJobs = 0;
+        // Process up to 25 pending queue jobs per cron execution
+        while ($processedQueueJobs < 25) {
+            $qJob = QueueManager::reserveNextJob([], 'cron_inline');
+            if (!$qJob) break;
+            try {
+                QueueManager::executeJob($qJob);
+                QueueManager::markCompleted((int)$qJob['id']);
+                $processedQueueJobs++;
+            } catch (\Throwable $qe) {
+                QueueManager::markFailed($qJob, $qe);
+                $processedQueueJobs++;
+            }
+        }
+        if ($processedQueueJobs > 0) {
+            $results[] = ['status' => 'queue_inline', 'processed' => $processedQueueJobs];
+        }
+    }
+} catch (Throwable $e) {
+    $results[] = ['status' => 'queue_warn', 'message' => 'Queue runner notice: ' . $e->getMessage()];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SECTION 7: AUTOMATED DATABASE MAINTENANCE & QUEUE CLEANUP
+// ─────────────────────────────────────────────────────────────────
+try {
+    $maintMarker = __DIR__ . '/.maint_last_run';
+    $lastMaint = @file_get_contents($maintMarker);
+    $todayDate = date('Y-m-d');
+    if (trim((string)$lastMaint) !== $todayDate) {
+        @file_put_contents($maintMarker, $todayDate);
+        if (file_exists(__DIR__ . '/includes/archiver.php')) {
+            require_once __DIR__ . '/includes/archiver.php';
+            $cleaned = DatabaseArchiver::cleanQueueJobs(24);
+            $results[] = ['status' => 'db_maintenance', 'cleaned_jobs' => $cleaned];
+        }
+        if (file_exists(__DIR__ . '/includes/partition_manager.php')) {
+            require_once __DIR__ . '/includes/partition_manager.php';
+            PartitionManager::ensureFuturePartitions('system_logs');
+        }
+    }
+} catch (Throwable $e) {
+    // Non-blocking
+}
 
 // ─────────────────────────────────────────────────────────────────
 // OUTPUT
@@ -2308,6 +2384,14 @@ foreach($results as $r){
             echo "[FU] {$r['rule']} | imap_msgs:{$r['imap_msgs']} enrolled:{$r['new_enrolled']} sent:{$r['sent']} failed:{$r['failed']}\n";break;
         case 'ar_warn':case 'fu_warn':
             echo "[{$tag}] {$r['rule']}: {$r['message']}\n";break;
+        case 'bounce_proc':
+            echo "[BOUNCE] {$r['mailbox']} | processed:{$r['processed']} hard:{$r['hard_bounces']} soft:{$r['soft_bounces']} skipped:{$r['skipped']}\n";break;
+        case 'bounce_warn':
+            echo "[BOUNCE WARN] {$r['message']}\n";break;
+        case 'queue_inline':
+            echo "[QUEUE INLINE] Processed {$r['processed']} queued jobs\n";break;
+        case 'queue_warn':
+            echo "[QUEUE WARN] {$r['message']}\n";break;
         case 'error':
             echo "[ERROR] ".($r['message']??'')."\n";break;
         default:

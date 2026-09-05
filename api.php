@@ -283,6 +283,18 @@ if ($CUR['status']==='suspended') jsonOut(['error'=>'Account suspended'],403);
 $UID = (int)$CUR['id'];
 $IS_ADMIN = (bool)$CUR['is_admin'];
 
+// ── PSR-4 MODULAR ROUTING DISPATCHER (PHASE 6) ───────────────────
+require_once __DIR__ . '/src/Kernel/Autoloader.php';
+\Mailpro\Kernel\Autoloader::register(__DIR__ . '/src');
+
+if (\Mailpro\Kernel\Router::hasRoute($res)) {
+    $request = \Mailpro\Kernel\Request::capture($CUR);
+    $response = \Mailpro\Kernel\Router::dispatch($request);
+    if ($response !== null) {
+        $response->send();
+    }
+}
+
 /**
  * Resolve a dashboard date-range filter into ISO datetime bounds.
  *
@@ -4337,6 +4349,412 @@ if ($res === 'blocked-skipped') {
         } catch (Exception $e) {
             jsonOut(['ok' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── DKIM KEY MANAGEMENT (ENTERPRISE DELIVERABILITY) ───────────────
+if ($res === 'dkim') {
+    require_once __DIR__ . '/includes/dkim.php';
+    $b = body();
+
+    // 1. LIST DKIM KEYS
+    if ($method === 'GET' && ($id === null || $id === 'list')) {
+        $where = $IS_ADMIN ? '1=1' : "user_id = {$UID}";
+        $stmt = db()->query("SELECT id, user_id, domain, selector, public_key, dns_record, dns_verified, last_verified_at, is_active, created_at, updated_at FROM dkim_keys WHERE {$where} ORDER BY id DESC");
+        $keys = $stmt->fetchAll();
+        foreach ($keys as &$k) {
+            $dnsInfo = DkimSigner::getDnsRecordInfo($k['domain'], $k['selector'], $k['public_key']);
+            $k['dns_host'] = $dnsInfo['host'];
+            $k['dns_value'] = $dnsInfo['value'];
+        }
+        jsonOut(['ok' => true, 'keys' => $keys]);
+    }
+
+    // 2. GENERATE NEW 2048-BIT KEYPAIR
+    if ($method === 'POST' && $id === 'generate') {
+        $domain = strtolower(trim($b['domain'] ?? ''));
+        $selector = trim($b['selector'] ?? 'mailpro') ?: 'mailpro';
+        if (!$domain) jsonOut(['ok' => false, 'error' => 'Domain is required'], 400);
+
+        try {
+            $kp = DkimSigner::generateKeyPair(2048);
+            $dnsInfo = DkimSigner::getDnsRecordInfo($domain, $selector, $kp['public_key']);
+            jsonOut([
+                'ok'          => true,
+                'domain'      => $domain,
+                'selector'    => $selector,
+                'private_key' => $kp['private_key'],
+                'public_key'  => $kp['public_key'],
+                'dns_host'    => $dnsInfo['host'],
+                'dns_value'   => $dnsInfo['value']
+            ]);
+        } catch (\Throwable $e) {
+            jsonOut(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    // 3. SAVE / UPSERT DKIM KEY
+    if ($method === 'POST' && ($id === 'save' || $id === null)) {
+        $domain = strtolower(trim($b['domain'] ?? ''));
+        $selector = trim($b['selector'] ?? 'mailpro') ?: 'mailpro';
+        $privateKey = trim($b['private_key'] ?? '');
+        $publicKey = trim($b['public_key'] ?? '');
+        $isActive = isset($b['is_active']) ? (int)(bool)$b['is_active'] : 1;
+
+        if (!$domain || !$privateKey) {
+            jsonOut(['ok' => false, 'error' => 'Domain and Private Key are required'], 400);
+        }
+
+        // If public key omitted, derive from private key
+        if (!$publicKey) {
+            $pkRes = openssl_pkey_get_private($privateKey);
+            if ($pkRes) {
+                $details = openssl_pkey_get_details($pkRes);
+                $publicKey = $details['key'] ?? '';
+            }
+        }
+        if (!$publicKey) {
+            jsonOut(['ok' => false, 'error' => 'Invalid private key: could not derive public key'], 400);
+        }
+
+        $dnsInfo = DkimSigner::getDnsRecordInfo($domain, $selector, $publicKey);
+
+        try {
+            $stmt = db()->prepare(
+                "INSERT INTO dkim_keys (user_id, domain, selector, private_key, public_key, dns_record, is_active, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE
+                    private_key = VALUES(private_key),
+                    public_key  = VALUES(public_key),
+                    dns_record  = VALUES(dns_record),
+                    is_active   = VALUES(is_active),
+                    updated_at  = NOW()"
+            );
+            $stmt->execute([$UID, $domain, $selector, $privateKey, $publicKey, $dnsInfo['value'], $isActive]);
+            jsonOut(['ok' => true, 'message' => 'DKIM Key saved successfully', 'dns_host' => $dnsInfo['host'], 'dns_value' => $dnsInfo['value']]);
+        } catch (\Throwable $e) {
+            jsonOut(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    // 4. LIVE DNS VERIFY
+    if (($method === 'GET' || $method === 'POST') && $id === 'verify') {
+        $keyId = (int)($b['id'] ?? ($_GET['id'] ?? 0));
+        $domain = strtolower(trim($b['domain'] ?? ($_GET['domain'] ?? '')));
+        $selector = trim($b['selector'] ?? ($_GET['selector'] ?? 'mailpro')) ?: 'mailpro';
+        $pubKey = null;
+
+        if ($keyId > 0) {
+            $s = db()->prepare("SELECT * FROM dkim_keys WHERE id = ?" . ($IS_ADMIN ? "" : " AND user_id = {$UID}"));
+            $s->execute([$keyId]);
+            $row = $s->fetch();
+            if ($row) {
+                $domain = $row['domain'];
+                $selector = $row['selector'];
+                $pubKey = $row['public_key'];
+            }
+        }
+
+        if (!$domain) jsonOut(['ok' => false, 'error' => 'Domain is required'], 400);
+
+        $res = DkimSigner::verifyDnsRecord($domain, $selector, $pubKey);
+
+        if ($keyId > 0 && $res['verified']) {
+            try {
+                db()->prepare("UPDATE dkim_keys SET dns_verified = 1, last_verified_at = NOW() WHERE id = ?")->execute([$keyId]);
+            } catch (\Throwable $e) {}
+        }
+
+        jsonOut([
+            'ok'       => true,
+            'verified' => $res['verified'],
+            'message'  => $res['message'],
+            'host'     => $selector . '._domainkey.' . $domain,
+            'record'   => $res['found']
+        ]);
+    }
+
+    // 5. DELETE DKIM KEY
+    if ($method === 'DELETE' || ($method === 'POST' && $id === 'delete')) {
+        $keyId = (int)($b['id'] ?? ($id !== 'delete' ? $id : 0));
+        if ($keyId <= 0) jsonOut(['ok' => false, 'error' => 'Invalid ID'], 400);
+
+        $sql = "DELETE FROM dkim_keys WHERE id = ?" . ($IS_ADMIN ? "" : " AND user_id = {$UID}");
+        $stmt = db()->prepare($sql);
+        $stmt->execute([$keyId]);
+        jsonOut(['ok' => true, 'message' => 'DKIM Key deleted']);
+    }
+
+    // 6. TOGGLE ACTIVE
+    if ($method === 'POST' && $id === 'toggle') {
+        $keyId = (int)($b['id'] ?? 0);
+        $sql = "UPDATE dkim_keys SET is_active = NOT is_active WHERE id = ?" . ($IS_ADMIN ? "" : " AND user_id = {$UID}");
+        db()->prepare($sql)->execute([$keyId]);
+        jsonOut(['ok' => true, 'message' => 'Status updated']);
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── BOUNCE & SUPPRESSION MANAGEMENT (ENTERPRISE VERP & DSN) ───────
+if ($res === 'bounces') {
+    require_once __DIR__ . '/includes/bounce_processor.php';
+    $b = body();
+
+    // 1. BOUNCE STATS & REPORT
+    if ($method === 'GET' && ($id === null || $id === 'stats')) {
+        $whereUser = $IS_ADMIN ? "1=1" : "user_id = {$UID}";
+        $hardCount = 0; $softCount = 0;
+        try {
+            $hardCount = (int)db()->query("SELECT COUNT(*) FROM blacklist WHERE {$whereUser} AND reason LIKE '%bounce%'")->fetchColumn();
+            $softCount = (int)db()->query("SELECT COUNT(*) FROM soft_bounces WHERE {$whereUser}")->fetchColumn();
+        } catch (\Throwable $e) {}
+
+        // Recent bounces from system_logs
+        $recent = [];
+        try {
+            $s = db()->prepare(
+                "SELECT recipient_email, details, created_at 
+                 FROM system_logs 
+                 WHERE {$whereUser} AND event_type = 'bounced' 
+                 ORDER BY id DESC LIMIT 50"
+            );
+            $s->execute();
+            $recent = $s->fetchAll();
+        } catch (\Throwable $e) {}
+
+        jsonOut([
+            'ok'           => true,
+            'hard_bounces' => $hardCount,
+            'soft_bounces' => $softCount,
+            'recent'       => $recent
+        ]);
+    }
+
+    // 2. BOUNCE MAILBOXES (CRUD)
+    if ($id === 'mailboxes') {
+        if ($method === 'GET') {
+            $where = $IS_ADMIN ? "1=1" : "user_id = {$UID}";
+            $stmt = db()->query("SELECT id, user_id, name, host, port, secure, username, delete_after_processing, is_active, last_polled_at, created_at FROM bounce_mailboxes WHERE {$where} ORDER BY id DESC");
+            jsonOut(['ok' => true, 'mailboxes' => $stmt->fetchAll()]);
+        }
+
+        if ($method === 'POST') {
+            $name = trim($b['name'] ?? '');
+            $host = trim($b['host'] ?? '');
+            $port = (int)($b['port'] ?? 993);
+            $secure = !empty($b['secure']) ? 1 : 0;
+            $username = trim($b['username'] ?? '');
+            $password = trim($b['password'] ?? '');
+            $deleteAfter = !empty($b['delete_after_processing']) ? 1 : 0;
+            $boxId = (int)($b['id'] ?? 0);
+
+            if (!$name || !$host || !$username) {
+                jsonOut(['ok' => false, 'error' => 'Name, Host, and Username are required'], 400);
+            }
+
+            if ($boxId > 0) {
+                $sql = "UPDATE bounce_mailboxes SET name=?, host=?, port=?, secure=?, username=?, delete_after_processing=? " . ($password ? ", password=?" : "") . " WHERE id=? " . ($IS_ADMIN ? "" : "AND user_id={$UID}");
+                $params = [$name, $host, $port, $secure, $username, $deleteAfter];
+                if ($password) $params[] = $password;
+                $params[] = $boxId;
+                db()->prepare($sql)->execute($params);
+            } else {
+                if (!$password) jsonOut(['ok' => false, 'error' => 'Password is required for new mailbox'], 400);
+                $stmt = db()->prepare("INSERT INTO bounce_mailboxes (user_id, name, host, port, secure, username, password, delete_after_processing) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$UID, $name, $host, $port, $secure, $username, $password, $deleteAfter]);
+            }
+            jsonOut(['ok' => true, 'message' => 'Bounce mailbox saved']);
+        }
+
+        if ($method === 'DELETE' && $action !== null) {
+            $delId = (int)$action;
+            $sql = "DELETE FROM bounce_mailboxes WHERE id = ?" . ($IS_ADMIN ? "" : " AND user_id = {$UID}");
+            db()->prepare($sql)->execute([$delId]);
+            jsonOut(['ok' => true, 'message' => 'Bounce mailbox removed']);
+        }
+    }
+
+    // 3. TRIGGER BOUNCE PROCESSOR RUN
+    if ($method === 'POST' && $id === 'process') {
+        $where = $IS_ADMIN ? "is_active = 1" : "is_active = 1 AND user_id = {$UID}";
+        $mailboxes = db()->query("SELECT * FROM bounce_mailboxes WHERE {$where}")->fetchAll();
+
+        $totalResults = ['processed' => 0, 'hard_bounces' => 0, 'soft_bounces' => 0, 'skipped' => 0, 'errors' => []];
+        foreach ($mailboxes as $mb) {
+            $res = BounceProcessor::processImapBounceMailbox($mb);
+            $totalResults['processed']    += $res['processed'];
+            $totalResults['hard_bounces'] += $res['hard_bounces'];
+            $totalResults['soft_bounces'] += $res['soft_bounces'];
+            $totalResults['skipped']      += $res['skipped'];
+            if (!empty($res['errors'])) {
+                $totalResults['errors'] = array_merge($totalResults['errors'], $res['errors']);
+            }
+        }
+
+        jsonOut(['ok' => true, 'results' => $totalResults]);
+    }
+
+    // 4. TEST PARSE RAW BOUNCE
+    if ($method === 'POST' && $id === 'test-parse') {
+        $raw = trim($b['raw_email'] ?? '');
+        if (!$raw) jsonOut(['ok' => false, 'error' => 'raw_email string required'], 400);
+
+        $parts = preg_split("/\r?\n\r?\n/", $raw, 2);
+        $headers = $parts[0] ?? '';
+        $bodyPart = $parts[1] ?? '';
+
+        $parsed = BounceProcessor::parseBounceMessage($headers, $bodyPart);
+        if (!$parsed) {
+            jsonOut(['ok' => false, 'message' => 'Message could not be parsed as a bounce or no recipient found']);
+        }
+
+        jsonOut(['ok' => true, 'parsed' => $parsed]);
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── ASYNCHRONOUS QUEUE & DEAD-LETTER QUEUE (ENTERPRISE SCALING) ──
+if ($res === 'queue') {
+    require_once __DIR__ . '/includes/queue.php';
+    $b = body();
+
+    // 1. QUEUE TELEMETRY & STATS
+    if ($method === 'GET' && ($id === null || $id === 'stats')) {
+        jsonOut(['ok' => true, 'stats' => QueueManager::getStats()]);
+    }
+
+    // 2. FAILED JOBS (DEAD-LETTER QUEUE)
+    if ($method === 'GET' && $id === 'failed') {
+        $limit = min(100, max(1, (int)($_GET['limit'] ?? 50)));
+        $stmt = db()->prepare("SELECT id, job_id, queue, payload, exception, failed_at FROM failed_jobs ORDER BY id DESC LIMIT ?");
+        $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $jobs = $stmt->fetchAll();
+        foreach ($jobs as &$j) {
+            $j['payload_data'] = json_decode($j['payload'], true) ?: [];
+        }
+        jsonOut(['ok' => true, 'failed_jobs' => $jobs]);
+    }
+
+    // 3. RETRY SINGLE FAILED JOB
+    if ($method === 'POST' && $id === 'retry') {
+        $failedJobId = (int)($b['id'] ?? ($_GET['id'] ?? 0));
+        if ($failedJobId <= 0) jsonOut(['ok' => false, 'error' => 'Invalid Failed Job ID'], 400);
+
+        $success = QueueManager::retryFailedJob($failedJobId);
+        if ($success) {
+            jsonOut(['ok' => true, 'message' => "Job #{$failedJobId} re-enqueued for processing"]);
+        } else {
+            jsonOut(['ok' => false, 'error' => 'Failed to retry job or job not found'], 404);
+        }
+    }
+
+    // 4. RETRY ALL FAILED JOBS
+    if ($method === 'POST' && $id === 'retry-all') {
+        $count = QueueManager::retryAllFailedJobs();
+        jsonOut(['ok' => true, 'message' => "Re-enqueued {$count} failed jobs"]);
+    }
+
+    // 5. DELETE FAILED JOB
+    if ($method === 'DELETE' && $id === 'failed' && $action !== null) {
+        $failedJobId = (int)$action;
+        $success = QueueManager::deleteFailedJob($failedJobId);
+        jsonOut(['ok' => $success, 'message' => $success ? 'Failed job removed from DLQ' : 'Not found']);
+    }
+
+    // 6. FLUSH COMPLETED JOBS
+    if ($method === 'POST' && $id === 'flush') {
+        $hours = (int)($b['older_than_hours'] ?? 24);
+        $deleted = QueueManager::flushCompletedJobs($hours);
+        jsonOut(['ok' => true, 'deleted' => $deleted, 'message' => "Flushed {$deleted} completed jobs older than {$hours}h"]);
+    }
+
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── IMAP IDLE REAL-TIME PUSH STATUS ───────────────────────────────
+if ($res === 'idle') {
+    if ($method === 'GET' && ($id === null || $id === 'status')) {
+        $where = $IS_ADMIN ? "1=1" : "user_id = {$UID}";
+        $accounts = db()->query("SELECT id, user_id, name, host, port, secure, username, last_check, last_uid FROM imap_accounts WHERE {$where}")->fetchAll();
+        jsonOut([
+            'ok'             => true,
+            'idle_supported' => true,
+            'total_accounts' => count($accounts),
+            'accounts'       => $accounts
+        ]);
+    }
+    jsonOut(['error' => 'Not found'], 404);
+}
+
+// ── DATABASE MAINTENANCE & HIGH-VOLUME TIME-SERIES ARCHIVE ───────
+if ($res === 'database') {
+    require_once __DIR__ . '/includes/archiver.php';
+    require_once __DIR__ . '/includes/partition_manager.php';
+    $b = body();
+
+    // 1. STORAGE STATS & TABLE SIZES
+    if ($method === 'GET' && ($id === null || $id === 'stats')) {
+        $stats = DatabaseArchiver::getStorageStats();
+        $partSupported = PartitionManager::isSupported();
+        jsonOut([
+            'ok'                  => true,
+            'partition_supported' => $partSupported,
+            'storage'             => $stats
+        ]);
+    }
+
+    // 2. OPTIMIZE / DEFRAGMENT TABLES
+    if ($method === 'POST' && $id === 'optimize') {
+        if (!$IS_ADMIN) jsonOut(['ok' => false, 'error' => 'Admin required'], 403);
+        $res = DatabaseArchiver::optimizeTables();
+        jsonOut($res);
+    }
+
+    // 3. RUN CHUNKED ZERO-LOCK ARCHIVAL
+    if ($method === 'POST' && $id === 'archive') {
+        if (!$IS_ADMIN) jsonOut(['ok' => false, 'error' => 'Admin required'], 403);
+        $days = max(7, (int)($b['days'] ?? 30));
+        $batch = min(5000, max(100, (int)($b['batch'] ?? 1000)));
+
+        $res1 = DatabaseArchiver::archiveTable('system_logs', 'system_logs_archive', 'created_at', $days, $batch);
+        $res2 = DatabaseArchiver::archiveTable('send_logs', 'send_logs_archive', 'sent_at', $days, $batch);
+        $qCleaned = DatabaseArchiver::cleanQueueJobs(24);
+
+        jsonOut([
+            'ok'            => true,
+            'days'          => $days,
+            'system_logs'   => $res1,
+            'send_logs'     => $res2,
+            'queue_cleaned' => $qCleaned
+        ]);
+    }
+
+    // 4. PARTITION STATS
+    if ($method === 'GET' && $id === 'partitions') {
+        $table = trim($_GET['table'] ?? 'system_logs') ?: 'system_logs';
+        $parts = PartitionManager::getPartitionStats($table);
+        jsonOut([
+            'ok'         => true,
+            'table'      => $table,
+            'supported'  => PartitionManager::isSupported(),
+            'partitions' => $parts
+        ]);
+    }
+
+    // 5. DROP EXPIRED PARTITION
+    if ($method === 'POST' && $id === 'drop-partition') {
+        if (!$IS_ADMIN) jsonOut(['ok' => false, 'error' => 'Admin required'], 403);
+        $table = trim($b['table'] ?? 'system_logs');
+        $partition = trim($b['partition'] ?? '');
+        if (!$partition) jsonOut(['ok' => false, 'error' => 'Partition name required'], 400);
+
+        $res = PartitionManager::dropPartition($table, $partition);
+        jsonOut($res);
     }
 
     jsonOut(['error' => 'Not found'], 404);
