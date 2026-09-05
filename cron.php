@@ -1248,11 +1248,12 @@ try {
                 // Completed, do nothing unless restarted via UI
             } else {
                 // ── USER REPLIED (Check duplicate protection) ──
-                $isSameMsgId = ($inMsgId && !empty($thread['last_received_message_id']) && strtolower(trim($thread['last_received_message_id'])) === strtolower(trim($inMsgId)));
-                $isOldUid = ($uid > 0 && $srcId > 0 && !empty($thread['last_trigger_uid']) && $thread['last_trigger_imap_id'] == $srcId && $uid <= $thread['last_trigger_uid']);
+                $cleanInMsgId = trim(str_replace(['<','>'], '', (string)$inMsgId));
+                $cleanThMsgId = trim(str_replace(['<','>'], '', (string)($thread['last_received_message_id'] ?? '')));
+                $isSameMsgId  = ($cleanInMsgId !== '' && $cleanThMsgId !== '' && strtolower($cleanInMsgId) === strtolower($cleanThMsgId));
                 
-                if ($isSameMsgId || $isOldUid) {
-                    continue; // Skip duplicate IMAP sync of the same reply
+                if ($isSameMsgId) {
+                    continue; // Skip duplicate IMAP sync of the exact same message
                 }
 
                 $nc=(int)($thread['messages_received']??1)+1;
@@ -1266,9 +1267,14 @@ try {
                         $unlockStep->execute([$ruleId, (int)$thread['current_step']]);
                         $unlockRow = $unlockStep->fetch();
                         if ($unlockRow) {
-                            $unlockVal  = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
-                            $unlockUnit = strtolower($unlockRow['delay_unit'] ?? 'seconds');
-                            $unlockSecs = function_exists('delayToSeconds') ? delayToSeconds($unlockVal, $unlockUnit) : ($unlockVal * 60);
+                            $isSeq = !empty($rule['sequential_mode']);
+                            if ($isSeq && (empty($unlockRow['delay_value']) || (int)$unlockRow['delay_value'] === 0)) {
+                                $unlockSecs = 0;
+                            } else {
+                                $unlockVal  = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
+                                $unlockUnit = strtolower($unlockRow['delay_unit'] ?? 'seconds');
+                                $unlockSecs = function_exists('delayToSeconds') ? delayToSeconds($unlockVal, $unlockUnit) : ($unlockVal * 60);
+                            }
                         }
                     } catch(Exception $e){}
                     
@@ -1282,6 +1288,11 @@ try {
                             WHERE id=?")
                             ->execute([$nc, $unlockAt, $uid>0?$uid:null, $srcId>0?$srcId:null, $inMsgId?:null, $newRefs, $thread['id']]);
                         logSystemEvent('queued', $fe, "Auto Reply #" . $thread['current_step'] . " scheduled for {$unlockAt} (lead replied)", $userId, null, $ruleId, null, '');
+                        
+                        // Instant dispatch if due now
+                        if ($unlockSecs === 0 && function_exists('processAutoReplyQueue')) {
+                            processAutoReplyQueue(10);
+                        }
                     } catch(Exception $updEx) {}
                 }
             }

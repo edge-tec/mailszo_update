@@ -268,9 +268,13 @@ function recoverStuckPendingThreads(): int {
                     $stepData = $stStmt->fetch();
 
                     if ($stepData) {
-                        $dVal = max(0, (int)($stepData['delay_value'] ?? $stepData['delay_minutes'] ?? 0));
-                        $dUnit = strtolower($stepData['delay_unit'] ?? 'seconds');
-                        $dSecs = delayToSeconds($dVal, $dUnit);
+                        if (empty($stepData['delay_value']) || (int)$stepData['delay_value'] === 0) {
+                            $dSecs = 0;
+                        } else {
+                            $dVal = max(0, (int)($stepData['delay_value'] ?? $stepData['delay_minutes'] ?? 0));
+                            $dUnit = strtolower($stepData['delay_unit'] ?? 'seconds');
+                            $dSecs = delayToSeconds($dVal, $dUnit);
+                        }
                         
                         $schedAt = ($dSecs > 0) ? date('Y-m-d H:i:s', time() + $dSecs) : date('Y-m-d H:i:s');
                         $inMsgId = trim($inb['message_id'] ?? '');

@@ -239,21 +239,27 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                     continue;
                 }
 
-                // Check duplicate reply protection
+                // Duplicate reply protection:
+                // Only skip if the exact same message_id was already processed
                 $cleanInMsgId = trim(str_replace(['<','>'], '', $inMsgId));
                 $cleanThMsgId = trim(str_replace(['<','>'], '', (string)($thread['last_received_message_id'] ?? '')));
                 $isSameMsgId  = ($cleanInMsgId !== '' && $cleanThMsgId !== '' && strtolower($cleanInMsgId) === strtolower($cleanThMsgId));
-                $isOldUid     = ($uid > 0 && !empty($thread['last_trigger_uid']) && (int)$thread['last_trigger_imap_id'] === $accountId && $uid <= (int)$thread['last_trigger_uid']);
 
-                if ($isSameMsgId || $isOldUid) {
-                    echo sprintf("  [Skip] Duplicate reply from <%s> (UID=%d, MsgID=%s). Skipped.\n", $fromEmail, $uid, $inMsgId);
+                if ($isSameMsgId) {
+                    echo sprintf("  [Skip] Duplicate reply from <%s> (same MsgID %s). Skipped.\n", $fromEmail, $inMsgId);
                     continue;
                 }
 
-                $sVal = max(0, (int)($stepRow['delay_value'] ?? $stepRow['delay_minutes'] ?? 0));
-                $sUnit = strtolower($stepRow['delay_unit'] ?? 'seconds');
-                $sSecs = delayToSeconds($sVal, $sUnit);
-                $schedAt = $sSecs > 0 ? date('Y-m-d H:i:s', time() + $sSecs) : date('Y-m-d H:i:s');
+                // In Sequential Mode: If delay is 0 or not set, trigger INSTANTLY upon reply!
+                $isSeq = !empty($rule['sequential_mode']);
+                if ($isSeq && (empty($stepRow['delay_value']) || (int)$stepRow['delay_value'] === 0)) {
+                    $schedAt = date('Y-m-d H:i:s');
+                } else {
+                    $sVal = max(0, (int)($stepRow['delay_value'] ?? $stepRow['delay_minutes'] ?? 0));
+                    $sUnit = strtolower($stepRow['delay_unit'] ?? 'seconds');
+                    $sSecs = delayToSeconds($sVal, $sUnit);
+                    $schedAt = $sSecs > 0 ? date('Y-m-d H:i:s', time() + $sSecs) : date('Y-m-d H:i:s');
+                }
                 $newRefs = trim(($thread['references_header'] ?? '') . ' ' . $inMsgId);
 
                 $pdo->prepare(
