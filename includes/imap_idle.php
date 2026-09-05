@@ -389,8 +389,8 @@ class ImapIdleMultiplexer {
 
             $write = null;
             $except = null;
-            // 2. Non-blocking stream_select wait (up to 5 seconds)
-            $changedCount = @stream_select($readSockets, $write, $except, 5);
+            // 2. Non-blocking stream_select wait (up to 2 seconds for high-precision dispatch)
+            $changedCount = @stream_select($readSockets, $write, $except, 2);
 
             if ($changedCount === false) {
                 // Interrupted by signal
@@ -428,6 +428,14 @@ class ImapIdleMultiplexer {
                         }
                     }
                 }
+            }
+
+            // ── Real-Time Queue Dispatch Check (< 2s latency) ──
+            if (function_exists('processAutoReplyQueue')) {
+                processAutoReplyQueue(25);
+            }
+            if (function_exists('processFollowUpQueue')) {
+                processFollowUpQueue(25);
             }
 
             // 3. Heartbeat cycle (RFC 2177 20-minute ceiling)

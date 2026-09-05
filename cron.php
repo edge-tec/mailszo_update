@@ -17,6 +17,7 @@ require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/mailer.php';
 require_once __DIR__ . '/includes/imap.php';
 require_once __DIR__ . '/includes/queue.php';
+require_once __DIR__ . '/includes/dispatcher.php';
 
 if (php_sapi_name() !== 'cli') {
     $cfg = getConfig();
@@ -57,337 +58,7 @@ $SPAM_TIME_GUARD = $IS_CLI ? 90  : 20;   // Spam scan guard: 90s CLI, 20s HTTP
 
 $results = [];
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-/**
- * SEQUENTIAL AUTO REPLY QUEUE PROCESSOR (reusable function)
- * Called twice per cron run:
- *   1. At the START — to immediately send previously scheduled replies (minimizes delay)
- *   2. After IMAP enrollment — to send newly scheduled replies in the same cycle
- */
-function processAutoReplyQueue(): int {
-    $dispatched = 0;
-    try {
-        // Recover stuck jobs (>15m in 'sending' state)
-        db()->exec("UPDATE autoreply_threads SET status = 'scheduled' WHERE status = 'sending' AND (last_sent_at IS NULL OR last_sent_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))");
-
-        $qDue = db()->query(
-            "SELECT t.*, r.smtp_ids, r.from_emails, r.name rule_name, r.sequential_mode, r.primary_smtp_id, r.secondary_smtp_id, r.step1_smtp_ids, r.enable_reply_to_switch, r.imap2_id, u.status u_status, u.expires_at u_expires, r.user_id as r_user_id
-             FROM autoreply_threads t
-             LEFT JOIN autoreply_rules r ON r.id = t.rule_id
-             LEFT JOIN users u ON u.id = r.user_id
-             WHERE t.status = 'scheduled' AND t.scheduled_send_time <= NOW()
-             LIMIT 100"
-        )->fetchAll();
-
-        foreach ($qDue as $job) {
-            $threadId = $job['id'];
-            $ruleId = $job['rule_id'];
-            $userId = $job['r_user_id'] ?? 1;
-
-            $arLockStmt = db()->prepare("UPDATE autoreply_threads SET status = 'sending', last_sent_at = NOW() WHERE id = ? AND status = 'scheduled'");
-            $arLockStmt->execute([$threadId]);
-            if ($arLockStmt->rowCount() === 0) continue;
-
-            if (($job['u_status'] ?? '') === 'suspended' || (!empty($job['u_expires']) && strtotime($job['u_expires']) < time())) {
-                db()->prepare("UPDATE autoreply_threads SET status = 'cancelled' WHERE id = ?")->execute([$threadId]);
-                continue;
-            }
-
-            $stepNum = (int)$job['current_step'];
-            $sr = db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-            $sr->execute([$ruleId, $stepNum]);
-            $step = $sr->fetch();
-
-            if (!$step) {
-                db()->prepare("UPDATE autoreply_threads SET status = 'completed' WHERE id = ?")->execute([$threadId]);
-                continue;
-            }
-
-            $primarySmtpCfg = null; $secondarySmtpCfg = null; $step1SmtpPool = null; $smtpPool = [];
-            if ($job['primary_smtp_id'] > 0) {
-                $psStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?"); $psStmt->execute([$job['primary_smtp_id']]);
-                $primarySmtpCfg = $psStmt->fetch();
-                if ($primarySmtpCfg) $step1SmtpPool = [$primarySmtpCfg];
-            }
-            if (!$step1SmtpPool && !empty($job['step1_smtp_ids'])) {
-                $s1Ids = array_values(array_map('intval', json_decode($job['step1_smtp_ids'], true) ?: []));
-                if ($s1Ids) {
-                    $s1ph = implode(',', array_fill(0, count($s1Ids), '?'));
-                    $s1ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($s1ph)"); $s1ss->execute($s1Ids);
-                    $step1SmtpPool = $s1ss->fetchAll();
-                }
-            }
-            if ($job['secondary_smtp_id'] > 0) {
-                $ssStmt = db()->prepare("SELECT * FROM smtp_providers WHERE id = ?"); $ssStmt->execute([$job['secondary_smtp_id']]);
-                $secondarySmtpCfg = $ssStmt->fetch();
-            }
-
-            $smtpIds = array_values(array_map('intval', json_decode((string)($job['smtp_ids'] ?? ''), true) ?: []));
-            if ($smtpIds) {
-                $ph = implode(',', array_fill(0, count($smtpIds), '?'));
-                $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)"); $ss->execute($smtpIds);
-                $smtpPool = $ss->fetchAll();
-            }
-
-            // Identify primary (1st) and secondary (2nd) SMTP configs
-            if (!$secondarySmtpCfg && count($smtpPool) > 1) {
-                $secondarySmtpCfg = $smtpPool[1];
-            }
-            if (!$primarySmtpCfg && count($smtpPool) > 0) {
-                $primarySmtpCfg = $smtpPool[0];
-                if (!$step1SmtpPool) $step1SmtpPool = [$primarySmtpCfg];
-            }
-
-            $isFirstReply = ($stepNum === 1);
-            
-            // STRICT SMTP ROUTING:
-            // Step 1: ONLY Primary SMTP 1
-            // Step 2, 3, 4, ...: ALWAYS Secondary SMTP 2
-            if ($isFirstReply) {
-                $activeSmtpPool = ($step1SmtpPool && count($step1SmtpPool) > 0) ? $step1SmtpPool : ($primarySmtpCfg ? [$primarySmtpCfg] : $smtpPool);
-            } else {
-                $activeSmtpPool = $secondarySmtpCfg ? [$secondarySmtpCfg] : ($smtpPool ? (array_slice($smtpPool, 1) ?: $smtpPool) : ($primarySmtpCfg ? [$primarySmtpCfg] : []));
-            }
-
-            if (empty($activeSmtpPool) || empty($activeSmtpPool[0])) {
-                db()->prepare("UPDATE autoreply_threads SET status = 'failed' WHERE id = ?")->execute([$threadId]);
-                logSystemEvent('failed', $job['from_email'], "No SMTP available for step {$stepNum}", $userId, null, $ruleId);
-                continue;
-            }
-
-            $mc = $activeSmtpPool[array_rand($activeSmtpPool)];
-            if ($isFirstReply) {
-                $fromPool = json_decode((string)($job['from_emails'] ?? ''), true) ?: [];
-                if ($fromPool) {
-                    $pk = $fromPool[array_rand($fromPool)];
-                    if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
-                    else { $mc['from_email'] = $pk; }
-                }
-            }
-
-            $arDefSubj = !empty($job['subject_in']) ? ((stripos(trim($job['subject_in']), 're:') === 0) ? $job['subject_in'] : 'Re: ' . $job['subject_in']) : 'Re: Regarding your inquiry';
-            $msg = buildMessage((array)$step, $job['from_name'] ?? '', $job['from_email'], $arDefSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
-            $mc = applyDisplayName($mc, $userId);
-
-            $smtpNameUsed = $mc['name'] ?? '';
-            $fromEmailUsed = $mc['from_email'] ?? '';
-            $secReplyTo = ($secondarySmtpCfg && !empty($secondarySmtpCfg['from_email'])) ? $secondarySmtpCfg['from_email'] : '';
-            // Fallback: if no secondary SMTP, use IMAP 2 email as Reply-To
-            if (!$secReplyTo && !empty($job['imap2_id'])) {
-                try {
-                    $i2Stmt = db()->prepare('SELECT username FROM imap_accounts WHERE id = ?');
-                    $i2Stmt->execute([(int)$job['imap2_id']]);
-                    $i2Row = $i2Stmt->fetch();
-                    if ($i2Row && !empty($i2Row['username'])) $secReplyTo = $i2Row['username'];
-                } catch (Exception $_e) {}
-            }
-
-            try {
-                $inReplyToHdr = $job['last_received_message_id'] ?: ($job['last_message_id'] ?: ($job['original_message_id'] ?: ''));
-                $referencesHdr = $job['references_header'] ?: ($job['original_message_id'] ?: '');
-                $arTrackingToken = generateTrackingToken();
-                $arOpts = [
-                    'is_auto_reply'   => true,
-                    'in_reply_to'     => $inReplyToHdr,
-                    'references'      => $referencesHdr,
-                    'tracking_token'  => $arTrackingToken,
-                    'track_clicks'    => true,
-                    'rule_id'         => $ruleId,
-                    'sequence_step'   => $stepNum,
-                    'user_id'         => $userId,
-                    'smtp_account_id' => $mc['id'] ?? null,
-                ];
-
-                if ($secReplyTo && strtolower($secReplyTo) !== strtolower($fromEmailUsed)) {
-                    $arOpts['reply_to'] = $secReplyTo; $arOpts['return_path'] = $secReplyTo; $arOpts['sender'] = $fromEmailUsed;
-                }
-
-                $sentMsgId = (new Mailer($mc))->send($job['from_email'], $job['from_name'] ?? '', $msg['subject'], $msg['html'], $msg['text'], $msg['inlineImages'], $arOpts);
-
-                $nextNum = $stepNum + 1;
-                $nr = db()->prepare("SELECT * FROM autoreply_steps WHERE rule_id=? AND step_number=?");
-                $nr->execute([$ruleId, $nextNum]);
-                $nextRow = $nr->fetch();
-
-                if ($nextRow) {
-                    db()->prepare("UPDATE autoreply_threads SET current_step=?, status='pending', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
-                      ->execute([$nextNum, $mc['id'] ?? null, $sentMsgId, $threadId]);
-                } else {
-                    db()->prepare("UPDATE autoreply_threads SET status='completed', first_reply_sent=1, smtp_used=?, last_message_id=COALESCE(?, last_message_id) WHERE id=?")
-                      ->execute([$mc['id'] ?? null, $sentMsgId, $threadId]);
-                }
-
-                db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,smtp_used)VALUES(?,?,?,?,'sent',?)")
-                    ->execute([$ruleId, $threadId, $stepNum, $job['from_email'], $smtpNameUsed]);
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used)VALUES(NULL,?,?,'sent','autoreply',?,?)")
-                    ->execute([$userId, $job['from_email'], $smtpNameUsed, $fromEmailUsed]);
-                logSystemEvent('sent', $job['from_email'], "Auto Reply #{$stepNum} sent", $userId, null, $ruleId, null, $arTrackingToken, $smtpNameUsed);
-                $dispatched++;
-
-            } catch (Exception $e) {
-                $errMsg = substr($e->getMessage(), 0, 500);
-                db()->prepare("UPDATE autoreply_threads SET status='failed' WHERE id=?")->execute([$threadId]);
-                db()->prepare("INSERT INTO autoreply_logs(rule_id,thread_id,step_number,to_email,status,error,smtp_used)VALUES(?,?,?,?,'failed',?,?)")
-                    ->execute([$ruleId, $threadId, $stepNum, $job['from_email'], $errMsg, $smtpNameUsed]);
-                db()->prepare("INSERT INTO send_logs(campaign_id,user_id,email,status,log_source,smtp_name_used,from_email_used,error)VALUES(NULL,?,?,'failed','autoreply',?,?,?)")
-                    ->execute([$userId, $job['from_email'], $smtpNameUsed, $fromEmailUsed, $errMsg]);
-                logSystemEvent('failed', $job['from_email'], "Auto Reply #{$stepNum} failed: $errMsg", $userId, null, $ruleId);
-            }
-        }
-    } catch (Exception $e) {
-        error_log("processAutoReplyQueue ERROR: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
-    } catch (Throwable $e) {
-        error_log("processAutoReplyQueue FATAL: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
-    }
-    return $dispatched;
-}
-
-
-function parseImageIds($raw): array {
-    if (empty($raw)) return [];
-    if (is_array($raw)) return array_values(array_filter(array_map('intval',$raw),fn($v)=>$v>0));
-    $d=json_decode($raw,true);
-    return is_array($d)?array_values(array_filter(array_map('intval',$d),fn($v)=>$v>0)):[];
-}
-
-function embedImage(string $html,array $ids,array &$inline,
-                    string $w='600',string $align='center',string $pos='top'): string {
-    if (!$ids) return $html;
-    
-    $tags = [];
-    foreach ($ids as $id) {
-        $s=db()->prepare('SELECT filename,mime,url FROM images WHERE id=?');$s->execute([$id]);
-        $img=$s->fetch(PDO::FETCH_ASSOC); if(!$img) continue;
-        $filename=$img['filename'];
-
-        // ── Filesystem path resolution ────────────────────────────────────────────
-        $dirReal=realpath(__DIR__)?:__DIR__;
-        $candidates=[];
-        $candidates[]=$dirReal.'/uploads/images/'.$filename;
-        $cfg=getConfig();
-        if(!empty($cfg['app_path'])){
-            $ap=realpath($cfg['app_path'])?:$cfg['app_path'];
-            $p=rtrim($ap,'/').'/uploads/images/'.$filename;
-            if($p!==$candidates[0])$candidates[]=$p;
-        }
-        if(!empty($_SERVER['DOCUMENT_ROOT'])){
-            $p=rtrim(realpath($_SERVER['DOCUMENT_ROOT'])?:$_SERVER['DOCUMENT_ROOT'],'/').'/uploads/images/'.$filename;
-            if(!in_array($p,$candidates))$candidates[]=$p;
-        }
-        if(!empty($_SERVER['SCRIPT_FILENAME'])){
-            $p=(realpath(dirname($_SERVER['SCRIPT_FILENAME']))?:dirname($_SERVER['SCRIPT_FILENAME'])).'/uploads/images/'.$filename;
-            if(!in_array($p,$candidates))$candidates[]=$p;
-        }
-
-        $path=null;
-        foreach($candidates as $c){if(file_exists($c)&&is_readable($c)){$path=$c;break;}}
-
-        // ── HTTP fallback: fetch via stored URL → temp file ───────────────────────
-        if(!$path && !empty($img['url']) && filter_var($img['url'],FILTER_VALIDATE_URL)){
-            $raw=@file_get_contents($img['url']);
-            if($raw!==false && strlen($raw)>0){
-                $tmp=tempnam(sys_get_temp_dir(),'mz_img_').'.'
-                    .strtolower(pathinfo($filename,PATHINFO_EXTENSION));
-                if(@file_put_contents($tmp,$raw)!==false){
-                    $path=$tmp;
-                    register_shutdown_function(fn()=>@unlink($tmp));
-                }
-            }
-        }
-
-        if(!$path){
-            global $results;
-            $results[]=['status'=>'img_warn','message'=>"Image #{$id} ({$filename}) not found. Checked: ".implode(', ',$candidates).(empty($img['url'])?'':" | URL fetch also failed: {$img['url']}")];
-            continue;
-        }
-
-        $ext=strtolower(pathinfo($filename,PATHINFO_EXTENSION));
-        $mime=$img['mime']?:(['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png',
-            'gif'=>'image/gif','webp'=>'image/webp','svg'=>'image/svg+xml'][$ext]??'image/jpeg');
-        $cid='img'.md5($filename.$id).'@mailszo.com';
-        $inline[]=['cid'=>$cid,'path'=>$path,'mime'=>$mime];
-        
-        $ws=is_numeric($w)?"width:{$w}px;max-width:100%;":"width:{$w};max-width:100%;";
-        if($align==='left')     {$mL='0';   $mR='auto';}
-        elseif($align==='right'){$mL='auto';$mR='0';}
-        else                    {$mL='auto';$mR='auto';}
-        $tags[] = "<img src=\"cid:$cid\" style=\"{$ws}height:auto;display:block;margin-left:{$mL};margin-right:{$mR};margin-bottom:16px;\" alt=\"\" />";
-    }
-
-    if (empty($tags)) return preg_replace('/\{\{image\}\}/i', '', $html);
-    $allTags = implode("\n", $tags);
-    if (preg_match('/\{\{image\}\}/i', $html)) {
-        return preg_replace('/\{\{image\}\}/i', $allTags, $html);
-    }
-    return $pos === 'bottom' ? $html . '<div style="margin-top:16px">' . $allTags . '</div>'
-                            : '<div style="margin-bottom:16px">' . $allTags . '</div>' . $html;
-}
-
-function buildMessage(array $step,string $name,string $email,string $defSubj='',string $senderName='',string $todayDate=''): array {
-    $rawSubj = !empty($step['subject']) ? trim($step['subject']) : trim($defSubj);
-    $bannedSubjects = ['follow', 'follow-up', 'followup', 'follow up', 'autoreply', 'auto-reply', 'auto reply', 'new follow-up rule', 'new auto-reply rule'];
-    if (in_array(strtolower($rawSubj), $bannedSubjects, true) || $rawSubj === '') {
-        $cleanDef = trim($defSubj);
-        $rawSubj = (!empty($cleanDef) && !in_array(strtolower($cleanDef), $bannedSubjects, true))
-            ? $cleanDef
-            : 'Re: Regarding your inquiry';
-    }
-    $subj=spin($rawSubj);
-    $html=spin($step['html_body']??'');
-    $text=spin($step['text_body']??'')?:strip_tags($html);
-    $todayDate = $todayDate ?: date('F j, Y g:i A');
-    $subj=personalize($subj,$name,$email,$senderName,$todayDate);
-    $html=personalize($html,$name,$email,$senderName,$todayDate);
-    $text=personalize($text,$name,$email,$senderName,$todayDate);
-    $inline=[];
-    $ids=parseImageIds($step['image_ids']??null);
-    if($ids)$html=embedImage($html,$ids,$inline,$step['img_width']??'600',$step['img_align']??'center',$step['img_position']??'top');
-    return ['subject'=>$subj,'html'=>$html,'text'=>$text,'inlineImages'=>$inline];
-}
-
-function getDisplayName(int $uid): string {
-    static $c=[];
-    if(!isset($c[$uid])){
-        try{
-            $s=db()->prepare('SELECT meta_value FROM user_meta WHERE user_id=? AND meta_key=?');
-            $s->execute([$uid,'display_name']);
-            $r=$s->fetch(PDO::FETCH_ASSOC);
-            $c[$uid]=($r&&!empty($r['meta_value']))?$r['meta_value']:'';
-        }catch(Exception $e){$c[$uid]='';}
-    }
-    return $c[$uid];
-}
-function applyDisplayName(array $cfg,int $uid): array {
-    $dn=getDisplayName($uid);if($dn!=='')$cfg['from_name']=$dn;return $cfg;
-}
-
-// saveToBackup — persists a completed lead into backup_emails.
-//
-// DUPLICATE LOGIC — USER-LEVEL ONLY (not global / system-wide):
-//   The unique key on backup_emails is (user_id, rule_id, email).
-//   • Same email + same rule + same user    → ON DUPLICATE KEY: updates
-//     the completion timestamp only (lead already backed up for this rule).
-//   • Same email + DIFFERENT rule (same user) → new row (rule_id differs).
-//   • Same email + DIFFERENT user            → new row (user_id differs).
-//
-//   ✓ Duplicate prevention is strictly per-user, per-rule.
-//   ✗ There is NO system-wide or cross-user duplicate blocking here.
-//     UserA and UserB each maintain completely independent backup records
-//     for the same lead email address.
-function saveToBackup(int $uid, string $email, string $name, string $src, int $rid): void {
-    if ($rid <= 0) return; // rule_id is required for the per-rule unique key
-    try {
-        db()->prepare(
-            "INSERT INTO backup_emails(user_id,email,name,source,rule_id,completed_at,first_seen)
-             VALUES(?,?,?,?,?,NOW(),NOW())
-             ON DUPLICATE KEY UPDATE
-               name=COALESCE(NULLIF(VALUES(name),''),name),
-               source=VALUES(source),
-               completed_at=NOW()"
-        )->execute([$uid, $email, $name, $src, $rid]);
-    } catch (Exception $e) { /* non-fatal */ }
-}
+// ── Helpers & Queue Dispatchers are loaded from includes/dispatcher.php ──
 
 // ─────────────────────────────────────────────────────────────────
 // STEP 1 — POLL ALL ACTIVE IMAP ACCOUNTS (WITH OWNER ISOLATION)
@@ -426,6 +97,10 @@ try {
 $earlyDispatched = processAutoReplyQueue();
 if ($earlyDispatched > 0) {
     $results[] = ['status' => 'ar_early_dispatch', 'sent' => $earlyDispatched];
+}
+$earlyFuDispatched = processFollowUpQueue();
+if ($earlyFuDispatched > 0) {
+    $results[] = ['status' => 'fu_early_dispatch', 'sent' => $earlyFuDispatched];
 }
 
 $imapMessages = []; // [imap_account_id => ['from_email','from_name','subject',...]]
@@ -1705,285 +1380,9 @@ if ($lateDispatched > 0) {
 //    and exponential backoff (5m, 15m, 60m).
 // ─────────────────────────────────────────────────────────────────
 try {
-    $fuNow = date('Y-m-d H:i:s');
-    $fuPid = getmypid() ?: bin2hex(random_bytes(4));
-
-    // ── 4A. RECOVER STUCK QUEUE JOBS (>15m in sending state) ────────
-    try {
-        db()->exec("UPDATE email_followup_queue 
-                    SET status = 'scheduled', locked_at = NULL, lock_token = NULL 
-                    WHERE status = 'sending' AND locked_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
-    } catch (Throwable $_recEx) {}
-
-    // ── 4B. PROCESS DEDICATED FOLLOW-UP QUEUE (email_followup_queue) ──
-    try {
-        $qDue = db()->query(
-            "SELECT q.*, r.smtp_ids, r.from_emails, r.name rule_name, u.status u_status, u.expires_at u_expires
-             FROM email_followup_queue q
-             LEFT JOIN followup_rules r ON r.id = q.rule_id
-             JOIN users u ON u.id = q.user_id
-             WHERE q.status = 'scheduled' AND q.scheduled_at IS NOT NULL AND q.scheduled_at <= NOW() AND u.status = 'active'
-             ORDER BY q.scheduled_at ASC
-             LIMIT 50"
-        )->fetchAll();
-
-        foreach ($qDue as $qItem) {
-            $qId = (int)$qItem['id'];
-            $qUserId = (int)$qItem['user_id'];
-            $qEmail = strtolower(trim($qItem['recipient_email']));
-
-            // Expiry check
-            if (!empty($qItem['u_expires']) && strtotime($qItem['u_expires']) < time()) continue;
-
-            // Blacklist check
-            if (isBlacklisted($qEmail, $qUserId)) {
-                db()->prepare("UPDATE email_followup_queue SET status = 'cancelled', last_error = 'Blacklisted recipient' WHERE id = ?")->execute([$qId]);
-                logSystemEvent('failed', $qEmail, 'Follow-up cancelled: Blacklisted recipient', $qUserId, $qItem['campaign_id'], $qItem['rule_id'], $qId);
-                continue;
-            }
-
-            // Atomic Lock
-            $lockStmt = db()->prepare("UPDATE email_followup_queue SET status = 'sending', locked_at = NOW(), lock_token = ? WHERE id = ? AND status = 'scheduled'");
-            $lockStmt->execute([$fuPid, $qId]);
-            if ($lockStmt->rowCount() === 0) continue; // Concurrently claimed by another worker
-
-            // Fetch step content
-            $ruleId = (int)$qItem['rule_id'];
-            $stepOrder = (int)$qItem['followup_order'];
-            $stepStmt = db()->prepare("SELECT * FROM followup_steps WHERE rule_id = ? AND step_number = ?");
-            $stepStmt->execute([$ruleId, $stepOrder]);
-            $stepRow = $stepStmt->fetch();
-
-            if (!$stepRow) {
-                db()->prepare("UPDATE email_followup_queue SET status = 'skipped', last_error = 'Step template not found', locked_at = NULL WHERE id = ?")->execute([$qId]);
-                continue;
-            }
-
-            // ── Resolve SMTP pool (Smart Follow-Up routing: SMTP #1 before switch, SMTP #2 after switch) ──
-            $smtpIds = [];
-            $activeMailbox = 'primary';
-            $activeTh = null;
-            try {
-                $thCheck = db()->prepare("SELECT active_mailbox, rule_id, thread_id, conversation_stage FROM autoreply_threads WHERE from_email = ? ORDER BY id DESC LIMIT 1");
-                $thCheck->execute([$qEmail]);
-                $activeTh = $thCheck->fetch();
-                if ($activeTh) {
-                    $activeMailbox = $activeTh['active_mailbox'] ?? 'primary';
-                    if (!empty($activeTh['rule_id'])) {
-                        $arRuleStmt = db()->prepare("SELECT primary_smtp_id, secondary_smtp_id, enable_smart_routing FROM autoreply_rules WHERE id = ?");
-                        $arRuleStmt->execute([(int)$activeTh['rule_id']]);
-                        $arRuleData = $arRuleStmt->fetch();
-                        if ($arRuleData && !empty($arRuleData['enable_smart_routing'])) {
-                            if ($activeMailbox === 'secondary' && !empty($arRuleData['secondary_smtp_id'])) {
-                                $smtpIds = [(int)$arRuleData['secondary_smtp_id']];
-                            } elseif (!empty($arRuleData['primary_smtp_id'])) {
-                                $smtpIds = [(int)$arRuleData['primary_smtp_id']];
-                            }
-                        }
-                    }
-                }
-            } catch (Exception $_thEx) {}
-
-            if (!$smtpIds && !empty($qItem['smtp_ids'])) { $d = json_decode($qItem['smtp_ids'], true); if (is_array($d)) $smtpIds = $d; }
-            if (!$smtpIds) {
-                $userSmtps = db()->prepare("SELECT id FROM smtp_providers WHERE user_id = ?");
-                $userSmtps->execute([$qUserId]);
-                $smtpIds = $userSmtps->fetchAll(PDO::FETCH_COLUMN);
-            }
-            if (!$smtpIds) {
-                db()->prepare("UPDATE email_followup_queue SET status = 'failed', last_error = 'No SMTP configured for user', locked_at = NULL WHERE id = ?")->execute([$qId]);
-                continue;
-            }
-
-            $ph = implode(',', array_fill(0, count($smtpIds), '?'));
-            $ss = db()->prepare("SELECT * FROM smtp_providers WHERE id IN ($ph)");
-            $ss->execute($smtpIds);
-            $smtpPool = $ss->fetchAll();
-            if (!$smtpPool) {
-                db()->prepare("UPDATE email_followup_queue SET status = 'failed', last_error = 'SMTP provider not found', locked_at = NULL WHERE id = ?")->execute([$qId]);
-                continue;
-            }
-
-            $mc = $smtpPool[array_rand($smtpPool)];
-            $fromPool = [];
-            if (!empty($qItem['from_emails'])) { $d = json_decode($qItem['from_emails'], true); if (is_array($d)) $fromPool = $d; }
-            if ($fromPool) {
-                $pk = $fromPool[array_rand($fromPool)];
-                if (is_array($pk)) { $mc['from_email'] = $pk['email'] ?? $mc['from_email']; $mc['from_name'] = $pk['name'] ?? $mc['from_name']; }
-                else { $mc['from_email'] = $pk; }
-            }
-
-            $defSubj = '';
-            // 1. Try to find the original thread / incoming email subject
-            try {
-                $thSubjStmt = db()->prepare("SELECT subject_in FROM autoreply_threads WHERE from_email = ? AND (rule_id IN (SELECT id FROM autoreply_rules WHERE followup_rule_id = ?) OR user_id = ?) AND subject_in IS NOT NULL AND subject_in != '' ORDER BY id DESC LIMIT 1");
-                $thSubjStmt->execute([$qEmail, $ruleId, $qUserId]);
-                $thSubj = $thSubjStmt->fetchColumn();
-                if ($thSubj) {
-                    $defSubj = (stripos(trim($thSubj), 're:') === 0) ? $thSubj : 'Re: ' . $thSubj;
-                }
-            } catch (Throwable $_subEx) {}
-
-            // 2. If not found, check campaign subject if triggered from campaign
-            if (!$defSubj && !empty($qItem['campaign_id'])) {
-                try {
-                    $campSubjStmt = db()->prepare("SELECT subject FROM campaigns WHERE id = ?");
-                    $campSubjStmt->execute([(int)$qItem['campaign_id']]);
-                    $cSubj = $campSubjStmt->fetchColumn();
-                    if ($cSubj) {
-                        $defSubj = (stripos(trim($cSubj), 're:') === 0) ? $cSubj : 'Re: ' . $cSubj;
-                    }
-                } catch (Throwable $_cEx) {}
-            }
-
-            // 3. If step > 1 and step 1 has custom subject
-            if (!$defSubj && $stepOrder > 1) {
-                $s1Stmt = db()->prepare("SELECT subject FROM followup_steps WHERE rule_id = ? AND step_number = 1 AND subject IS NOT NULL AND subject != ''");
-                $s1Stmt->execute([$ruleId]);
-                $s1Subj = $s1Stmt->fetchColumn();
-                if ($s1Subj) {
-                    $defSubj = (stripos(trim($s1Subj), 're:') === 0) ? $s1Subj : 'Re: ' . $s1Subj;
-                }
-            }
-
-            // 4. If still empty, check inbound emails
-            if (!$defSubj) {
-                try {
-                    $inSubjStmt = db()->prepare("SELECT subject FROM inbound_emails WHERE from_email = ? AND subject IS NOT NULL AND subject != '' ORDER BY id DESC LIMIT 1");
-                    $inSubjStmt->execute([$qEmail]);
-                    $inSubj = $inSubjStmt->fetchColumn();
-                    if ($inSubj) {
-                        $defSubj = (stripos(trim($inSubj), 're:') === 0) ? $inSubj : 'Re: ' . $inSubj;
-                    }
-                } catch (Throwable $_inEx) {}
-            }
-
-            // 5. Final fallback (clean natural conversation subject, NEVER the rule name "follow" / "Follow-up")
-            if (!$defSubj) {
-                $defSubj = 'Re: Regarding your inquiry';
-            }
-
-            $msg = buildMessage((array)$stepRow, $qItem['recipient_name'] ?? '', $qEmail, $defSubj, $mc['from_name'] ?? '', date('F j, Y g:i A'));
-            $mc = applyDisplayName($mc, $qUserId);
-            $fuSmtpName = $mc['name'] ?? '';
-            $fuFromEmail = $mc['from_email'] ?? '';
-
-            try {
-                $fuInReplyTo = '';
-                $fuReferences = '';
-                $fuReplyTo = '';
-
-                try {
-                    $thStmt = db()->prepare("SELECT original_message_id, last_message_id, references_header, reply_to_mailbox FROM autoreply_threads WHERE from_email = ? AND (rule_id IN (SELECT id FROM autoreply_rules WHERE followup_rule_id = ?) OR user_id = ?) ORDER BY id DESC LIMIT 1");
-                    $thStmt->execute([$qEmail, $ruleId, $qUserId]);
-                    $thRow = $thStmt->fetch();
-                    if ($thRow) {
-                        $fuInReplyTo = $thRow['last_message_id'] ?: ($thRow['original_message_id'] ?: '');
-                        $fuReferences = $thRow['references_header'] ?: ($thRow['original_message_id'] ?: '');
-                        if (!empty($thRow['reply_to_mailbox'])) {
-                            $fuReplyTo = $thRow['reply_to_mailbox'];
-                        }
-                    }
-                } catch (Throwable $_thEx) {}
-
-                if (!$fuReplyTo && !empty($qItem['imap_id'])) {
-                    $fuImapRow = db()->query("SELECT username FROM imap_accounts WHERE id = " . (int)$qItem['imap_id'])->fetch();
-                    if ($fuImapRow && filter_var($fuImapRow['username'], FILTER_VALIDATE_EMAIL)) {
-                        $fuReplyTo = $fuImapRow['username'];
-                    }
-                }
-
-                $mailer = new Mailer($mc);
-                $sentFuMsgId = $mailer->send(
-                    $qEmail,
-                    $qItem['recipient_name'] ?? '',
-                    $msg['subject'],
-                    $msg['html'],
-                    $msg['text'],
-                    $msg['inlineImages'],
-                    [
-                        'tracking_token'  => $qItem['tracking_token'],
-                        'track_clicks'    => true,
-                        'in_reply_to'     => $fuInReplyTo,
-                        'references'      => $fuReferences,
-                        'reply_to'        => $fuReplyTo ?: $fuFromEmail,
-                        'campaign_id'     => $qItem['campaign_id'] ?? null,
-                        'rule_id'         => $ruleId,
-                        'sequence_step'   => $stepOrder,
-                        'user_id'         => $qUserId,
-                        'smtp_account_id' => $mc['id'] ?? null,
-                    ]
-                );
-
-                // Mark current queue item SENT
-                db()->prepare("UPDATE email_followup_queue SET status = 'sent', sent_at = NOW(), locked_at = NULL, lock_token = NULL WHERE id = ?")->execute([$qId]);
-                logSystemEvent('sent', $qEmail, "Follow-up #{$stepOrder} sent successfully", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token'], $fuSmtpName);
-
-                // Log to send_logs
-                db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used) VALUES (?, ?, ?, 'sent', 'followup', ?, ?)")
-                    ->execute([$qItem['campaign_id'], $qUserId, $qEmail, $fuSmtpName, $fuFromEmail]);
-
-                // Check for NEXT STEP (Sequential chaining: Step N+1 delay starts from Step N sent_at)
-                $nextStepStmt = db()->prepare("SELECT * FROM followup_steps WHERE rule_id = ? AND step_number = ?");
-                $nextStepStmt->execute([$ruleId, $stepOrder + 1]);
-                $nextStepRow = $nextStepStmt->fetch();
-
-                if ($nextStepRow) {
-                    $nextDelayVal = max(0, (int)($nextStepRow['delay_value'] ?? $nextStepRow['delay_minutes'] ?? 30));
-                    $nextDelayUnit = in_array(strtolower($nextStepRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($nextStepRow['delay_unit']) : 'minutes';
-                    $nextDelayMins = delayToMinutes($nextDelayVal, $nextDelayUnit);
-                    $nextSchedAt = date('Y-m-d H:i:s', strtotime("+{$nextDelayMins} minutes"));
-                    $nextTrackingToken = generateTrackingToken();
-
-                    $insNext = db()->prepare(
-                        "INSERT INTO email_followup_queue 
-                         (user_id, campaign_id, rule_id, contact_id, recipient_email, recipient_name, followup_order, delay_value, delay_unit, delay_in_minutes, scheduled_at, status, tracking_token)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)"
-                    );
-                    $insNext->execute([
-                        $qUserId, $qItem['campaign_id'], $ruleId, $qItem['contact_id'],
-                        $qEmail, $qItem['recipient_name'], $stepOrder + 1,
-                        $nextDelayVal, $nextDelayUnit, $nextDelayMins, $nextSchedAt, $nextTrackingToken
-                    ]);
-                    $nextQid = db()->lastInsertId();
-                    logSystemEvent('queued', $qEmail, "Follow-up #" . ($stepOrder + 1) . " scheduled for {$nextSchedAt} (+{$nextDelayVal} {$nextDelayUnit})", $qUserId, $qItem['campaign_id'], $ruleId, $nextQid, $nextTrackingToken);
-                } else {
-                    // Sequence fully completed
-                    saveToBackup($qUserId, $qEmail, $qItem['recipient_name'] ?? '', 'followup', $ruleId);
-                }
-
-            } catch (Throwable $sendEx) {
-                $err = substr($sendEx->getMessage(), 0, 500);
-                $retryCount = (int)$qItem['retry_count'] + 1;
-
-                if ($retryCount < 3) {
-                    // Exponential backoff: attempt 1 -> 5 min, attempt 2 -> 15 min, attempt 3 -> 60 min
-                    $backoffMins = ($retryCount === 1) ? 5 : (($retryCount === 2) ? 15 : 60);
-                    $retryAt = date('Y-m-d H:i:s', strtotime("+{$backoffMins} minutes"));
-
-                    db()->prepare(
-                        "UPDATE email_followup_queue 
-                         SET status = 'scheduled', retry_count = ?, scheduled_at = ?, last_error = ?, locked_at = NULL, lock_token = NULL 
-                         WHERE id = ?"
-                    )->execute([$retryCount, $retryAt, $err, $qId]);
-
-                    logSystemEvent('retry', $qEmail, "Retry #{$retryCount} scheduled in {$backoffMins}m due to error: {$err}", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token']);
-                } else {
-                    // Max retries exceeded
-                    db()->prepare(
-                        "UPDATE email_followup_queue 
-                         SET status = 'failed', retry_count = ?, last_error = ?, locked_at = NULL, lock_token = NULL 
-                         WHERE id = ?"
-                    )->execute([$retryCount, $err, $qId]);
-
-                    logSystemEvent('failed', $qEmail, "Follow-up #{$stepOrder} failed after 3 retries: {$err}", $qUserId, $qItem['campaign_id'], $ruleId, $qId, $qItem['tracking_token']);
-                    db()->prepare("INSERT INTO send_logs (campaign_id, user_id, email, status, log_source, smtp_name_used, from_email_used, error) VALUES (?, ?, ?, 'failed', 'followup', ?, ?, ?)")
-                        ->execute([$qItem['campaign_id'], $qUserId, $qEmail, $fuSmtpName, $fuFromEmail, $err]);
-                }
-            }
-        }
-    } catch (Throwable $_qErr) {
-        $results[] = ['status'=>'fu_queue_error', 'message'=>$_qErr->getMessage()];
+    $fuSent = processFollowUpQueue(50);
+    if ($fuSent > 0) {
+        $results[] = ['status' => 'followup_queue', 'sent' => $fuSent];
     }
 
     // ── 4C. PROCESS FOLLOW-UP CONTACTS (IMAP enrollments & list contacts) ──
@@ -2318,9 +1717,36 @@ try {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// SECTION 8: HIGH-FREQUENCY REAL-TIME SUB-MINUTE DISPATCH (CLI only)
+// ─────────────────────────────────────────────────────────────────
+// Keeps cron active for the remainder of the 1-minute window (~50s)
+// checking every 1-2 seconds so auto-replies and follow-ups scheduled
+// mid-minute are sent with near-zero latency (< 2-3s delay from schedule).
+if ($IS_CLI && empty($_GET['json']) && empty($_GET['once'])) {
+    $remainingSecs = 55 - (time() - $CRON_START_TIME);
+    if ($remainingSecs > 5) {
+        $rtStats = runRealTimeDispatchCycle($remainingSecs);
+        if ($rtStats['ar_sent'] > 0 || $rtStats['fu_sent'] > 0 || $rtStats['queue_jobs'] > 0) {
+            $results[] = [
+                'status'    => 'realtime_subminute_dispatch',
+                'ar_sent'   => $rtStats['ar_sent'],
+                'fu_sent'   => $rtStats['fu_sent'],
+                'jobs_sent' => $rtStats['queue_jobs']
+            ];
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // OUTPUT
 // ─────────────────────────────────────────────────────────────────
-@unlink($lock);
+if (isset($lockFp) && is_resource($lockFp)) {
+    @flock($lockFp, LOCK_UN);
+    @fclose($lockFp);
+}
+if (!empty($lockFile)) {
+    @unlink($lockFile);
+}
 
 if(!empty($_GET['debug'])){
     try{$iaRows=db()->query("SELECT id,username,emails_read,last_check FROM imap_accounts")->fetchAll();}
@@ -2373,6 +1799,14 @@ foreach($results as $r){
             echo "[BOUNCE] {$r['mailbox']} | processed:{$r['processed']} hard:{$r['hard_bounces']} soft:{$r['soft_bounces']} skipped:{$r['skipped']}\n";break;
         case 'bounce_warn':
             echo "[BOUNCE WARN] {$r['message']}\n";break;
+        case 'ar_early_dispatch':
+        case 'ar_late_dispatch':
+            echo "[AR DISPATCH] Sent {$r['sent']} auto-replies\n"; break;
+        case 'fu_early_dispatch':
+        case 'followup_queue':
+            echo "[FU DISPATCH] Sent {$r['sent']} follow-up messages\n"; break;
+        case 'realtime_subminute_dispatch':
+            echo "[REALTIME DISPATCH] Sub-minute loop sent: {$r['ar_sent']} auto-replies, {$r['fu_sent']} follow-ups, {$r['jobs_sent']} queue jobs\n"; break;
         case 'queue_inline':
             echo "[QUEUE INLINE] Processed {$r['processed']} queued jobs\n";break;
         case 'queue_warn':

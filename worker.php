@@ -54,6 +54,7 @@ if (!extension_loaded('pdo_mysql')) {
 
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/queue.php';
+require_once __DIR__ . '/includes/dispatcher.php';
 
 // Parse command line arguments
 $options = getopt('', [
@@ -82,7 +83,7 @@ if (isset($options['help'])) {
 $queuesArg   = $options['queue'] ?? '';
 $queues      = $queuesArg ? array_map('trim', explode(',', $queuesArg)) : [];
 $concurrency = max(1, (int)($options['concurrency'] ?? 1));
-$sleepTime   = max(1, (int)($options['sleep'] ?? 2));
+$sleepTime   = max(1, (int)($options['sleep'] ?? 1));
 $maxJobs     = max(1, (int)($options['max-jobs'] ?? 500));
 $memoryLimit = max(32, (int)($options['memory'] ?? 128));
 $runOnce     = isset($options['once']);
@@ -227,7 +228,16 @@ while (!$shouldQuit) {
         break;
     }
 
-    // Try to reserve the next prioritized job
+    // 1. Real-time dispatch for due Auto-Reply and Follow-Up sequences (< 1s latency)
+    $arDispatched = processAutoReplyQueue(25);
+    $fuDispatched = processFollowUpQueue(25);
+    if ($arDispatched > 0 || $fuDispatched > 0) {
+        $jobsProcessed += ($arDispatched + $fuDispatched);
+        echo sprintf("[%s] [Worker %s] Real-time dispatch: %d auto-reply, %d follow-up sent.\n",
+            date('Y-m-d H:i:s'), $workerId, $arDispatched, $fuDispatched);
+    }
+
+    // 2. Try to reserve the next prioritized job
     $job = QueueManager::reserveNextJob($queues, $workerId);
 
     if (!$job) {
@@ -235,7 +245,9 @@ while (!$shouldQuit) {
             echo sprintf("[%s] [Worker %s] Queue empty. Exiting (--once mode).\n", date('Y-m-d H:i:s'), $workerId);
             break;
         }
-        sleep($sleepTime);
+        if ($arDispatched === 0 && $fuDispatched === 0) {
+            sleep($sleepTime);
+        }
         continue;
     }
 

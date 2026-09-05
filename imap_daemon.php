@@ -28,6 +28,7 @@ if (!extension_loaded('pdo_mysql')) {
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/imap_idle.php';
 require_once __DIR__ . '/includes/queue.php';
+require_once __DIR__ . '/includes/dispatcher.php';
 
 $options = getopt('', [
     'accounts::',
@@ -135,43 +136,61 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
             $userId = (int)$rule['user_id'];
 
             // Check if thread already exists
-            $tStmt = $pdo->prepare("SELECT id, status FROM autoreply_threads WHERE rule_id = ? AND LOWER(from_email) = ?");
+            $tStmt = $pdo->prepare("SELECT id, status, current_step, messages_received FROM autoreply_threads WHERE rule_id = ? AND LOWER(from_email) = ?");
             $tStmt->execute([$ruleId, $fromEmail]);
             $thread = $tStmt->fetch();
 
             if (!$thread) {
+                // Fetch Step 1 delay
+                $s1Stmt = $pdo->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id = ? AND step_number = 1");
+                $s1Stmt->execute([$ruleId]);
+                $s1Row = $s1Stmt->fetch();
+                $s1Val = max(0, (int)($s1Row['delay_value'] ?? $s1Row['delay_minutes'] ?? 0));
+                $s1Unit = strtolower($s1Row['delay_unit'] ?? 'minutes');
+                $s1Secs = delayToSeconds($s1Val, $s1Unit);
+                $step1at = $s1Secs > 0 ? date('Y-m-d H:i:s', time() + $s1Secs) : date('Y-m-d H:i:s');
+
                 // Enroll new thread
                 $insThread = $pdo->prepare(
                     "INSERT INTO autoreply_threads 
                      (rule_id, from_email, from_name, subject_in, current_step, status, scheduled_send_time, created_at)
-                     VALUES (?, ?, ?, ?, 1, 'scheduled', NOW(), NOW())"
+                     VALUES (?, ?, ?, ?, 1, 'scheduled', ?, NOW())"
                 );
-                $insThread->execute([$ruleId, $fromEmail, $fromName, $subject]);
+                $insThread->execute([$ruleId, $fromEmail, $fromName, $subject, $step1at]);
                 $threadId = (int)$pdo->lastInsertId();
 
-                // ── INSTANT REAL-TIME DISPATCH VIA QUEUE ENGINE ───────────
-                // Push an immediate URGENT job with Priority 100
-                $jobId = QueueManager::push(
-                    QueueManager::QUEUE_URGENT,
-                    'autoreply_process',
-                    [
-                        'thread_id' => $threadId,
-                        'rule_id'   => $ruleId,
-                        'user_id'   => $userId,
-                        'to'        => $fromEmail,
-                        'to_name'   => $fromName,
-                        'subject'   => 'Re: ' . $subject,
-                        'html'      => '<p>Thank you for reaching out! We received your message and will get back to you shortly.</p>'
-                    ],
-                    100 // Highest priority
-                );
-
-                $latencyMs = round((microtime(true) - $dispatchStart) * 1000, 2);
-                echo sprintf("  ⚡ [Instant Enroll] Lead <%s> enrolled in Rule '%s'! Urgent Job #%d enqueued in %sms.\n",
+                logSystemEvent('queued', $fromEmail, "Auto Reply #1 scheduled for {$step1at} (+{$s1Val} {$s1Unit})", $userId, null, $ruleId);
+                echo sprintf("  ⚡ [Instant Enroll] Lead <%s> enrolled in Rule '%s' (Step #1 scheduled for %s)\n",
                     $fromEmail,
                     $rule['name'],
-                    $jobId,
-                    $latencyMs
+                    $step1at
+                );
+            } else {
+                // Lead replied to existing conversation!
+                $curStep = (int)$thread['current_step'];
+                $sStmt = $pdo->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id = ? AND step_number = ?");
+                $sStmt->execute([$ruleId, $curStep]);
+                $sRow = $sStmt->fetch();
+                $sVal = max(0, (int)($sRow['delay_value'] ?? $sRow['delay_minutes'] ?? 0));
+                $sUnit = strtolower($sRow['delay_unit'] ?? 'minutes');
+                $sSecs = delayToSeconds($sVal, $sUnit);
+                $schedAt = $sSecs > 0 ? date('Y-m-d H:i:s', time() + $sSecs) : date('Y-m-d H:i:s');
+
+                $pdo->prepare(
+                    "UPDATE autoreply_threads 
+                     SET messages_received = messages_received + 1,
+                         status = 'scheduled',
+                         scheduled_send_time = ?,
+                         subject_in = ?,
+                         reply_count = reply_count + 1
+                     WHERE id = ?"
+                )->execute([$schedAt, $subject, $thread['id']]);
+
+                logSystemEvent('queued', $fromEmail, "Auto Reply #{$curStep} scheduled for {$schedAt} (lead replied)", $userId, null, $ruleId);
+                echo sprintf("  🔄 [Lead Reply] Lead <%s> unlocked Step #%d scheduled for %s\n",
+                    $fromEmail,
+                    $curStep,
+                    $schedAt
                 );
             }
         }
@@ -195,6 +214,14 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                     $fu['scheduled_at']
                 );
             }
+        }
+
+        // ── INSTANT REAL-TIME DISPATCH (< 500ms) ─────────────────────────
+        // Dispatches any due auto-replies or follow-ups immediately
+        $arSent = processAutoReplyQueue(25);
+        $fuSent = processFollowUpQueue(25);
+        if ($arSent > 0 || $fuSent > 0) {
+            echo sprintf("  🚀 [Instant Sent] Dispatched %d auto-reply and %d follow-up immediately!\n", $arSent, $fuSent);
         }
     }
 };

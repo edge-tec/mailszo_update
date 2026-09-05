@@ -1143,12 +1143,13 @@ function autoEnrollInFollowup(string $email, string $name = '', int $userId = 1,
                 $sRow = $sStmt->fetch();
                 if ($sRow) {
                     $delayVal = max(0, (int)($sRow['delay_value'] ?? $sRow['delay_minutes'] ?? 30));
-                    $delayUnit = in_array(strtolower($sRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($sRow['delay_unit']) : 'minutes';
+                    $delayUnit = in_array(strtolower($sRow['delay_unit'] ?? ''), ['seconds','minutes','hours','days'], true) ? strtolower($sRow['delay_unit']) : 'minutes';
                 }
             } catch (Throwable $_dle) {}
 
-            $delayMins = delayToMinutes($delayVal, $delayUnit);
-            $nextSendAt = date('Y-m-d H:i:s', strtotime("+{$delayMins} minutes"));
+            $delaySecs = function_exists('delayToSeconds') ? delayToSeconds($delayVal, $delayUnit) : ($delayVal * 60);
+            $delayMins = max(1, (int)ceil($delaySecs / 60));
+            $nextSendAt = $delaySecs > 0 ? date('Y-m-d H:i:s', time() + $delaySecs) : date('Y-m-d H:i:s');
             $trackingToken = generateTrackingToken();
 
             // Insert or Re-activate in followup_contacts
