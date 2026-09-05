@@ -272,8 +272,7 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                          last_received_message_id = ?,
                          references_header = ?,
                          last_trigger_uid = ?,
-                         last_trigger_imap_id = ?,
-                         updated_at = NOW()
+                         last_trigger_imap_id = ?
                      WHERE id = ?"
                 )->execute([
                     $schedAt,

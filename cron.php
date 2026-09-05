@@ -1283,8 +1283,7 @@ try {
                     try {
                         db()->prepare("UPDATE autoreply_threads
                             SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
-                                last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?,
-                                updated_at=NOW()
+                                last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
                             WHERE id=?")
                             ->execute([$nc, $unlockAt, $uid>0?$uid:null, $srcId>0?$srcId:null, $inMsgId?:null, $newRefs, $thread['id']]);
                         logSystemEvent('queued', $fe, "Auto Reply #" . $thread['current_step'] . " scheduled for {$unlockAt} (lead replied)", $userId, null, $ruleId, null, '');
@@ -1360,8 +1359,7 @@ try {
                             
                             db()->prepare("UPDATE autoreply_threads
                                 SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
-                                    last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?,
-                                    updated_at=NOW()
+                                    last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
                                 WHERE id=?")
                                 ->execute([$nc, $unlockAt, $inUid>0?$inUid:null, $inIaId>0?$inIaId:null, $inMsgId?:null, $newRefs, $pTh['id']]);
                             logSystemEvent('queued', $pEmail, "Auto Reply #" . $pTh['current_step'] . " scheduled for {$unlockAt} (via inbound sync)", $userId, null, $ruleId, null, '');

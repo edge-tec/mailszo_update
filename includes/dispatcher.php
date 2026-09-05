@@ -289,8 +289,7 @@ function recoverStuckPendingThreads(): int {
                                  last_received_message_id = COALESCE(?, last_received_message_id),
                                  references_header = COALESCE(?, references_header),
                                  last_trigger_uid = COALESCE(?, last_trigger_uid),
-                                 last_trigger_imap_id = COALESCE(?, last_trigger_imap_id),
-                                 updated_at = NOW()
+                                 last_trigger_imap_id = COALESCE(?, last_trigger_imap_id)
                              WHERE id = ?"
                         )->execute([
                             $schedAt,
