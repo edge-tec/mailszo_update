@@ -2828,6 +2828,10 @@ if ($res==='leads') {
         $eDate = $hasEmailDate ? "IFNULL(e.created_at,'')" : "''";
 
         try {
+            // Auto-sync any existing leads from autoreply into active followup rules
+            if (function_exists('syncAllLeadsToFollowup')) {
+                syncAllLeadsToFollowup($UID);
+            }
             $rows  = [];
             $total = 0;
 

@@ -1212,4 +1212,40 @@ function autoEnrollInFollowup(string $email, string $name = '', int $userId = 1,
     return $enrolled;
 }
 
+/**
+ * Synchronize any existing leads from autoreply_threads into active Follow-Up rules.
+ * Ensures existing and un-enrolled leads appear in Follow-Up immediately.
+ */
+function syncAllLeadsToFollowup(int $userId = 1): int {
+    try {
+        $pdo = db();
+        // Check if any active followup rules exist
+        $rulesCount = (int)$pdo->query("SELECT COUNT(*) FROM followup_rules WHERE status = 'active'")->fetchColumn();
+        if ($rulesCount === 0) return 0;
+
+        // Fetch leads from autoreply_threads
+        $stmt = $pdo->prepare("SELECT t.from_email, t.from_name, r.user_id, r.imap_id, r.followup_rule_id 
+                               FROM autoreply_threads t 
+                               JOIN autoreply_rules r ON r.id = t.rule_id");
+        $stmt->execute();
+        $leads = $stmt->fetchAll();
+        $totalEnrolled = 0;
+        foreach ($leads as $l) {
+            $prefId = (int)($l['followup_rule_id'] ?? 0);
+            $en = autoEnrollInFollowup(
+                $l['from_email'],
+                $l['from_name'] ?? '',
+                (int)($l['user_id'] ?? $userId),
+                (int)($l['imap_id'] ?? 0),
+                $prefId
+            );
+            $totalEnrolled += count($en);
+        }
+        return $totalEnrolled;
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+
 
