@@ -17,6 +17,14 @@ if (php_sapi_name() !== 'cli') {
     die("Error: imap_daemon.php must be run from the command line (CLI).\n");
 }
 
+if (!extension_loaded('pdo_mysql')) {
+    echo "\n\033[31m[ERROR] The 'pdo_mysql' extension is missing in this PHP binary (" . PHP_BINARY . ").\033[0m\n";
+    echo "If using aaPanel, please run with aaPanel's PHP binary, for example:\n";
+    echo "  👉 /www/server/php/82/bin/php imap_daemon.php\n";
+    echo "  👉 /www/server/php/81/bin/php imap_daemon.php\n\n";
+    exit(1);
+}
+
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/imap_idle.php';
 require_once __DIR__ . '/includes/queue.php';

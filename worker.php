@@ -14,6 +14,44 @@ if (php_sapi_name() !== 'cli') {
     die("Error: worker.php must be run from the command line (CLI).\n");
 }
 
+// Pre-flight check: ensure pdo_mysql is loaded
+if (!extension_loaded('pdo_mysql')) {
+    echo "\n========================================================================\n";
+    echo "  MAILPRO ENTERPRISE SETUP ERROR: 'pdo_mysql' DRIVER MISSING            \n";
+    echo "========================================================================\n";
+    echo "Current PHP Binary : " . PHP_BINARY . " (v" . PHP_VERSION . ")\n\n";
+    echo "The PHP CLI binary you just ran does not have the 'pdo_mysql' extension.\n";
+    echo "This typically happens in aaPanel, cPanel, or VPS when the default system\n";
+    echo "'php' command points to a minimal OS PHP instead of the web server's PHP.\n\n";
+    
+    // Auto-detect aaPanel PHP paths
+    $foundAaPhp = [];
+    foreach (['83', '82', '81', '80', '74'] as $ver) {
+        $bin = "/www/server/php/{$ver}/bin/php";
+        if (@file_exists($bin)) {
+            $foundAaPhp[] = $bin;
+        }
+    }
+
+    if (!empty($foundAaPhp)) {
+        echo "Found installed aaPanel PHP binary on this server! Please run:\n";
+        foreach ($foundAaPhp as $p) {
+            echo "  👉 \033[32m{$p} " . basename(__FILE__) . " " . implode(' ', array_slice($argv, 1)) . "\033[0m\n";
+        }
+    } else {
+        echo "Recommended Fix:\n";
+        echo "1. If using aaPanel:\n";
+        echo "   👉 /www/server/php/82/bin/php " . basename(__FILE__) . " " . implode(' ', array_slice($argv, 1)) . "\n";
+        echo "   👉 /www/server/php/81/bin/php " . basename(__FILE__) . " " . implode(' ', array_slice($argv, 1)) . "\n";
+        echo "2. If using Ubuntu/Debian:\n";
+        echo "   sudo apt-get install php-mysql -y\n";
+        echo "3. If using CentOS / AlmaLinux / Rocky Linux:\n";
+        echo "   sudo dnf install php-mysqlnd -y\n";
+    }
+    echo "========================================================================\n\n";
+    exit(1);
+}
+
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/queue.php';
 
@@ -106,16 +144,41 @@ if ($concurrency > 1 && !$runOnce) {
         pcntl_signal(SIGINT, $stopSupervisor);
     }
 
+    $consecutiveRapidFailures = 0;
+
     while ($running) {
+        $anyCrashed = false;
         foreach ($processes as $idx => $p) {
             $status = proc_get_status($p['proc']);
             if (!$status['running']) {
                 proc_close($p['proc']);
-                echo "[Supervisor] Worker #{$idx} exited (exit code: {$status['exitcode']}). Respawning...\n";
+                $uptime = time() - ($p['started_at'] ?? time());
+                echo "[Supervisor] Worker #{$idx} exited (exit code: {$status['exitcode']}, uptime: {$uptime}s).\n";
+
+                if ($uptime < 3) {
+                    $consecutiveRapidFailures++;
+                } else {
+                    $consecutiveRapidFailures = max(0, $consecutiveRapidFailures - 1);
+                }
+
+                if ($consecutiveRapidFailures > ($concurrency * 2)) {
+                    echo "\n\033[31m[Supervisor Error] Child workers are failing immediately upon launch (exit code {$status['exitcode']}).\033[0m\n";
+                    echo "Please check PHP binary dependencies (such as 'pdo_mysql' extension) or run a single worker directly to inspect output:\n";
+                    echo "  👉 php worker.php --once\n\n";
+                    $running = false;
+                    break 2;
+                }
+
+                echo "[Supervisor] Respawning Worker #{$idx}...\n";
                 $startWorker($idx);
+                $anyCrashed = true;
             }
         }
-        sleep(2);
+        if ($anyCrashed && $consecutiveRapidFailures > 0) {
+            sleep(min(5, $consecutiveRapidFailures));
+        } else {
+            sleep(2);
+        }
     }
 
     // Wait for all to finish

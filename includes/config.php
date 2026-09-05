@@ -20,11 +20,29 @@ function db() {
     static $pdo = null;
     if ($pdo) return $pdo;
     $cfg = getConfig();
-    $pdo = new PDO(
-        "mysql:host={$cfg['db_host']};port={$cfg['db_port']};dbname={$cfg['db_name']};charset=utf8mb4",
-        $cfg['db_user'], $cfg['db_pass'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
-    );
+    try {
+        $pdo = new PDO(
+            "mysql:host={$cfg['db_host']};port={$cfg['db_port']};dbname={$cfg['db_name']};charset=utf8mb4",
+            $cfg['db_user'], $cfg['db_pass'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+    } catch (PDOException $e) {
+        if (strpos($e->getMessage(), 'could not find driver') !== false) {
+            $binary = PHP_BINARY;
+            $cliMsg = "Database Connection Error: The 'pdo_mysql' driver is missing for PHP ({$binary}).\n";
+            if (php_sapi_name() === 'cli') {
+                $cliMsg .= "\n[aaPanel / Linux Fix]:\n" .
+                           "Your terminal/supervisor is executing a PHP binary that does not have pdo_mysql enabled.\n" .
+                           "Please run worker/daemons using aaPanel's PHP path:\n" .
+                           "  👉 /www/server/php/82/bin/php worker.php --concurrency=4\n" .
+                           "  👉 /www/server/php/81/bin/php worker.php --concurrency=4\n" .
+                           "(Or install php-mysql: apt-get install php-mysql / dnf install php-mysqlnd)\n\n";
+            }
+            error_log($cliMsg);
+            throw new Exception($cliMsg, 0, $e);
+        }
+        throw $e;
+    }
     // ── Sync MySQL session timezone with PHP timezone ───────────────
     try {
         $phpOffset = (new DateTimeZone(date_default_timezone_get()))->getOffset(new DateTime('now'));
