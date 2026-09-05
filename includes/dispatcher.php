@@ -229,6 +229,82 @@ function recoverStuckPendingThreads(): int {
                     ->execute([$th['id']]);
             }
         }
+
+        // ── 2. Sequential Mode Recovery: Unlock threads waiting for lead reply when reply is received ──
+        $seqPending = db()->query(
+            "SELECT t.*, r.user_id as r_user_id 
+             FROM autoreply_threads t 
+             JOIN autoreply_rules r ON r.id = t.rule_id 
+             WHERE t.status = 'pending' AND r.sequential_mode = 1
+             LIMIT 50"
+        )->fetchAll();
+
+        foreach ($seqPending as $th) {
+            $pEmail = strtolower(trim($th['from_email'] ?? ''));
+            if (!$pEmail) continue;
+
+            $lastSentTs = !empty($th['last_sent_at']) ? strtotime($th['last_sent_at']) : strtotime($th['created_at']);
+            
+            // Look for any inbound email from this sender received after last_sent_at (with 5s buffer)
+            $chkInb = db()->prepare(
+                "SELECT * FROM inbound_emails 
+                 WHERE LOWER(TRIM(from_email)) = ? 
+                   AND received_at >= ?
+                 ORDER BY id DESC LIMIT 1"
+            );
+            $chkInb->execute([$pEmail, date('Y-m-d H:i:s', max(0, $lastSentTs - 5))]);
+            $inb = $chkInb->fetch();
+
+            if ($inb) {
+                // Confirm it's not the same message ID that triggered the previous step
+                $cleanInMsgId = trim(str_replace(['<','>'], '', (string)($inb['message_id'] ?? '')));
+                $cleanThMsgId = trim(str_replace(['<','>'], '', (string)($th['last_received_message_id'] ?? '')));
+                $isSameMsgId  = ($cleanInMsgId !== '' && $cleanThMsgId !== '' && strtolower($cleanInMsgId) === strtolower($cleanThMsgId));
+
+                if (!$isSameMsgId) {
+                    $curStep = (int)$th['current_step'];
+                    $stStmt = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id = ? AND step_number = ?");
+                    $stStmt->execute([(int)$th['rule_id'], $curStep]);
+                    $stepData = $stStmt->fetch();
+
+                    if ($stepData) {
+                        $dVal = max(0, (int)($stepData['delay_value'] ?? $stepData['delay_minutes'] ?? 0));
+                        $dUnit = strtolower($stepData['delay_unit'] ?? 'seconds');
+                        $dSecs = delayToSeconds($dVal, $dUnit);
+                        
+                        $schedAt = ($dSecs > 0) ? date('Y-m-d H:i:s', time() + $dSecs) : date('Y-m-d H:i:s');
+                        $inMsgId = trim($inb['message_id'] ?? '');
+                        $newRefs = trim(($th['references_header'] ?? '') . ' ' . $inMsgId);
+
+                        db()->prepare(
+                            "UPDATE autoreply_threads 
+                             SET status = 'scheduled',
+                                 scheduled_send_time = ?,
+                                 messages_received = messages_received + 1,
+                                 reply_count = reply_count + 1,
+                                 last_received_message_id = COALESCE(?, last_received_message_id),
+                                 references_header = COALESCE(?, references_header),
+                                 last_trigger_uid = COALESCE(?, last_trigger_uid),
+                                 last_trigger_imap_id = COALESCE(?, last_trigger_imap_id),
+                                 updated_at = NOW()
+                             WHERE id = ?"
+                        )->execute([
+                            $schedAt,
+                            $inMsgId ?: null,
+                            $newRefs ?: null,
+                            (int)($inb['uid'] ?? 0) ?: null,
+                            (int)($inb['imap_account_id'] ?? 0) ?: null,
+                            $th['id']
+                        ]);
+                        $recovered++;
+                        logSystemEvent('queued', $pEmail, "Auto Reply #{$curStep} scheduled for {$schedAt} (lead replied)", (int)($th['r_user_id'] ?? 1), null, (int)$th['rule_id']);
+                    } else {
+                        // All steps finished
+                        db()->prepare("UPDATE autoreply_threads SET status = 'completed' WHERE id = ?")->execute([$th['id']]);
+                    }
+                }
+            }
+        }
     } catch (\Throwable $e) {}
     return $recovered;
 }

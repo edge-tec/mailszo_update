@@ -443,8 +443,20 @@ try {
                 $isSpamFolder = (stripos($folder, 'spam') !== false || stripos($folder, 'junk') !== false || stripos($folder, 'bulk') !== false);
                 $isBcc       = isImapMessageBcc($m, $iaUser);
 
-                // ── Priority 1: BCC emails → always skip ──────────────────────────────────────
-                if ($skipBccEnabled && $isBcc) {
+                // Check if sender is an existing active lead replying to us — NEVER drop real conversation replies as BCC!
+                $isKnownLeadReply = false;
+                if ($fe !== '') {
+                    try {
+                        $chkLead = db()->prepare("SELECT id FROM autoreply_threads WHERE LOWER(TRIM(from_email)) = ? AND status IN ('pending', 'scheduled', 'active') LIMIT 1");
+                        $chkLead->execute([$fe]);
+                        if ($chkLead->fetchColumn()) {
+                            $isKnownLeadReply = true;
+                        }
+                    } catch (\Throwable $_e) {}
+                }
+
+                // ── Priority 1: BCC emails → skip (unless sender is an existing lead replying to us) ──
+                if ($skipBccEnabled && $isBcc && !$isKnownLeadReply) {
                     if ($isSpamFolder) {
                         $bccSpamSkippedCount++;
                         if (function_exists('logSystemEvent')) {
@@ -1248,27 +1260,28 @@ try {
                 
                 // For active conversation waiting for reply OR already scheduled (restart delay)
                 if(in_array($thread['status'], ['pending', 'scheduled', 'failed', 'cancelled', 'active'])){
-                    $unlockDelayMins = 1;
+                    $unlockSecs = 0;
                     try {
                         $unlockStep = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
                         $unlockStep->execute([$ruleId, (int)$thread['current_step']]);
                         $unlockRow = $unlockStep->fetch();
                         if ($unlockRow) {
-                            $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 1));
-                            $unlockUnit = in_array(strtolower($unlockRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($unlockRow['delay_unit']) : 'minutes';
-                            $unlockDelayMins = delayToMinutes($unlockVal, $unlockUnit);
+                            $unlockVal  = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
+                            $unlockUnit = strtolower($unlockRow['delay_unit'] ?? 'seconds');
+                            $unlockSecs = function_exists('delayToSeconds') ? delayToSeconds($unlockVal, $unlockUnit) : ($unlockVal * 60);
                         }
                     } catch(Exception $e){}
                     
-                    $unlockAt = $unlockDelayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelayMins} minutes", $arNowTs)) : $arNow;
+                    $unlockAt = $unlockSecs > 0 ? date('Y-m-d H:i:s', time() + $unlockSecs) : $arNow;
 
                     try {
                         db()->prepare("UPDATE autoreply_threads
                             SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
-                                last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
+                                last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?,
+                                updated_at=NOW()
                             WHERE id=?")
                             ->execute([$nc, $unlockAt, $uid>0?$uid:null, $srcId>0?$srcId:null, $inMsgId?:null, $newRefs, $thread['id']]);
-                        logSystemEvent('queued', $fe, "Auto Reply #" . $thread['current_step'] . " scheduled for {$unlockAt}", $userId, null, $ruleId, null, '');
+                        logSystemEvent('queued', $fe, "Auto Reply #" . $thread['current_step'] . " scheduled for {$unlockAt} (lead replied)", $userId, null, $ruleId, null, '');
                     } catch(Exception $updEx) {}
                 }
             }
@@ -1320,23 +1333,24 @@ try {
                             $nc = (int)($pTh['messages_received'] ?? 1) + 1;
                             $newRefs = trim(($pTh['references_header'] ?? '') . ' ' . $inMsgId);
                             
-                            $unlockDelayMins = 0; // Default: immediate unless step specifies delay
+                            $unlockSecs = 0; // Default: immediate unless step specifies delay
                             try {
                                 $unlockStep = db()->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id=? AND step_number=?");
                                 $unlockStep->execute([$ruleId, (int)$pTh['current_step']]);
                                 $unlockRow = $unlockStep->fetch();
                                 if ($unlockRow) {
-                                    $unlockVal = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
-                                    $unlockUnit = in_array(strtolower($unlockRow['delay_unit'] ?? ''), ['minutes','hours','days'], true) ? strtolower($unlockRow['delay_unit']) : 'minutes';
-                                    $unlockDelayMins = delayToMinutes($unlockVal, $unlockUnit);
+                                    $unlockVal  = max(0, (int)($unlockRow['delay_value'] ?? $unlockRow['delay_minutes'] ?? 0));
+                                    $unlockUnit = strtolower($unlockRow['delay_unit'] ?? 'seconds');
+                                    $unlockSecs = function_exists('delayToSeconds') ? delayToSeconds($unlockVal, $unlockUnit) : ($unlockVal * 60);
                                 }
                             } catch(Exception $e){}
                             
-                            $unlockAt = $unlockDelayMins > 0 ? date('Y-m-d H:i:s', strtotime("+{$unlockDelayMins} minutes", $arNowTs)) : $arNow;
+                            $unlockAt = $unlockSecs > 0 ? date('Y-m-d H:i:s', time() + $unlockSecs) : $arNow;
                             
                             db()->prepare("UPDATE autoreply_threads
                                 SET messages_received=?, status='scheduled', scheduled_send_time=?, reply_count=reply_count+1,
-                                    last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?
+                                    last_trigger_uid=?, last_trigger_imap_id=?, last_received_message_id=?, references_header=?,
+                                    updated_at=NOW()
                                 WHERE id=?")
                                 ->execute([$nc, $unlockAt, $inUid>0?$inUid:null, $inIaId>0?$inIaId:null, $inMsgId?:null, $newRefs, $pTh['id']]);
                             logSystemEvent('queued', $pEmail, "Auto Reply #" . $pTh['current_step'] . " scheduled for {$unlockAt} (via inbound sync)", $userId, null, $ruleId, null, '');

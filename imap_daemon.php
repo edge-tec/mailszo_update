@@ -107,26 +107,81 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
         $accountId
     );
 
-    // Fetch matching auto-reply rules for this account
+    // Fetch matching auto-reply rules for this account.
+    // Matches if this IMAP account is configured as:
+    // primary imap (imap_id / primary_imap_id), secondary imap (imap2_id / secondary_imap_id),
+    // backup imap (backup_imap_id), OR belongs to the same user as the IMAP account.
     $rulesStmt = $pdo->prepare(
         "SELECT r.*, u.status as u_status 
          FROM autoreply_rules r 
          JOIN users u ON u.id = r.user_id 
-         WHERE (r.imap_id = ? OR r.primary_imap_id = ?) AND u.status = 'active'"
+         WHERE (
+            r.imap_id = ? 
+            OR r.primary_imap_id = ? 
+            OR r.imap2_id = ? 
+            OR r.secondary_imap_id = ? 
+            OR r.backup_imap_id = ? 
+            OR r.user_id = (SELECT user_id FROM imap_accounts WHERE id = ?)
+         ) AND r.status = 'active' AND u.status = 'active'"
     );
-    $rulesStmt->execute([$accountId, $accountId]);
+    $rulesStmt->execute([$accountId, $accountId, $accountId, $accountId, $accountId, $accountId]);
     $rules = $rulesStmt->fetchAll();
 
     foreach ($messages as $msg) {
         $fromEmail = strtolower(trim($msg['from_email'] ?? ''));
-        if (!$fromEmail) continue;
+        if (!$fromEmail || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) continue;
 
         $fromName = trim($msg['from_name'] ?? '');
         $subject  = trim($msg['subject'] ?? '');
         $uid      = (int)($msg['uid'] ?? 0);
+        $inMsgId  = trim($msg['message_id'] ?? '');
+        $inIrt    = trim($msg['in_reply_to'] ?? '');
+        $inRef    = trim($msg['references'] ?? '');
+
+        // Resolve conversation thread ID
+        $thId = function_exists('resolveConversationThreadId')
+            ? resolveConversationThreadId($inMsgId, $inIrt, $inRef, $fromEmail, $subject)
+            : substr(md5($fromEmail . '|' . $subject), 0, 32);
+
+        // 1. Mandatory persistence into inbound_emails (updates dashboard stats & read counter)
+        try {
+            $inbStmt = $pdo->prepare(
+                "INSERT INTO inbound_emails
+                 (imap_account_id, uid, uid_validity, from_email, from_name, subject, message_id, in_reply_to, references_header, thread_id, received_at)
+                 VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE
+                   from_email = VALUES(from_email),
+                   from_name  = COALESCE(NULLIF(VALUES(from_name), ''), from_name),
+                   subject    = COALESCE(NULLIF(VALUES(subject),   ''), subject),
+                   message_id = COALESCE(NULLIF(VALUES(message_id), ''), message_id),
+                   in_reply_to = COALESCE(NULLIF(VALUES(in_reply_to), ''), in_reply_to),
+                   references_header = COALESCE(NULLIF(VALUES(references_header), ''), references_header),
+                   thread_id  = COALESCE(NULLIF(VALUES(thread_id), ''), thread_id)"
+            );
+            $inbStmt->execute([
+                $accountId,
+                $uid,
+                substr($fromEmail, 0, 255),
+                substr($fromName, 0, 255),
+                substr($subject, 0, 500),
+                $inMsgId ?: null,
+                $inIrt ?: null,
+                $inRef ?: null,
+                $thId ?: null
+            ]);
+        } catch (\Throwable $inbEx) {
+            echo sprintf("  [Inbound Notice] inbound_emails write: %s\n", $inbEx->getMessage());
+        }
+
+        // Log system read event for dashboard activity feed
+        $primaryOwnerUid = 1;
+        if (!empty($rules)) {
+            $primaryOwnerUid = (int)($rules[0]['user_id'] ?? 1);
+        }
+        logSystemEvent('read', $fromEmail, "Incoming email read from {$fromEmail}: " . substr($subject, 0, 100), $primaryOwnerUid, null, null);
 
         // Pre-check blacklist
-        if (function_exists('isBlacklisted') && isBlacklisted($fromEmail, 1)) {
+        if (function_exists('isBlacklisted') && isBlacklisted($fromEmail, $primaryOwnerUid)) {
             echo sprintf("  [Skip] Sender <%s> is blacklisted. Skipped.\n", $fromEmail);
             continue;
         }
@@ -136,7 +191,7 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
             $userId = (int)$rule['user_id'];
 
             // Check if thread already exists
-            $tStmt = $pdo->prepare("SELECT id, status, current_step, messages_received FROM autoreply_threads WHERE rule_id = ? AND LOWER(from_email) = ?");
+            $tStmt = $pdo->prepare("SELECT * FROM autoreply_threads WHERE rule_id = ? AND LOWER(TRIM(from_email)) = ?");
             $tStmt->execute([$ruleId, $fromEmail]);
             $thread = $tStmt->fetch();
 
@@ -146,18 +201,22 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                 $s1Stmt->execute([$ruleId]);
                 $s1Row = $s1Stmt->fetch();
                 $s1Val = max(0, (int)($s1Row['delay_value'] ?? $s1Row['delay_minutes'] ?? 0));
-                $s1Unit = strtolower($s1Row['delay_unit'] ?? 'minutes');
+                $s1Unit = strtolower($s1Row['delay_unit'] ?? 'seconds');
                 $s1Secs = delayToSeconds($s1Val, $s1Unit);
                 $step1at = $s1Secs > 0 ? date('Y-m-d H:i:s', time() + $s1Secs) : date('Y-m-d H:i:s');
 
                 // Enroll new thread
                 $insThread = $pdo->prepare(
                     "INSERT INTO autoreply_threads 
-                     (rule_id, from_email, from_name, subject_in, current_step, status, scheduled_send_time, created_at)
-                     VALUES (?, ?, ?, ?, 1, 'scheduled', ?, NOW())"
+                     (rule_id, from_email, from_name, subject_in, current_step, status, scheduled_send_time,
+                      last_received_message_id, references_header, last_trigger_uid, last_trigger_imap_id, thread_id,
+                      reply_count, messages_received, created_at)
+                     VALUES (?, ?, ?, ?, 1, 'scheduled', ?, ?, ?, ?, ?, ?, 1, 1, NOW())"
                 );
-                $insThread->execute([$ruleId, $fromEmail, $fromName, $subject, $step1at]);
-                $threadId = (int)$pdo->lastInsertId();
+                $insThread->execute([
+                    $ruleId, $fromEmail, $fromName, substr($subject, 0, 200), $step1at,
+                    $inMsgId ?: null, $inRef ?: null, $uid ?: null, $accountId, $thId ?: null
+                ]);
 
                 logSystemEvent('queued', $fromEmail, "Auto Reply #1 scheduled for {$step1at} (+{$s1Val} {$s1Unit})", $userId, null, $ruleId);
                 echo sprintf("  ⚡ [Instant Enroll] Lead <%s> enrolled in Rule '%s' (Step #1 scheduled for %s)\n",
@@ -168,13 +227,34 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
             } else {
                 // Lead replied to existing conversation!
                 $curStep = (int)$thread['current_step'];
-                $sStmt = $pdo->prepare("SELECT delay_value, delay_unit, delay_minutes FROM autoreply_steps WHERE rule_id = ? AND step_number = ?");
+
+                // Check if step exists for this rule (handles Step 1 up to 15)
+                $sStmt = $pdo->prepare("SELECT * FROM autoreply_steps WHERE rule_id = ? AND step_number = ?");
                 $sStmt->execute([$ruleId, $curStep]);
-                $sRow = $sStmt->fetch();
-                $sVal = max(0, (int)($sRow['delay_value'] ?? $sRow['delay_minutes'] ?? 0));
-                $sUnit = strtolower($sRow['delay_unit'] ?? 'minutes');
+                $stepRow = $sStmt->fetch();
+
+                if (!$stepRow) {
+                    // All configured steps completed (e.g. sent up to step 15)
+                    $pdo->prepare("UPDATE autoreply_threads SET status = 'completed' WHERE id = ?")->execute([$thread['id']]);
+                    continue;
+                }
+
+                // Check duplicate reply protection
+                $cleanInMsgId = trim(str_replace(['<','>'], '', $inMsgId));
+                $cleanThMsgId = trim(str_replace(['<','>'], '', (string)($thread['last_received_message_id'] ?? '')));
+                $isSameMsgId  = ($cleanInMsgId !== '' && $cleanThMsgId !== '' && strtolower($cleanInMsgId) === strtolower($cleanThMsgId));
+                $isOldUid     = ($uid > 0 && !empty($thread['last_trigger_uid']) && (int)$thread['last_trigger_imap_id'] === $accountId && $uid <= (int)$thread['last_trigger_uid']);
+
+                if ($isSameMsgId || $isOldUid) {
+                    echo sprintf("  [Skip] Duplicate reply from <%s> (UID=%d, MsgID=%s). Skipped.\n", $fromEmail, $uid, $inMsgId);
+                    continue;
+                }
+
+                $sVal = max(0, (int)($stepRow['delay_value'] ?? $stepRow['delay_minutes'] ?? 0));
+                $sUnit = strtolower($stepRow['delay_unit'] ?? 'seconds');
                 $sSecs = delayToSeconds($sVal, $sUnit);
                 $schedAt = $sSecs > 0 ? date('Y-m-d H:i:s', time() + $sSecs) : date('Y-m-d H:i:s');
+                $newRefs = trim(($thread['references_header'] ?? '') . ' ' . $inMsgId);
 
                 $pdo->prepare(
                     "UPDATE autoreply_threads 
@@ -182,12 +262,25 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
                          status = 'scheduled',
                          scheduled_send_time = ?,
                          subject_in = ?,
-                         reply_count = reply_count + 1
+                         reply_count = reply_count + 1,
+                         last_received_message_id = ?,
+                         references_header = ?,
+                         last_trigger_uid = ?,
+                         last_trigger_imap_id = ?,
+                         updated_at = NOW()
                      WHERE id = ?"
-                )->execute([$schedAt, $subject, $thread['id']]);
+                )->execute([
+                    $schedAt,
+                    substr($subject, 0, 200),
+                    $inMsgId ?: null,
+                    $newRefs ?: null,
+                    $uid ?: null,
+                    $accountId,
+                    $thread['id']
+                ]);
 
                 logSystemEvent('queued', $fromEmail, "Auto Reply #{$curStep} scheduled for {$schedAt} (lead replied)", $userId, null, $ruleId);
-                echo sprintf("  🔄 [Lead Reply] Lead <%s> unlocked Step #%d scheduled for %s\n",
+                echo sprintf("  🔄 [Lead Reply] Lead <%s> replied! Unlocked Step #%d scheduled for %s\n",
                     $fromEmail,
                     $curStep,
                     $schedAt
