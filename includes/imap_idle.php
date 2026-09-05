@@ -26,6 +26,7 @@ class ImapIdleSession {
     protected string $currentIdleTag = '';
     protected int $lastUid = 0;
     protected int $lastUidValidity = 0;
+    protected string $lastError = '';
 
     public function __construct(array $account) {
         $this->account = $account;
@@ -39,6 +40,10 @@ class ImapIdleSession {
 
     public function getAccountName(): string {
         return $this->account['name'] ?? $this->account['username'] ?? 'Account #' . $this->getAccountId();
+    }
+
+    public function getLastError(): string {
+        return $this->lastError;
     }
 
     public function getSocket() {
@@ -66,15 +71,18 @@ class ImapIdleSession {
      */
     public function connect(): bool {
         $this->close();
+        $this->lastError = '';
 
         $host = $this->account['host'];
         $port = (int)($this->account['port'] ?? 993);
         $user = $this->account['username'];
         $pass = $this->account['password'];
-        $ssl  = !empty($this->account['secure']);
+        // Correctly detect SSL from 'ssl' column or fallback to port 993
+        $ssl  = !empty($this->account['ssl']) || !empty($this->account['secure']) || $port === 993;
 
-        $this->sock = imapSocketOpen($host, $port, $ssl, 20);
+        $this->sock = imapSocketOpen($host, $port, $ssl, 15);
         if (!$this->sock) {
+            $this->lastError = "Could not open TCP/SSL socket to {$host}:{$port} (SSL: " . ($ssl ? 'yes' : 'no') . ")";
             return false;
         }
 
@@ -84,6 +92,7 @@ class ImapIdleSession {
         // Read server greeting
         $greeting = $this->waitForResponse('', 10);
         if (stripos($greeting, '* OK') === false && stripos($greeting, '* PREAUTH') === false) {
+            $this->lastError = "Server greeting error: " . trim($greeting ?: 'Timeout waiting for greeting');
             $this->close();
             return false;
         }
@@ -93,6 +102,7 @@ class ImapIdleSession {
         $this->writeRaw("{$loginTag} LOGIN \"" . addslashes($user) . "\" \"" . addslashes($pass) . "\"\r\n");
         $loginResp = $this->waitForResponse($loginTag, 20);
         if (stripos($loginResp, "{$loginTag} OK") === false) {
+            $this->lastError = "Authentication failed for '{$user}': " . trim($loginResp ?: 'Timeout');
             $this->close();
             return false;
         }
@@ -102,6 +112,7 @@ class ImapIdleSession {
         $this->writeRaw("{$selTag} SELECT INBOX\r\n");
         $selResp = $this->waitForResponse($selTag, 15);
         if (stripos($selResp, "{$selTag} OK") === false) {
+            $this->lastError = "Select INBOX failed: " . trim($selResp ?: 'Timeout');
             $this->close();
             return false;
         }
@@ -213,12 +224,15 @@ class ImapIdleSession {
             $this->stopIdle();
         }
 
+        $port = (int)($this->account['port'] ?? 993);
+        $ssl  = !empty($this->account['ssl']) || !empty($this->account['secure']) || $port === 993;
+
         $res = imapFetchSinceUid(
             $this->account['host'],
-            (int)($this->account['port'] ?? 993),
+            $port,
             $this->account['username'],
             $this->account['password'],
-            !empty($this->account['secure']),
+            $ssl,
             $this->lastUid,
             $this->lastUidValidity,
             50
@@ -328,7 +342,8 @@ class ImapIdleMultiplexer {
                     $log("⚠ {$session->getAccountName()} connected but IDLE command not accepted (falling back).");
                 }
             } else {
-                $log("✗ Failed to connect to {$session->getAccountName()}. Will retry.");
+                $err = $session->getLastError();
+                $log("✗ Failed to connect to {$session->getAccountName()}" . ($err ? " ({$err})" : "") . ". Will retry.");
                 $this->reconnectBackoffs[$id] = time() + 15;
             }
         }
@@ -360,7 +375,8 @@ class ImapIdleMultiplexer {
                         } else {
                             $backoff = min(300, max(15, ($this->reconnectBackoffs[$id] ?: 15) * 2));
                             $this->reconnectBackoffs[$id] = time() + $backoff;
-                            $log("Reconnect failed for {$session->getAccountName()}. Next retry in {$backoff}s.");
+                            $err = $session->getLastError();
+                            $log("Reconnect failed for {$session->getAccountName()}" . ($err ? " ({$err})" : "") . ". Next retry in {$backoff}s.");
                         }
                     }
                 }
