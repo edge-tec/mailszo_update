@@ -730,8 +730,7 @@ if ($res==='images') {
         $dir=__DIR__.'/uploads/images/';
         if (!is_dir($dir)) mkdir($dir,0755,true);
         if (!move_uploaded_file($file['tmp_name'],$dir.$fname)) jsonOut(['ok'=>false,'error'=>'Save failed'],500);
-        $proto=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http';
-        $base=$proto.'://'.$_SERVER['HTTP_HOST'].rtrim(dirname($_SERVER['SCRIPT_NAME']),'/\\');
+        $base=getAppBaseUrl();
         $url=$base.'/uploads/images/'.$fname;
         db()->prepare('INSERT INTO images (user_id,filename,original_name,mime,url) VALUES (?,?,?,?,?)')
             ->execute([$UID,$fname,$file['name'],$file['type'],$url]);
@@ -1187,9 +1186,8 @@ if ($res==='cron') {
             $cfg['cron_key']=bin2hex(random_bytes(16));
             file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT));
         }
-        $proto=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http';
-        $base=$proto.'://'.$_SERVER['HTTP_HOST'].rtrim(dirname($_SERVER['SCRIPT_NAME']),'/\\');
-        jsonOut(['cron_key'=>$cfg['cron_key'],'cron_url'=>$base.'/cron.php?key='.$cfg['cron_key']]);
+        $base=getAppBaseUrl();
+        jsonOut(['cron_key'=>$cfg['cron_key'],'cron_url'=>$base.'/cron.php?key='.$cfg['cron_key'],'app_url'=>$base]);
     }
     if ($method==='POST'&&$id==='regen-key') {
         requireAdmin();
@@ -1197,16 +1195,33 @@ if ($res==='cron') {
         $cfg['cron_key']=bin2hex(random_bytes(16));
         if (file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT))===false)
             jsonOut(['ok'=>false,'message'=>'Cannot write config.json — check file permissions']);
-        $proto=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http';
-        $base=$proto.'://'.$_SERVER['HTTP_HOST'].rtrim(dirname($_SERVER['SCRIPT_NAME']),'/\\');
-        jsonOut(['ok'=>true,'cron_key'=>$cfg['cron_key'],'cron_url'=>$base.'/cron.php?key='.$cfg['cron_key']]);
+        $base=getAppBaseUrl();
+        jsonOut(['ok'=>true,'cron_key'=>$cfg['cron_key'],'cron_url'=>$base.'/cron.php?key='.$cfg['cron_key'],'app_url'=>$base]);
+    }
+    if ($method==='POST'&&$id==='save-app-url') {
+        requireAdmin();
+        $b=body();
+        $appUrl=trim($b['app_url']??'');
+        if ($appUrl==='') {
+            jsonOut(['ok'=>false,'message'=>'Application URL cannot be empty']);
+        }
+        if (!preg_match('#^https?://#i',$appUrl)) {
+            $appUrl='https://'.$appUrl;
+        }
+        $appUrl=rtrim($appUrl,'/');
+        $cfg=getConfig();
+        $cfg['app_url']=$appUrl;
+        $cfg['base_url']=$appUrl;
+        if (file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT))===false) {
+            jsonOut(['ok'=>false,'message'=>'Cannot write config.json — check file permissions']);
+        }
+        jsonOut(['ok'=>true,'app_url'=>$appUrl,'message'=>'Application URL updated successfully!']);
     }
     if ($method==='POST'&&$id==='run') {
         requireAdmin();
         $cfg     = getConfig();
         $cronKey = $cfg['cron_key'] ?? '';
-        $proto   = (!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off') ? 'https' : 'http';
-        $base    = $proto.'://'.$_SERVER['HTTP_HOST'].rtrim(dirname($_SERVER['SCRIPT_NAME']),'/\\');
+        $base    = getAppBaseUrl();
         $cronUrl = $base.'/cron.php?key='.urlencode($cronKey).'&json=1';
 
         // ── Attempt 1: HTTP self-request (cleanest — own process, own memory) ──

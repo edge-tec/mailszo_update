@@ -7,10 +7,8 @@ if (file_exists(__DIR__ . '/includes/config.php')) {
     if (function_exists('getConfig')) {
         $cfg = getConfig();
         $cronKey = $cfg['cron_key'] ?? '';
-        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $dir = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
-        $autoCronUrl = $proto . '://' . $host . $dir . '/cron.php?key=' . urlencode($cronKey) . '&json=1';
+        $base = function_exists('getAppBaseUrl') ? getAppBaseUrl() : 'http://localhost';
+        $autoCronUrl = $base . '/cron.php?key=' . urlencode($cronKey) . '&json=1';
     }
 }
 ?>

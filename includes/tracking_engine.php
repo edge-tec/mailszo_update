@@ -25,26 +25,16 @@ function generateTrackingUuid(): string {
  * Get the canonical application base URL for tracking pixel links.
  */
 function getTrackingAppUrl(): string {
-    static $cachedUrl = null;
-    if ($cachedUrl !== null) return $cachedUrl;
-
-    // Check config.json app_url setting first
-    if (function_exists('getConfig')) {
-        $cfg = getConfig();
-        if (!empty($cfg['app_url'])) {
-            $cachedUrl = rtrim($cfg['app_url'], '/');
-            return $cachedUrl;
+    if (function_exists('getAppBaseUrl')) {
+        return getAppBaseUrl();
+    }
+    if (file_exists(__DIR__ . '/config.php')) {
+        require_once __DIR__ . '/config.php';
+        if (function_exists('getAppBaseUrl')) {
+            return getAppBaseUrl();
         }
     }
-
-    // Fallback dynamically from web server environment
-    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ? 'https://' : 'http://';
-    $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $path  = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
-    // Remove /track or /api from subfolder if called within subdirectories
-    $path  = preg_replace('#/(api|track|includes)$#i', '', $path);
-    $cachedUrl = rtrim($proto . $host . $path, '/');
-    return $cachedUrl;
+    return 'http://localhost';
 }
 
 /**

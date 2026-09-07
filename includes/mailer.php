@@ -272,6 +272,13 @@ class Mailer {
                 error_log("[Mailer Tracking] Warning creating master email_tracking: " . $e->getMessage());
             }
 
+            // Clean baseUrl if any corrupted path remained
+            if (strpos($baseUrl, '/www/wwwroot') !== false) {
+                if (preg_match('#/(?:www/wwwroot|var/www/vhosts|var/www|vhosts)/([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})#i', $baseUrl, $bm)) {
+                    $baseUrl = 'https://' . $bm[1];
+                }
+            }
+
             // Production Open Tracking Pixel: {{APP_URL}}/track/open/{{tracking_token}}.png
             $pixelUrl = rtrim($baseUrl, '/') . '/track/open/' . urlencode($trackingToken) . '.png';
             $pixelTag = '<img src="' . htmlspecialchars($pixelUrl, ENT_QUOTES, 'UTF-8') . '" width="1" height="1" style="display:none !important;width:1px;height:1px;border:0;outline:none" alt="" />';
@@ -283,12 +290,16 @@ class Mailer {
 
             // Click Tracking rewrite if enabled
             if (!empty($options['track_clicks'])) {
-                $html = preg_replace_callback('/<a\s+([^>]*?)href=["\'](https?:\/\/[^"\']+)["\']([^>]*)>/i', function($m) use ($baseUrl, $trackingToken) {
-                    $originalUrl = $m[2];
-                    if (strpos($originalUrl, 'track/open') !== false || strpos($originalUrl, 'r=track') !== false) return $m[0];
-                    $trackUrl = $baseUrl . '/api.php?r=track/click&t=' . urlencode($trackingToken) . '&url=' . urlencode($originalUrl);
-                    return '<a ' . $m[1] . 'href="' . htmlspecialchars($trackUrl) . '"' . $m[3] . '>';
-                }, $html);
+                // Prevent rewriting links with invalid localhost / filesystem paths
+                $isBrokenLocalhost = (strpos($baseUrl, 'localhost') !== false || strpos($baseUrl, '/www/wwwroot') !== false);
+                if (!$isBrokenLocalhost) {
+                    $html = preg_replace_callback('/<a\s+([^>]*?)href=["\'](https?:\/\/[^"\']+)["\']([^>]*)>/i', function($m) use ($baseUrl, $trackingToken) {
+                        $originalUrl = $m[2];
+                        if (strpos($originalUrl, 'track/open') !== false || strpos($originalUrl, 'r=track') !== false) return $m[0];
+                        $trackUrl = $baseUrl . '/api.php?r=track/click&t=' . urlencode($trackingToken) . '&url=' . urlencode($originalUrl);
+                        return '<a ' . $m[1] . 'href="' . htmlspecialchars($trackUrl) . '"' . $m[3] . '>';
+                    }, $html);
+                }
             }
         }
 

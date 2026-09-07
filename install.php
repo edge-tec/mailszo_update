@@ -705,6 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $proto   = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host    = $_SERVER['HTTP_HOST'] ?? 'localhost';
             $dir     = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+            $dir     = ($dir === '/' || $dir === '\\') ? '' : $dir;
             $baseUrl = $proto . '://' . $host . $dir;
 
             $config = [
@@ -717,6 +718,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'db_pass'      => $b['db_pass'],
                 'cron_key'     => $cronKey,
                 'base_url'     => $baseUrl,
+                'app_url'      => $baseUrl,
                 'app_path'     => __DIR__,
                 'installed_at' => date('c'),
             ];

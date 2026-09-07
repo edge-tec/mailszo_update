@@ -5,10 +5,51 @@ define('CONFIG_FILE', __DIR__ . '/../config.json');
 function getConfig() {
     if (!file_exists(CONFIG_FILE)) return ['installed' => false];
     $cfg = json_decode(file_get_contents(CONFIG_FILE), true) ?: ['installed' => false];
+    $dirty = false;
     // Self-heal: save app_path if missing (existing installs before this version)
     if (!empty($cfg['installed']) && empty($cfg['app_path'])) {
         $cfg['app_path'] = __DIR__ . '/..'; // config.php is in includes/, app is one level up
         $cfg['app_path'] = realpath($cfg['app_path']) ?: $cfg['app_path'];
+        $dirty = true;
+    }
+    // Self-heal: normalize base_url to app_url
+    if (!empty($cfg['base_url']) && empty($cfg['app_url'])) {
+        $cfg['app_url'] = $cfg['base_url'];
+        $dirty = true;
+    }
+    // Self-heal: if app_url was saved with localhost/wwwroot corruption, clean it
+    if (!empty($cfg['installed'])) {
+        $currentAppUrl = trim($cfg['app_url'] ?? '');
+        if ($currentAppUrl !== '' && (stripos($currentAppUrl, 'localhost') !== false || stripos($currentAppUrl, '/www/wwwroot') !== false)) {
+            $detected = null;
+            if (!empty($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] !== 'localhost' && $_SERVER['HTTP_HOST'] !== '127.0.0.1') {
+                $isHttps = (
+                    (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
+                    (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+                    (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+                );
+                $scheme = $isHttps ? 'https://' : 'http://';
+                $dir = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+                $dir = preg_replace('#/(api|track|includes|cron)$#i', '', $dir);
+                $dir = ($dir === '/' || $dir === '\\') ? '' : $dir;
+                $detected = rtrim($scheme . $_SERVER['HTTP_HOST'] . $dir, '/');
+            } else {
+                $checkPaths = [__DIR__, dirname(__DIR__), $_SERVER['SCRIPT_FILENAME'] ?? '', $_SERVER['SCRIPT_NAME'] ?? '', getcwd() ?: ''];
+                foreach ($checkPaths as $p) {
+                    if (preg_match('#/(?:www/wwwroot|var/www/vhosts|var/www|vhosts)/([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})#i', $p, $m)) {
+                        $detected = 'https://' . $m[1];
+                        break;
+                    }
+                }
+            }
+            if ($detected) {
+                $cfg['app_url'] = $detected;
+                $cfg['base_url'] = $detected;
+                $dirty = true;
+            }
+        }
+    }
+    if ($dirty) {
         @file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT));
     }
     return $cfg;
@@ -953,20 +994,91 @@ function logSystemEvent(
  * Resolve root application URL for tracking links and pixels.
  */
 function getAppBaseUrl(): string {
-    $cfg = getConfig();
-    if (!empty($cfg['app_url'])) {
-        return rtrim($cfg['app_url'], '/');
+    static $resolvedUrl = null;
+    if ($resolvedUrl !== null) {
+        return $resolvedUrl;
     }
-    $isHttps = (
-        (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
-        (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
-        (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
-    );
-    $scheme = $isHttps ? 'https://' : 'http://';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '/');
-    $scriptDir = ($scriptDir === '/' || $scriptDir === '\\') ? '' : $scriptDir;
-    return rtrim($scheme . $host . $scriptDir, '/');
+
+    $cfg = getConfig();
+
+    // 1. Check explicit app_url or base_url in config.json
+    $configured = !empty($cfg['app_url']) ? trim($cfg['app_url']) : (!empty($cfg['base_url']) ? trim($cfg['base_url']) : '');
+    // If set and NOT corrupted with localhost or filesystem paths
+    if (!empty($configured) && stripos($configured, 'localhost') === false && stripos($configured, '127.0.0.1') === false && stripos($configured, '/www/wwwroot') === false) {
+        $resolvedUrl = rtrim($configured, '/');
+        return $resolvedUrl;
+    }
+
+    // 2. Check environment variables
+    $envUrl = getenv('APP_URL') ?: (getenv('BASE_URL') ?: '');
+    if (!empty($envUrl) && stripos($envUrl, 'localhost') === false && stripos($envUrl, '/www/wwwroot') === false) {
+        $resolvedUrl = rtrim($envUrl, '/');
+        return $resolvedUrl;
+    }
+
+    // 3. Web server context: auto-detect from active HTTP request
+    if (!empty($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] !== 'localhost' && $_SERVER['HTTP_HOST'] !== '127.0.0.1') {
+        $isHttps = (
+            (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') ||
+            (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+            (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') ||
+            (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+        );
+        $scheme = $isHttps ? 'https://' : 'http://';
+        $host = $_SERVER['HTTP_HOST'];
+        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+        $scriptDir = dirname($scriptName);
+        $scriptDir = ($scriptDir === '/' || $scriptDir === '\\') ? '' : $scriptDir;
+        $scriptDir = preg_replace('#/(api|track|includes|cron)$#i', '', $scriptDir);
+        $detected = rtrim($scheme . $host . $scriptDir, '/');
+
+        // Self-heal: persist into config.json
+        if (empty($cfg['app_url']) || stripos($cfg['app_url'], 'localhost') !== false || stripos($cfg['app_url'], '/www/wwwroot') !== false) {
+            $cfg['app_url'] = $detected;
+            $cfg['base_url'] = $detected;
+            @file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT));
+        }
+
+        $resolvedUrl = $detected;
+        return $resolvedUrl;
+    }
+
+    // 4. CLI / Daemon context: Detect domain from server document root or script path (e.g. aaPanel / cPanel / Plesk)
+    // Common production server paths:
+    // aaPanel: /www/wwwroot/domain.com/...
+    // Plesk / Ubuntu: /var/www/vhosts/domain.com/... or /var/www/domain.com/...
+    $checkPaths = [
+        __DIR__,
+        dirname(__DIR__),
+        $_SERVER['SCRIPT_FILENAME'] ?? '',
+        $_SERVER['SCRIPT_NAME'] ?? '',
+        $_SERVER['PWD'] ?? '',
+        getcwd() ?: ''
+    ];
+    foreach ($checkPaths as $path) {
+        if (empty($path)) continue;
+        if (preg_match('#/(?:www/wwwroot|var/www/vhosts|var/www|vhosts)/([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})#i', $path, $m)) {
+            $domain = $m[1];
+            $detected = 'https://' . $domain;
+            if (empty($cfg['app_url']) || stripos($cfg['app_url'], 'localhost') !== false || stripos($cfg['app_url'], '/www/wwwroot') !== false) {
+                $cfg['app_url'] = $detected;
+                $cfg['base_url'] = $detected;
+                @file_put_contents(CONFIG_FILE, json_encode($cfg, JSON_PRETTY_PRINT));
+            }
+            $resolvedUrl = $detected;
+            return $resolvedUrl;
+        }
+    }
+
+    // 5. If $configured was present (even if localhost in local dev environment), return it
+    if (!empty($configured) && stripos($configured, '/www/wwwroot') === false) {
+        $resolvedUrl = rtrim($configured, '/');
+        return $resolvedUrl;
+    }
+
+    // 6. Last resort fallback
+    $resolvedUrl = 'http://localhost';
+    return $resolvedUrl;
 }
 
 /**

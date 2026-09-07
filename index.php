@@ -2470,6 +2470,11 @@ html[data-theme="light"] .fu-flow-table tbody td{border-color:#F1F5F9;}
             <div id="cron-status-box" class="al a-inf on" style="margin:0">Checking…</div>
           </div>
         </div>
+        <label class="fl">Application Base URL <span class="flh">(Domain used for tracking links &amp; open pixels, e.g. https://mail.mailszo.com)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+          <input type="url" id="cron-app-url-input" class="fi" placeholder="https://mail.mailszo.com" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" id="btn-save-app-url" onclick="saveAppUrl()">💾 Save Domain</button>
+        </div>
         <label class="fl">Full Cron URL <span class="flh">(use this in cPanel / aaPanel)</span></label>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
           <div class="cron-box" id="cron-url-box" style="flex:1;font-size:11px">Loading…</div>
@@ -7090,6 +7095,8 @@ async function loadCronInfo(){
   if(keyBox)keyBox.textContent=r.cron_key;
   if(urlBox)urlBox.textContent=r.cron_url;
   if(curlBox)curlBox.textContent='curl -s "'+r.cron_url+'" > /dev/null';
+  const appUrlInput=$('cron-app-url-input');
+  if(appUrlInput&&r.app_url)appUrlInput.value=r.app_url;
   if(statusBox){statusBox.className='al a-ok on';statusBox.textContent='✅ Cron key loaded — ready to use';}
   // Restore auto-run UI state if active
   if(_autoRunTimer){
@@ -7121,6 +7128,23 @@ async function regenCronKey(){
   const r=await post('cron/regen-key',{});
   if(r?.ok){al('cron-key-al','✅ New key generated — update your cron job URL!','ok');loadCronInfo();}
   else al('cron-key-al','❌ '+(r?.message||'Error'),'err');
+}
+
+async function saveAppUrl(){
+  const input=$('cron-app-url-input');
+  if(!input)return;
+  const val=input.value.trim();
+  if(!val){al('cron-key-al','⚠️ Application URL cannot be empty','err');return;}
+  const btn=$('btn-save-app-url');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const r=await post('cron/save-app-url',{app_url:val});
+  if(btn){btn.disabled=false;btn.textContent='💾 Save Domain';}
+  if(r?.ok){
+    al('cron-key-al','✅ Application URL saved successfully! All tracking links will now use this domain.','ok');
+    loadCronInfo();
+  }else{
+    al('cron-key-al','❌ '+(r?.message||'Failed to save URL'),'err');
+  }
 }
 
 async function runCron(){
