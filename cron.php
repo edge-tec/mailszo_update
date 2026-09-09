@@ -1524,7 +1524,7 @@ try {
         // Due contacts: next_send_at IS NOT NULL AND next_send_at <= NOW()
         // (Contacts whose read-timer has not fired yet have next_send_at = NULL and are safely waiting)
         $due = db()->prepare("SELECT * FROM followup_contacts WHERE rule_id=? AND status='active' AND next_send_at IS NOT NULL AND next_send_at<=? LIMIT 50");
-        $due->execute([$ruleId, $fuNow]);
+        $due->execute([$ruleId, date('Y-m-d H:i:s')]);
         $contacts = $due->fetchAll();
         $sent = 0; $failed = 0;
 
