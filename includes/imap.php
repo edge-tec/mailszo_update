@@ -649,7 +649,7 @@ function imapOpenSelect(array $cfg, string $folder = 'INBOX') {
     $port = (int)($cfg['port'] ?? 993);
     $user = $cfg['username'] ?? '';
     $pass = $cfg['password'] ?? '';
-    $ssl  = (bool)($cfg['ssl'] ?? true);
+    $ssl  = !empty($cfg['ssl']) || !empty($cfg['secure']) || $port === 993;
 
     $sock = imapSocketOpen($host, $port, $ssl);
     if (!$sock) return [null, "connect failed {$host}:{$port}"];
@@ -657,11 +657,14 @@ function imapOpenSelect(array $cfg, string $folder = 'INBOX') {
     if (strpos($gr, '* OK') === false && strpos($gr, '* PREAUTH') === false) {
         fclose($sock); return [null, 'bad greeting'];
     }
-    fwrite($sock, 'X01 LOGIN "' . addslashes($user) . '" "' . addslashes($pass) . '"' . "\r\n");
+    $escUser = str_replace(['\\', '"'], ['\\\\', '\\"'], $user);
+    $escPass = str_replace(['\\', '"'], ['\\\\', '\\"'], $pass);
+    fwrite($sock, 'X01 LOGIN "' . $escUser . '" "' . $escPass . '"' . "\r\n");
     if (strpos(imapReadResponse($sock, 'X01'), 'X01 OK') === false) {
         fclose($sock); return [null, 'login failed'];
     }
-    fwrite($sock, 'X02 SELECT "' . addslashes($folder) . '"' . "\r\n");
+    $escFolder = str_replace(['\\', '"'], ['\\\\', '\\"'], $folder);
+    fwrite($sock, 'X02 SELECT "' . $escFolder . '"' . "\r\n");
     if (strpos(imapReadResponse($sock, 'X02'), 'X02 OK') === false) {
         fwrite($sock, "X03 LOGOUT\r\n"); fclose($sock);
         return [null, 'select '.$folder.' failed'];
@@ -671,36 +674,156 @@ function imapOpenSelect(array $cfg, string $folder = 'INBOX') {
 
 /**
  * Delete a list of UIDs from a folder (default INBOX) on the given account.
- * Marks them \Deleted then EXPUNGE'd. Returns ['ok'=>bool,'deleted'=>N,'message'=>?].
+ * Marks them \Deleted then EXPUNGE'd (and CLOSE'd). Returns ['ok'=>bool,'deleted'=>N,'message'=>?].
  *
- * Used to enforce "as soon as the first email is read, remove it from IMAP 1
- * so we never reprocess that lead".
+ * Supports both PHP's native imap C-extension (when available) and raw TCP/TLS socket
+ * with RFC 3501, RFC 4315, and RFC 6851 compliance, plus special Gmail Trash handling.
  */
 function imapDeleteUids(array $cfg, array $uids, string $folder = 'INBOX'): array {
     $uids = array_values(array_filter(array_map('intval', $uids), fn($u) => $u > 0));
     if (!$uids) return ['ok' => true, 'deleted' => 0, 'message' => 'no uids'];
 
+    $host     = $cfg['host'] ?? '';
+    $port     = (int)($cfg['port'] ?? 993);
+    $user     = $cfg['username'] ?? '';
+    $pass     = $cfg['password'] ?? '';
+    $ssl      = !empty($cfg['ssl']) || !empty($cfg['secure']) || $port === 993;
+    $isGmail  = (stripos($host, 'gmail') !== false || stripos($host, 'google') !== false);
+    $deletedN = count($uids);
+
+    // ── Method 1: php-imap extension (most reliable SSL & cert handling if available) ──
+    if (function_exists('imap_open')) {
+        $flags   = $ssl ? '/imap/ssl/novalidate-cert' : '/imap/notls/norsh';
+        $mboxRef = '{' . $host . ':' . $port . $flags . '}' . $folder;
+        $mbox    = @imap_open($mboxRef, $user, $pass, 0, 1);
+        if ($mbox) {
+            $chunks = array_chunk($uids, 100);
+            foreach ($chunks as $chunk) {
+                $uidStr = implode(',', $chunk);
+                if ($isGmail) {
+                    $trashFolders = ['[Gmail]/Trash', '[Google Mail]/Trash', 'Trash', '[Gmail]/Bin'];
+                    foreach ($trashFolders as $tf) {
+                        if (@imap_mail_move($mbox, $uidStr, $tf, CP_UID)) {
+                            break;
+                        }
+                    }
+                }
+                foreach ($chunk as $u) {
+                    @imap_delete($mbox, (string)$u, FT_UID);
+                }
+            }
+            @imap_expunge($mbox);
+            @imap_close($mbox, CL_EXPUNGE);
+            return [
+                'ok'      => true,
+                'deleted' => $deletedN,
+                'message' => 'ok (php-imap)'
+            ];
+        }
+    }
+
+    // ── Method 2: Raw socket (RFC 3501, RFC 4315, RFC 6851 compliant) ──
     [$sock, $err] = imapOpenSelect($cfg, $folder);
-    if (!$sock) return ['ok' => false, 'deleted' => 0, 'message' => $err];
+    if (!$sock) {
+        return ['ok' => false, 'deleted' => 0, 'message' => $err ?: 'socket connect failed'];
+    }
 
-    $uidList = implode(',', $uids);
-    // Set \Seen + \Deleted together so the spec's "mark as \Seen, then
-    // EXPUNGE" semantics are visible to any third-party client that reads
-    // the mailbox between this STORE and the EXPUNGE that follows.
-    fwrite($sock, "Y01 UID STORE {$uidList} +FLAGS (\\Seen \\Deleted)\r\n");
-    $stResp = imapReadResponse($sock, 'Y01', 30);
-    $stOk   = strpos($stResp, 'Y01 OK') !== false;
+    $chunks = array_chunk($uids, 100);
+    $storeSuccess = false;
+    $tagIdx = 1;
 
-    fwrite($sock, "Y02 EXPUNGE\r\n");
-    $exResp = imapReadResponse($sock, 'Y02', 30);
-    $exOk   = strpos($exResp, 'Y02 OK') !== false;
+    foreach ($chunks as $chunk) {
+        $uidList = implode(',', $chunk);
 
-    fwrite($sock, "Y03 LOGOUT\r\n"); fclose($sock);
+        // Gmail: move or copy to Trash first so Gmail purges from Inbox
+        if ($isGmail) {
+            $tag = sprintf('Y%02d', $tagIdx++);
+            fwrite($sock, "{$tag} UID MOVE {$uidList} \"[Gmail]/Trash\"\r\n");
+            $mvResp = imapReadResponse($sock, $tag, 10);
+            if (strpos($mvResp, "{$tag} OK") === false) {
+                $tag2 = sprintf('Y%02d', $tagIdx++);
+                fwrite($sock, "{$tag2} UID COPY {$uidList} \"[Gmail]/Trash\"\r\n");
+                imapReadResponse($sock, $tag2, 10);
+            }
+        }
+
+        // Set \Seen and \Deleted
+        $tag = sprintf('Y%02d', $tagIdx++);
+        fwrite($sock, "{$tag} UID STORE {$uidList} +FLAGS (\\Seen \\Deleted)\r\n");
+        $stResp = imapReadResponse($sock, $tag, 30);
+        if (strpos($stResp, "{$tag} OK") !== false) {
+            $storeSuccess = true;
+        }
+
+        // RFC 4315 UID EXPUNGE (fast, specific UID expunge)
+        $tag = sprintf('Y%02d', $tagIdx++);
+        fwrite($sock, "{$tag} UID EXPUNGE {$uidList}\r\n");
+        imapReadResponse($sock, $tag, 20);
+    }
+
+    // RFC 3501 standard EXPUNGE (purges all marked \Deleted)
+    $tag = sprintf('Y%02d', $tagIdx++);
+    fwrite($sock, "{$tag} EXPUNGE\r\n");
+    $exResp = imapReadResponse($sock, $tag, 30);
+    $exOk   = strpos($exResp, "{$tag} OK") !== false;
+
+    // RFC 3501 Section 6.4.2 CLOSE (permanently commits deletion before logout)
+    $tag = sprintf('Y%02d', $tagIdx++);
+    fwrite($sock, "{$tag} CLOSE\r\n");
+    imapReadResponse($sock, $tag, 10);
+
+    // Logout and close
+    fwrite($sock, "Y99 LOGOUT\r\n");
+    fclose($sock);
+
+    $isOk = ($storeSuccess || $exOk);
+    return [
+        'ok'      => $isOk,
+        'deleted' => $isOk ? $deletedN : 0,
+        'message' => $isOk ? 'ok (socket)' : ('store='.($storeSuccess?'ok':'fail').' expunge='.($exOk?'ok':'fail')),
+    ];
+}
+
+/**
+ * Delete an array of messages, grouping them by their respective mailbox_folder.
+ * e.g. messages from 'INBOX' are deleted from 'INBOX', and messages from 'Spam' from 'Spam'.
+ */
+function imapDeleteMessages(array $cfg, array $messages): array {
+    if (empty($messages)) {
+        return ['ok' => true, 'deleted' => 0, 'message' => 'no messages'];
+    }
+
+    // Group UIDs by folder
+    $byFolder = [];
+    foreach ($messages as $m) {
+        $uid = (int)($m['uid'] ?? 0);
+        if ($uid <= 0) continue;
+        $folder = trim((string)($m['mailbox_folder'] ?? 'INBOX'));
+        if ($folder === '') $folder = 'INBOX';
+        $byFolder[$folder][] = $uid;
+    }
+
+    if (empty($byFolder)) {
+        return ['ok' => true, 'deleted' => 0, 'message' => 'no valid uids'];
+    }
+
+    $totalDeleted = 0;
+    $allOk = true;
+    $errs = [];
+
+    foreach ($byFolder as $folder => $uids) {
+        $res = imapDeleteUids($cfg, $uids, $folder);
+        $totalDeleted += (int)($res['deleted'] ?? 0);
+        if (empty($res['ok'])) {
+            $allOk = false;
+            $errs[] = "[{$folder}] " . ($res['message'] ?? 'error');
+        }
+    }
 
     return [
-        'ok'      => ($stOk && $exOk),
-        'deleted' => ($stOk && $exOk) ? count($uids) : 0,
-        'message' => ($stOk && $exOk) ? 'ok' : ('store='.($stOk?'ok':'fail').' expunge='.($exOk?'ok':'fail')),
+        'ok'      => $allOk,
+        'deleted' => $totalDeleted,
+        'message' => $allOk ? 'ok' : implode('; ', $errs),
     ];
 }
 

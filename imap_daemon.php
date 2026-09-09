@@ -26,6 +26,7 @@ if (!extension_loaded('pdo_mysql')) {
 }
 
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/imap.php';
 require_once __DIR__ . '/includes/imap_idle.php';
 require_once __DIR__ . '/includes/queue.php';
 require_once __DIR__ . '/includes/dispatcher.php';
@@ -320,6 +321,42 @@ $onNewMessages = function(int $accountId, array $messages) use ($pdo) {
         $fuSent = processFollowUpQueue(25);
         if ($arSent > 0 || $fuSent > 0) {
             echo sprintf("  🚀 [Instant Sent] Dispatched %d auto-reply and %d follow-up immediately!\n", $arSent, $fuSent);
+        }
+    }
+
+    // ── AUTO-CUT / DELETE READ LEADS FROM IMAP MAILBOX ─────────────────
+    // Ensures read leads are removed from the IMAP server mailbox
+    if (!empty($messages) && function_exists('imapDeleteMessages')) {
+        try {
+            $accStmt = $pdo->prepare("SELECT host, port, secure, username, password FROM imap_accounts WHERE id = ?");
+            $accStmt->execute([$accountId]);
+            $accRow = $accStmt->fetch();
+            if ($accRow) {
+                $delCfg = [
+                    'host'     => $accRow['host'],
+                    'port'     => (int)($accRow['port'] ?? 993),
+                    'username' => $accRow['username'],
+                    'password' => $accRow['password'],
+                    'ssl'      => !empty($accRow['ssl']) || !empty($accRow['secure']) || (int)($accRow['port'] ?? 993) === 993,
+                ];
+                $delRes = imapDeleteMessages($delCfg, $messages);
+                if (!empty($delRes['ok'])) {
+                    echo sprintf("  ✂️ [Cut/Deleted] Successfully cut %d read lead(s) from IMAP mailbox #%d (server mailbox clean).\n",
+                        $delRes['deleted'] ?? count($messages),
+                        $accountId
+                    );
+                } else {
+                    echo sprintf("  ⚠️ [Cut Warning] Failed to cut read lead(s) from IMAP mailbox #%d: %s\n",
+                        $accountId,
+                        $delRes['message'] ?? 'unknown'
+                    );
+                }
+            }
+        } catch (\Throwable $delEx) {
+            echo sprintf("  ⚠️ [Cut Exception] Error cutting read lead(s) from IMAP #%d: %s\n",
+                $accountId,
+                $delEx->getMessage()
+            );
         }
     }
 };

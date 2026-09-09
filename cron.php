@@ -386,6 +386,9 @@ try {
             }
         }
 
+        // ── Store all raw fetched messages for guaranteed auto-cut / deletion from IMAP ─────────
+        $allFetchedMessages = array_merge($msgs, $spamFolderMsgs ?? []);
+
         // ── Domain Blacklist Filter — applied BEFORE inbound persistence ─────────────────────────
         // Emails from blacklisted domains/extensions are completely ignored:
         // they are NOT stored in inbound_emails, NOT processed by AR/FU rules,
@@ -591,34 +594,29 @@ try {
             }
         }
 
-        // ── Auto-delete from IMAP after successful read + persistence ─────────────────────────────
+        // ── Auto-delete / Cut read leads from IMAP after read & persistence ──────────────────────
         $autoDeleted = 0; $autoDelErr = '';
-        if (!empty($msgs) && function_exists('imapDeleteUids')) {
-            $uidsToDelete = array_values(array_filter(
-                array_map(fn($m) => (int)($m['uid'] ?? 0), $msgs),
-                fn($u) => $u > 0
-            ));
-            if ($uidsToDelete) {
-                $cfg = [
-                    'host'     => $iaHost,
-                    'port'     => $iaPort,
-                    'username' => $iaUser,
-                    'password' => $iaPass,
-                    'ssl'      => $iaSsl,
-                ];
-                try {
-                    $del = imapDeleteUids($cfg, $uidsToDelete);
-                    $autoDeleted = (int)($del['deleted'] ?? 0);
-                    if (!$del['ok']) {
-                        $autoDelErr = (string)($del['message'] ?? 'unknown');
-                        $results[] = ['status'=>'imap_warn','account'=>$iaUser,
-                            'message'=>'Auto-delete failed: ' . $autoDelErr];
-                    }
-                } catch (Exception $delEx) {
-                    $autoDelErr = $delEx->getMessage();
+        $messagesToCut = !empty($allFetchedMessages) ? $allFetchedMessages : $msgs;
+        if (!empty($messagesToCut) && function_exists('imapDeleteMessages')) {
+            $cfg = [
+                'host'     => $iaHost,
+                'port'     => $iaPort,
+                'username' => $iaUser,
+                'password' => $iaPass,
+                'ssl'      => $iaSsl,
+            ];
+            try {
+                $del = imapDeleteMessages($cfg, $messagesToCut);
+                $autoDeleted = (int)($del['deleted'] ?? 0);
+                if (!$del['ok']) {
+                    $autoDelErr = (string)($del['message'] ?? 'unknown');
                     $results[] = ['status'=>'imap_warn','account'=>$iaUser,
-                        'message'=>'Auto-delete exception: ' . $autoDelErr];
+                        'message'=>'Auto-cut/delete failed: ' . $autoDelErr];
                 }
+            } catch (Exception $delEx) {
+                $autoDelErr = $delEx->getMessage();
+                $results[] = ['status'=>'imap_warn','account'=>$iaUser,
+                    'message'=>'Auto-cut/delete exception: ' . $autoDelErr];
             }
         }
 
